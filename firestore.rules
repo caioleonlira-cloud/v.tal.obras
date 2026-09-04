@@ -1,8 +1,150 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // =========================================================================
+    // FUNÇÕES AUXILIARES DE AUTENTICAÇÃO E PERMISSÕES (RBAC)
+    // =========================================================================
+
+    // Verifica se a requisição possui usuário autenticado no Firebase Auth
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Verifica se o usuário autenticado possui perfil de Administrador (ADM):
+    // 1. Por lista de e-mails mestres do sistema (garante acesso imediato);
+    // 2. Pelo campo "role" salvo no documento correspondente em users/{uid}.
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email in ['caio.lira@telemontrms.com.br', 'caioleonlira@gmail.com'] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADM')
+      );
+    }
+
+    // Valida se a alteração afeta estritamente apenas as colunas do Bloco 2
+    // (campos de preenchimento/medição em campo e metadados de rastreio)
+    function isOnlyBloco2Update() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'Status Informe (Campo)',
+        'Resp.Medição',
+        'Pendência (Implantação)',
+        'Pendência (Celula Sap)',
+        'Pendência (Projetos)',
+        'Data Previsão Entrega (Medição)',
+        'Data Previsão Entrega (Projeto)',
+        'Responsavel',
+        'Data Tratativa',
+        'OBS (Medição)',
+        '_updatedAt',
+        '_updatedBy',
+        '_id'
+      ]);
+    }
+
+    // =========================================================================
+    // 1. COLEÇÃO: REGISTROS DE OBRAS (DCs)
+    // =========================================================================
+    match /registros/{registroId} {
+      // Qualquer usuário logado pode visualizar os registros
+      allow read: if isSignedIn();
+
+      // Somente ADM pode criar novas DCs ou excluir registros (importação / limpeza)
+      allow create, delete: if isAdmin();
+
+      // Atualização:
+      // - ADM pode atualizar qualquer campo (inclusive Bloco 1)
+      // - Usuário PADRÃO pode atualizar APENAS os campos do Bloco 2
+      allow update: if isSignedIn() && (
+        isAdmin() || isOnlyBloco2Update()
+      );
+    }
+
+    // =========================================================================
+    // 2. COLEÇÃO: USUÁRIOS DO SISTEMA (users)
+    // =========================================================================
+    match /users/{userId} {
+      // Qualquer usuário logado pode ler para montar a lista de equipe e verificar perfis
+      allow read: if isSignedIn();
+
+      // Somente ADM pode criar ou excluir usuários
+      allow create, delete: if isAdmin();
+
+      // Atualização:
+      // - ADM pode editar qualquer campo e alterar papéis (role/status)
+      // - O próprio usuário pode atualizar apenas seus dados (nome, senha, etc.), sem poder mudar seu role ou status
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.uid == userId &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+      );
+    }
+
+    // =========================================================================
+    // 3. COLEÇÃO: SEGMENTAÇÕES (dropdowns e opções)
+    // =========================================================================
+    match /segmentacoes/{segmentacaoId} {
+      // Leitura permitida para qualquer usuário autenticado
+      allow read: if isSignedIn();
+
+      // Apenas ADM pode adicionar, renomear, reordenar ou excluir opções
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 4. COLEÇÃO: HISTÓRICO DE EDIÇÕES E AUDITORIA (historico_edicoes)
+    // =========================================================================
+    match /historico_edicoes/{historicoId} {
+      // Leitura permitida para qualquer usuário autenticado
+      allow read: if isSignedIn();
+
+      // Qualquer usuário autenticado grava itens ao preencher campos do Bloco 2
+      allow create: if isSignedIn();
+
+      // Histórico é imutável: nenhuma alteração é permitida após criado
+      allow update: if false;
+
+      // Apenas ADM pode excluir histórico (rotinas de limpeza e arquivamento)
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 5. COLEÇÃO: SESSÕES ONLINE E PRESENÇA (online_sessions)
+    // =========================================================================
+    match /online_sessions/{sessionId} {
+      // Leitura e gerenciamento de sessão para usuários logados
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // =========================================================================
+    // 6. COLEÇÃO: METADADOS DO SISTEMA (metadata)
+    // =========================================================================
+    match /metadata/{metaId} {
+      // Leitura para acompanhamento de importações
+      allow read: if isSignedIn();
+
+      // Escrita restrita a administradores
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 7. COLEÇÃO: CONFIGURAÇÕES GERAIS (system_config)
+    // =========================================================================
+    match /system_config/{configId} {
+      // Leitura para controle de sessões e status
+      allow read: if isSignedIn();
+
+      // Escrita restrita a administradores
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // DEFAULT DENY: Bloqueio contra qualquer acesso a outras coleções
+    // =========================================================================
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
+

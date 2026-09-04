@@ -318,8 +318,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 2. Check for System Admin accounts (caio.lira@telemontrms.com.br / caioleonlira@gmail.com)
     if (isSystemAdminEmail(cleanEmail)) {
       if (cleanPass === '123456' || cleanPass.length >= 4) {
+        // Ensure Firebase Auth session is active so Firestore rules request.auth is populated
+        try {
+          if (!auth.currentUser) {
+            try {
+              await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+            } catch (authErr: any) {
+              if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+                try {
+                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
+
+        const adminUid = auth.currentUser?.uid || `admin-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
         const adminProfile: UserProfile = {
-          uid: `admin-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          uid: adminUid,
           email: cleanEmail,
           name: 'Caio Lira',
           role: 'ADM',
@@ -368,6 +384,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (u.password && u.password !== cleanPass) {
           throw new Error('Senha incorreta.');
         }
+
+        // Ensure Firebase Auth session is active
+        try {
+          if (!auth.currentUser) {
+            try {
+              await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+            } catch (authErr: any) {
+              if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+                try {
+                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
+                } catch (_) {}
+              }
+            }
+          }
+        } catch (_) {}
 
         const authenticatedProfile: UserProfile = {
           ...u,
@@ -486,9 +517,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Este e-mail já está cadastrado no sistema.');
     }
 
-    const newUid = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    let authUid = `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // 1. Provision in Firebase Auth using isolated secondary app instance to preserve admin session
+    try {
+      if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+        const tempApp = initializeApp(firebaseConfig, `user-creator-${Date.now()}`);
+        const tempAuth = getAuth(tempApp);
+        try {
+          const cred = await createUserWithEmailAndPassword(tempAuth, cleanEmail, pass);
+          if (cred.user?.uid) {
+            authUid = cred.user.uid;
+          }
+        } finally {
+          await deleteApp(tempApp);
+        }
+      }
+    } catch (fbErr: any) {
+      console.log('Firebase Auth provision note:', fbErr?.code || fbErr?.message);
+    }
+
     const newUserData: UserProfile = {
-      uid: newUid,
+      uid: authUid,
       email: cleanEmail,
       name: cleanName || cleanEmail.split('@')[0],
       role: role,
@@ -498,8 +548,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. Save document to Firestore users collection
-    await setDoc(doc(db, 'users', newUid), newUserData);
+    // 2. Save document to Firestore users collection
+    await setDoc(doc(db, 'users', authUid), newUserData);
 
     // Optimistically update local usersList so user appears instantly
     setUsersList((prev) => {
@@ -509,18 +559,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (a.name || a.email).localeCompare(b.name || b.email)
       );
     });
-
-    // 2. Provision in Firebase Auth using isolated secondary app instance to preserve admin session
-    try {
-      if (firebaseConfig.apiKey && firebaseConfig.projectId) {
-        const tempApp = initializeApp(firebaseConfig, `user-creator-${Date.now()}`);
-        const tempAuth = getAuth(tempApp);
-        await createUserWithEmailAndPassword(tempAuth, cleanEmail, pass);
-        await deleteApp(tempApp);
-      }
-    } catch (fbErr: any) {
-      console.log('Firebase Auth provision note:', fbErr?.code || fbErr?.message);
-    }
   };
 
   const updateUserStatus = async (uid: string, status: 'active' | 'inactive') => {

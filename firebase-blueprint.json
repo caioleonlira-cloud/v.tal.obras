@@ -33,7 +33,9 @@
         "Data Previsão Entrega (Projeto)": { "type": "string" },
         "Responsavel": { "type": "string" },
         "Data Tratativa": { "type": "string" },
-        "OBS (Medição)": { "type": "string" }
+        "OBS (Medição)": { "type": "string" },
+        "_updatedAt": { "type": "string" },
+        "_updatedBy": { "type": "string" }
       },
       "required": ["DC"]
     },
@@ -56,6 +58,43 @@
         "status": { "type": "string", "enum": ["active", "inactive"] }
       },
       "required": ["email", "role"]
+    },
+    "historico_edicoes": {
+      "title": "Histórico de Auditoria de Edições",
+      "description": "Registros imutáveis de alterações efetuadas em campos de medição e campo.",
+      "properties": {
+        "dc": { "type": "string" },
+        "colunaEditada": { "type": "string" },
+        "valorAnterior": { "type": "string" },
+        "valorNovo": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "dataHora": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["dc", "colunaEditada", "valorNovo", "timestamp"]
+    },
+    "online_sessions": {
+      "title": "Sessões Online e Presença",
+      "description": "Registro de sessões ativas de usuários conectados.",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "date": { "type": "string" },
+        "loginTimestamp": { "type": "number" }
+      },
+      "required": ["uid", "email"]
+    },
+    "metadata": {
+      "title": "Metadados do Sistema",
+      "description": "Informações de importações e sincronizações gerais.",
+      "properties": {
+        "dataHora": { "type": "string" },
+        "totalRegistros": { "type": "number" },
+        "tipo": { "type": "string" }
+      }
     }
   }
 }

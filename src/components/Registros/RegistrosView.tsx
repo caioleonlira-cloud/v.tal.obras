@@ -37,6 +37,7 @@ import {
   ChevronDown,
   Clock,
   CheckCircle2,
+  Archive,
 } from 'lucide-react';
 import { useAutoExportADM } from '../../hooks/useAutoExportADM';
 
@@ -50,6 +51,7 @@ export const RegistrosView: React.FC = () => {
     popularDadosExemplo,
     segmentacoes,
     exportarAuditoriaGeral,
+    arquivarELimparHistorico,
   } = useData();
 
   // Automatic Excel download for ADM profile (08:15 and 16:00 local time)
@@ -799,27 +801,58 @@ export const RegistrosView: React.FC = () => {
             </div>
           )}
           {/* Botão Auditoria */}
-          <button
-            id="btn-export-audit"
-            onClick={async () => {
-              try {
-                setIsExportingAudit(true);
-                await exportarAuditoriaGeral(1000);
-              } finally {
-                setIsExportingAudit(false);
-              }
-            }}
-            disabled={isExportingAudit}
-            title="Exportar relatório de histórico e auditoria de edições"
-            className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#002855] border border-slate-300 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-          >
-            {isExportingAudit ? (
-              <RefreshCw className="w-3 h-3 text-cyan-600 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-600" />
+          <div className="flex items-center space-x-1">
+            <button
+              id="btn-export-audit"
+              onClick={async () => {
+                try {
+                  setIsExportingAudit(true);
+                  await exportarAuditoriaGeral(1000);
+                } finally {
+                  setIsExportingAudit(false);
+                }
+              }}
+              disabled={isExportingAudit}
+              title="Exportar relatório de histórico e auditoria de edições"
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#002855] border border-slate-300 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+            >
+              {isExportingAudit ? (
+                <RefreshCw className="w-3 h-3 text-cyan-600 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-600" />
+              )}
+              <span>{isExportingAudit ? 'Gerando...' : 'Auditoria'}</span>
+            </button>
+
+            {isAdmin && (
+              <button
+                id="btn-archive-history"
+                onClick={async () => {
+                  if (
+                    window.confirm(
+                      'Deseja exportar e arquivar o histórico de auditoria com mais de 90 dias?\n\nIsso baixará uma planilha Excel de backup e liberará espaço no banco de dados Firestore.'
+                    )
+                  ) {
+                    try {
+                      setIsExportingAudit(true);
+                      const res = await arquivarELimparHistorico(90);
+                      alert(`Histórico arquivado com sucesso!\nItens exportados e liberados do Firestore: ${res.removidos}`);
+                    } catch (e: any) {
+                      alert('Erro ao arquivar histórico: ' + e?.message);
+                    } finally {
+                      setIsExportingAudit(false);
+                    }
+                  }
+                }}
+                disabled={isExportingAudit}
+                title="Arquivar e limpar histórico com mais de 90 dias (baixa backup Excel e libera espaço no Firestore)"
+                className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+              >
+                <Archive className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden xl:inline">Arquivar &gt;90d</span>
+              </button>
             )}
-            <span>{isExportingAudit ? 'Gerando...' : 'Auditoria'}</span>
-          </button>
+          </div>
 
           {/* Botão Exportar Excel */}
           <button

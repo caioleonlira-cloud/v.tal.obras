@@ -66,6 +66,7 @@ interface DataContextType {
   refreshRegistros: () => Promise<void>;
   fetchHistoricoForDC: (dc: string) => Promise<HistoricoEdicaoItem[]>;
   exportarAuditoriaGeral: (limite?: number) => Promise<void>;
+  arquivarELimparHistorico: (diasRetencao?: number) => Promise<{ exportados: number; removidos: number }>;
   updateRegistroBloco2: (dc: string, bloco2: Partial<RegistroBloco2>) => Promise<void>;
   addSegmentacaoOpcao: (segKey: SegmentacaoKey, novaOpcao: string) => Promise<void>;
   addMultiplasSegmentacaoOpcoes: (segKey: SegmentacaoKey, novasOpcoes: string[]) => Promise<void>;
@@ -252,7 +253,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return isExhausted;
   };
 
-  // 1. Fetch & continuous real-time sync for registros (Google Sheets style)
+  // 1. Fetch & continuous real-time sync for registros with Delta-Reading optimization
   useEffect(() => {
     if (!user) {
       setRegistros([]);
@@ -264,9 +265,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1.1 Fast local storage hydration (zero-delay initial UI render)
     const cached = getLocalStoredRegistros();
+    let hasLocalData = false;
     if (cached && cached.length > 0) {
       setRegistros(cached);
       setLoadingRegistros(false);
+      hasLocalData = true;
     } else {
       setLoadingRegistros(true);
     }
@@ -280,76 +283,161 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setRealtimeStatus('syncing');
 
-    // 1.2 Setup continuous Firestore onSnapshot listener
-    // This receives delta changes in real-time whenever ANY user saves/edits from any machine
     const regCol = collection(db, 'registros');
-    let isFirstSnapshot = true;
+    let unsubDelta: (() => void) | null = null;
+    let isCancelled = false;
 
-    const unsubRegistros = onSnapshot(
-      regCol,
-      (snapshot) => {
-        const changes = snapshot.docChanges();
+    // 1.2 Smart Initial Load:
+    // If local cache exists, fetch only documents changed recently (saving thousands of reads)
+    // If cache is empty, fetch the full collection once to populate IndexedDB and state
+    const initSync = async () => {
+      try {
+        if (hasLocalData) {
+          // Find most recent updatedAt in local cache or fallback to 24h ago
+          let latestUpdated = '';
+          for (const r of cached) {
+            if (r._updatedAt && r._updatedAt > latestUpdated) {
+              latestUpdated = r._updatedAt;
+            }
+          }
+          const cutoff = latestUpdated || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-        if (isFirstSnapshot || snapshot.size === 0) {
-          isFirstSnapshot = false;
-          const list: Registro[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ _id: docSnap.id, ...docSnap.data() } as Registro);
-          });
+          // Fetch only modified documents since cache timestamp
+          const deltaQuery = query(regCol, where('_updatedAt', '>', cutoff));
+          const deltaSnap = await getDocs(deltaQuery);
 
-          if (list.length > 0) {
-            setRegistros(list);
-            saveLocalRegistros(list);
-          } else if (cached && cached.length > 0) {
-            setRegistros(cached);
-          } else {
-            setRegistros([]);
+          if (!isCancelled && !deltaSnap.empty) {
+            setRegistros((prev) => {
+              const docMap = new Map<string, Registro>();
+              for (const r of prev) {
+                const key = r._id || getSafeDocId(r.DC);
+                docMap.set(key, r);
+              }
+              deltaSnap.forEach((docSnap) => {
+                const docData = { _id: docSnap.id, ...docSnap.data() } as Registro;
+                docMap.set(docSnap.id, docData);
+              });
+              const nextList = Array.from(docMap.values());
+              saveLocalRegistros(nextList);
+              return nextList;
+            });
           }
         } else {
-          // Granular Delta Update (Google Sheets Style)
-          // Updates only affected documents in memory without resetting full table state
-          setRegistros((prevRegistros) => {
-            if (changes.length === 0) return prevRegistros;
-
-            const docMap = new Map<string, Registro>();
-            for (const r of prevRegistros) {
-              const key = r._id || getSafeDocId(r.DC);
-              docMap.set(key, r);
+          // Initial bootstrap for clean devices: fetch full collection
+          const fullSnap = await getDocs(regCol);
+          if (!isCancelled) {
+            const list: Registro[] = [];
+            fullSnap.forEach((docSnap) => {
+              list.push({ _id: docSnap.id, ...docSnap.data() } as Registro);
+            });
+            if (list.length > 0) {
+              setRegistros(list);
+              saveLocalRegistros(list);
             }
-
-            for (const change of changes) {
-              const docId = change.doc.id;
-              if (change.type === 'removed') {
-                docMap.delete(docId);
-              } else {
-                const docData = { _id: docId, ...change.doc.data() } as Registro;
-                docMap.set(docId, docData);
-              }
-            }
-
-            const nextList = Array.from(docMap.values());
-            saveLocalRegistros(nextList);
-            return nextList;
-          });
+          }
         }
 
-        setIsRealtimeConnected(true);
-        setRealtimeStatus('connected');
-        setLastSyncTimestamp(Date.now());
-        setLoadingRegistros(false);
-        setError(null);
-      },
-      (err) => {
-        checkQuotaError(err);
-        console.warn('Realtime listener registros erro / offline:', err?.message);
-        setIsRealtimeConnected(false);
-        setRealtimeStatus('offline');
-        setLoadingRegistros(false);
+        if (!isCancelled) {
+          setIsRealtimeConnected(true);
+          setRealtimeStatus('connected');
+          setLastSyncTimestamp(Date.now());
+          setLoadingRegistros(false);
+          setError(null);
+        }
+      } catch (err: any) {
+        if (!isCancelled) {
+          checkQuotaError(err);
+          console.warn('Erro na sincronização inicial:', err?.message);
+          setLoadingRegistros(false);
+        }
       }
-    );
+
+      // 1.3 Lightweight Real-Time Listener (Google Sheets Style):
+      // Listens ONLY to documents updated from this session start onwards.
+      // Idle cost = 0 reads! Every saved DC emits only 1 document read to other connected peers.
+      const sessionStartIso = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      try {
+        const liveQuery = query(regCol, where('_updatedAt', '>=', sessionStartIso));
+        unsubDelta = onSnapshot(
+          liveQuery,
+          (snapshot) => {
+            if (isCancelled) return;
+            const changes = snapshot.docChanges();
+            if (changes.length === 0) return;
+
+            setRegistros((prev) => {
+              const docMap = new Map<string, Registro>();
+              for (const r of prev) {
+                const key = r._id || getSafeDocId(r.DC);
+                docMap.set(key, r);
+              }
+
+              for (const change of changes) {
+                const docId = change.doc.id;
+                if (change.type === 'removed') {
+                  docMap.delete(docId);
+                } else {
+                  const docData = { _id: docId, ...change.doc.data() } as Registro;
+                  docMap.set(docId, docData);
+                }
+              }
+
+              const nextList = Array.from(docMap.values());
+              saveLocalRegistros(nextList);
+              return nextList;
+            });
+
+            setIsRealtimeConnected(true);
+            setRealtimeStatus('connected');
+            setLastSyncTimestamp(Date.now());
+          },
+          (err) => {
+            if (!isCancelled) {
+              checkQuotaError(err);
+              console.warn('Realtime delta listener aviso:', err?.message);
+            }
+          }
+        );
+      } catch (e: any) {
+        console.warn('Erro ao configurar listener delta:', e?.message);
+      }
+    };
+
+    initSync();
+
+    // 1.4 Background Polling: light safety check every 3 minutes (zero impact if no changes)
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        const lastSync = lastSyncTimestamp ? new Date(lastSyncTimestamp).toISOString() : '';
+        if (lastSync) {
+          getDocs(query(regCol, where('_updatedAt', '>', lastSync)))
+            .then((snap) => {
+              if (!snap.empty) {
+                setRegistros((prev) => {
+                  const docMap = new Map<string, Registro>();
+                  for (const r of prev) {
+                    const key = r._id || getSafeDocId(r.DC);
+                    docMap.set(key, r);
+                  }
+                  snap.forEach((docSnap) => {
+                    docMap.set(docSnap.id, { _id: docSnap.id, ...docSnap.data() } as Registro);
+                  });
+                  const nextList = Array.from(docMap.values());
+                  saveLocalRegistros(nextList);
+                  return nextList;
+                });
+                setLastSyncTimestamp(Date.now());
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }, 3 * 60 * 1000);
 
     return () => {
-      unsubRegistros();
+      isCancelled = true;
+      clearInterval(pollInterval);
+      if (unsubDelta) unsubDelta();
     };
   }, [user]);
 
@@ -464,7 +552,63 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // 2. Subscribe to metadata/importInfo
+  // Routine to archive and purge legacy edit history (> X days, default 90 days / 3 months)
+  const arquivarELimparHistorico = useCallback(
+    async (diasRetencao = 90): Promise<{ exportados: number; removidos: number }> => {
+      const cutoffTimestamp = Date.now() - diasRetencao * 24 * 60 * 60 * 1000;
+      const cached = getLocalStoredHistorico();
+      const oldCachedItems = cached.filter((item) => (item.timestamp || 0) < cutoffTimestamp);
+
+      let remoteOldItems: HistoricoEdicaoItem[] = [];
+
+      if (isFirebaseConfigured) {
+        try {
+          const histCol = collection(db, 'historico_edicoes');
+          const q = query(histCol, where('timestamp', '<', cutoffTimestamp));
+          const snap = await getDocs(q);
+          snap.forEach((docSnap) => {
+            remoteOldItems.push({ id: docSnap.id, ...docSnap.data() } as HistoricoEdicaoItem);
+          });
+
+          // 1. Export Excel backup of all old items to be archived
+          const allOldItems = deduplicateHistorico([...remoteOldItems, ...oldCachedItems]);
+          if (allOldItems.length > 0) {
+            exportarRelatorioHistoricoParaExcel(
+              allOldItems,
+              `VTAL_Backup_Auditoria_Arquivada_${new Date().toLocaleDateString('sv')}`
+            );
+
+            // 2. Batch purge from Firestore (in chunks of 200)
+            const BATCH_SIZE = 200;
+            for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+              const chunk = snap.docs.slice(i, i + BATCH_SIZE);
+              const batch = writeBatch(db);
+              chunk.forEach((d) => batch.delete(d.ref));
+              await commitBatchWithTimeout(batch, 15000, 'limpeza de histórico arquivado');
+            }
+          }
+        } catch (err: any) {
+          checkQuotaError(err);
+          console.warn('Erro ao arquivar/limpar histórico antigo:', err?.message);
+        }
+      }
+
+      // 3. Purge from local cache and state
+      const remainingItems = cached.filter((item) => (item.timestamp || 0) >= cutoffTimestamp);
+      setHistoricoEdicoes(remainingItems);
+      saveLocalHistorico(remainingItems);
+
+      return {
+        exportados: remoteOldItems.length || oldCachedItems.length,
+        removidos: remoteOldItems.length || oldCachedItems.length,
+      };
+    },
+    []
+  );
+
+  // 2. Subscribe to metadata/importInfo and trigger refresh if a new import happens
+  const lastImportTimestampRef = React.useRef<string | null>(null);
+
   useEffect(() => {
     if (!user) {
       setLastImportInfo(null);
@@ -475,7 +619,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       metaDocRef,
       (snap) => {
         if (snap.exists()) {
-          setLastImportInfo(snap.data() as ImportMetadata);
+          const data = snap.data() as ImportMetadata;
+          setLastImportInfo(data);
+          if (data.dataHora) {
+            if (lastImportTimestampRef.current && lastImportTimestampRef.current !== data.dataHora) {
+              // Remote import detected from another session: refresh records
+              refreshRegistros();
+            }
+            lastImportTimestampRef.current = data.dataHora;
+          }
         }
       },
       (err) => {
@@ -484,7 +636,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
     return () => unsubMeta();
-  }, [user]);
+  }, [user, refreshRegistros]);
 
   // 3. Subscribe to segmentacoes
   useEffect(() => {
@@ -583,20 +735,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
 
-    await setDoc(docRef, updatePayload, { merge: true });
+    // Atomic batch update: record update + all history audit logs in a single network round-trip commit
+    if (isFirebaseConfigured) {
+      try {
+        const batch = writeBatch(db);
+        batch.set(docRef, updatePayload, { merge: true });
 
-    // Save history items to Firestore & local state
-    if (logItems.length > 0) {
-      if (isFirebaseConfigured) {
-        for (const logItem of logItems) {
-          try {
+        if (logItems.length > 0) {
+          for (const logItem of logItems) {
             const histRef = doc(db, 'historico_edicoes', logItem.id!);
-            await setDoc(histRef, logItem);
-          } catch (e) {
-            console.warn('Erro ao salvar item de auditoria:', e);
+            batch.set(histRef, logItem);
           }
         }
+
+        await commitBatchWithTimeout(batch, 15000, 'atualização de registro e histórico');
+      } catch (e: any) {
+        checkQuotaError(e);
+        console.warn('Erro ao salvar no Firestore via batch:', e?.message);
+        throw e;
       }
+    }
+
+    // Save history items to local state & storage
+    if (logItems.length > 0) {
       setHistoricoEdicoes((prev) => {
         const next = deduplicateHistorico([...logItems, ...prev]);
         saveLocalHistorico(next);
@@ -606,7 +767,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Optimistic local state update
     setRegistros((prev) =>
-      prev.map((item) => (item.DC === dc ? { ...item, ...bloco2 } : item))
+      prev.map((item) =>
+        item.DC === dc
+          ? {
+              ...item,
+              ...bloco2,
+              _updatedAt: updatePayload._updatedAt,
+              _updatedBy: updatePayload._updatedBy,
+            }
+          : item
+      )
     );
   };
 
@@ -1333,6 +1503,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         refreshRegistros,
         fetchHistoricoForDC,
         exportarAuditoriaGeral,
+        arquivarELimparHistorico,
         updateRegistroBloco2,
         addSegmentacaoOpcao,
         addMultiplasSegmentacaoOpcoes,
