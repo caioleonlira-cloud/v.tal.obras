@@ -264,8 +264,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [user]);
 
-  // Listen to all users in Firestore in realtime
+  // Listen to all users in Firestore in realtime (only when user is authenticated)
   useEffect(() => {
+    if (!user) {
+      setUsersList([]);
+      return;
+    }
+
     const usersCol = collection(db, 'users');
     const unsub = onSnapshot(
       usersCol,
@@ -299,7 +304,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const login = async (email: string, pass: string) => {
     setError(null);
@@ -324,14 +329,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
               await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
             } catch (authErr: any) {
+              if (authErr.code === 'auth/operation-not-allowed') {
+                throw new Error(
+                  'O provedor Email/Senha não está ativado no Firebase Console. Acesse o Firebase Console > Authentication > Sign-in method e ative o provedor "E-mail/Senha" para autorizar operações administrativas.'
+                );
+              }
               if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
                 try {
                   await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-                } catch (_) {}
+                } catch (createErr: any) {
+                  console.warn('Auto-criação de conta admin no Firebase Auth:', createErr?.code || createErr?.message);
+                }
               }
             }
           }
-        } catch (_) {}
+        } catch (e: any) {
+          if (e.message?.includes('provedor Email/Senha')) {
+            throw e;
+          }
+        }
 
         const adminUid = auth.currentUser?.uid || `admin-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
         const adminProfile: UserProfile = {
@@ -343,9 +359,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedAt: new Date().toISOString(),
         };
 
-        // Persist to Firestore
+        // Persist to Firestore in both UID and legacy key to guarantee RBAC matches rules
         try {
           await setDoc(doc(db, 'users', adminProfile.uid), adminProfile, { merge: true });
+          if (auth.currentUser?.uid && adminProfile.uid !== 'admin-caio_lira_telemontrms_com_br') {
+            await setDoc(doc(db, 'users', 'admin-caio_lira_telemontrms_com_br'), adminProfile, { merge: true });
+          }
         } catch (e) {
           console.warn('Erro ao salvar admin no Firestore:', e);
         }
@@ -591,6 +610,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const removeUser = async (uid: string) => {
+    if (!auth.currentUser) {
+      throw new Error(
+        'Sua sessão segura no Firebase Authentication não está ativa. Por favor, saia do sistema e faça login novamente com seu e-mail e senha para revalidar seu token de Administrador.'
+      );
+    }
     const userDocRef = doc(db, 'users', uid);
     await deleteDoc(userDocRef);
   };

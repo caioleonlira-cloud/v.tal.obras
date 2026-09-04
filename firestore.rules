@@ -11,14 +11,36 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Verifica se o usuário autenticado possui perfil de Administrador (ADM):
-    // 1. Por lista de e-mails mestres do sistema (garante acesso imediato);
-    // 2. Pelo campo "role" salvo no documento correspondente em users/{uid}.
-    function isAdmin() {
+    // Verifica se o usuário autenticado é o Administrador Master do Sistema
+    // Cobre qualquer variação de maiúsculas/minúsculas no e-mail caio.lira@telemontrms.com.br e caioleonlira@gmail.com
+    function isMasterAdmin() {
       return isSignedIn() && (
-        request.auth.token.email in ['caio.lira@telemontrms.com.br', 'caioleonlira@gmail.com'] ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADM')
+        request.auth.token.email in [
+          'caio.lira@telemontrms.com.br',
+          'Caio.Lira@telemontrms.com.br',
+          'CAIO.LIRA@TELEMONTRMS.COM.BR',
+          'caioleonlira@gmail.com',
+          'Caioleonlira@gmail.com',
+          'CAIOLEONLIRA@GMAIL.COM'
+        ] ||
+        (request.auth.token.email != null &&
+         (request.auth.token.email.matches('(?i)caio\\.lira@telemontrms\\.com\\.br') ||
+          request.auth.token.email.matches('(?i)caioleonlira@gmail\\.com')))
+      );
+    }
+
+    // Verifica se o usuário autenticado possui perfil de Administrador (ADM):
+    // 1. Administrador Master (caio.lira@telemontrms.com.br / caioleonlira@gmail.com);
+    // 2. Ou pelo campo "role == 'ADM'" salvo no documento em users/{uid}.
+    function isAdmin() {
+      return isMasterAdmin() || (
+        isSignedIn() && (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADM') ||
+          (exists(/databases/$(database)/documents/users/admin-caio_lira_telemontrms_com_br) &&
+           request.auth.token.email != null &&
+           request.auth.token.email.matches('(?i)caio\\.lira@telemontrms\\.com\\.br'))
+        )
       );
     }
 
@@ -147,4 +169,3 @@ service cloud.firestore {
     }
   }
 }
-
