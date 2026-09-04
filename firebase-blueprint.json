@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "registros": {
+      "title": "Registros de Obras (DCs)",
+      "description": "Armazena as informações de medição e acompanhamento das obras/DCs.",
+      "properties": {
+        "DC": { "type": "string", "description": "Identificador único da DC" },
+        "REG": { "type": "string" },
+        "TIPO (Cateira)": { "type": "string" },
+        "DR": { "type": "string" },
+        "Seq": { "type": "string" },
+        "Dc Simulação": { "type": "string" },
+        "Orçamento": { "type": "string" },
+        "Status Med. Parcial": { "type": "string" },
+        "Valor Parcial R$": { "type": "string" },
+        "Status Med. Final": { "type": "string" },
+        "Valor Final R$": { "type": "string" },
+        "Tempo": { "type": "string" },
+        "AGING": { "type": "string" },
+        "Data Status": { "type": "string" },
+        "UF": { "type": "string" },
+        "Localidade": { "type": "string" },
+        "Tipo de Projeto": { "type": "string" },
+        "Descricao": { "type": "string" },
+        "Status da DC (Atual)": { "type": "string" },
+        "Backlog/Input?": { "type": "string" },
+        "Status Informe (Campo)": { "type": "string" },
+        "Resp.Medição": { "type": "string" },
+        "Pendência (Implantação)": { "type": "string" },
+        "Pendência (Celula Sap)": { "type": "string" },
+        "Pendência (Projetos)": { "type": "string" },
+        "Data Previsão Entrega (Medição)": { "type": "string" },
+        "Data Previsão Entrega (Projeto)": { "type": "string" },
+        "Responsavel": { "type": "string" },
+        "Data Tratativa": { "type": "string" },
+        "OBS (Medição)": { "type": "string" }
+      },
+      "required": ["DC"]
+    },
+    "segmentacoes": {
+      "title": "Listas de Segmentação",
+      "description": "Armazena as opções de dropdown para os campos do Bloco 2.",
+      "properties": {
+        "nome": { "type": "string" },
+        "opcoes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["nome", "opcoes"]
+    },
+    "users": {
+      "title": "Usuários do Sistema",
+      "description": "Armazena os perfis e permissões dos usuários.",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADM", "PADRAO"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["email", "role"]
+    }
+  }
+}

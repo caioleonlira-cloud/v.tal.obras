@@ -1,0 +1,6 @@
+{
+  "name": "V.TAL OBRAS",
+  "description": "Sistema completo para controle e acompanhamento de medições de obras/DCs com Firestore, importação de planilhas e segmentações.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
