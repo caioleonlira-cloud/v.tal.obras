@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import {
+  User,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   onAuthStateChanged,
@@ -82,6 +83,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Reusable function to synchronize user profile from Firestore with retry and backoff
+  const syncUserProfile = async (currentUser: User | any, attempt = 1): Promise<boolean> => {
+    if (!currentUser || !currentUser.uid) return false;
+
+    try {
+      const currentLocalDate = new Date().toLocaleDateString('sv');
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      const isInitialAdmin = isSystemAdminEmail(currentUser.email);
+      const defaultName =
+        currentUser.displayName ||
+        (isInitialAdmin ? 'Caio Lira' : currentUser.email?.split('@')[0] || 'Usuário');
+
+      let syncedProfile: UserProfile;
+
+      if (userDoc.exists()) {
+        const data = userDoc.data() as UserProfile;
+        syncedProfile = {
+          ...data,
+          role: isInitialAdmin ? ('ADM' as UserRole) : data.role,
+        };
+      } else {
+        syncedProfile = {
+          uid: currentUser.uid,
+          email: currentUser.email || '',
+          name: defaultName,
+          role: isInitialAdmin ? 'ADM' : 'PADRAO',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(userDocRef, syncedProfile, { merge: true });
+      }
+
+      setProfile(syncedProfile);
+      setUser({
+        uid: currentUser.uid,
+        email: currentUser.email || '',
+        displayName: syncedProfile.name,
+      });
+
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(syncedProfile));
+      if (!localStorage.getItem(SESSION_DATE_KEY)) {
+        localStorage.setItem(SESSION_DATE_KEY, currentLocalDate);
+      }
+      if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
+        localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
+      }
+
+      return true;
+    } catch (err: any) {
+      console.warn(`Tentativa ${attempt} de sincronizar perfil falhou:`, err?.message || err);
+      if (attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+        return syncUserProfile(currentUser, attempt + 1);
+      }
+      console.error('Erro definitivo ao sincronizar perfil do usuário após retries:', err);
+      return false;
+    }
+  };
+
   // Restore session from localStorage or Firebase Auth
   useEffect(() => {
     ensureAdminDoc();
@@ -134,61 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        try {
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          const userDoc = await getDoc(userDocRef);
-
-          const isInitialAdmin = isSystemAdminEmail(currentUser.email);
-          const defaultName =
-            currentUser.displayName ||
-            (isInitialAdmin ? 'Caio Lira' : currentUser.email?.split('@')[0] || 'Usuário');
-
-          if (userDoc.exists()) {
-            const data = userDoc.data() as UserProfile;
-            const updatedProfile = {
-              ...data,
-              role: isInitialAdmin ? ('ADM' as UserRole) : data.role,
-            };
-            setProfile(updatedProfile);
-            setUser({
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: updatedProfile.name,
-            });
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedProfile));
-            if (!localStorage.getItem(SESSION_DATE_KEY)) {
-              localStorage.setItem(SESSION_DATE_KEY, currentLocalDate);
-            }
-            if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
-              localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-            }
-          } else {
-            const newProfile: UserProfile = {
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              name: defaultName,
-              role: isInitialAdmin ? 'ADM' : 'PADRAO',
-              status: 'active',
-              createdAt: new Date().toISOString(),
-            };
-            await setDoc(userDocRef, newProfile, { merge: true });
-            setProfile(newProfile);
-            setUser({
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: defaultName,
-            });
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newProfile));
-            if (!localStorage.getItem(SESSION_DATE_KEY)) {
-              localStorage.setItem(SESSION_DATE_KEY, currentLocalDate);
-            }
-            if (!localStorage.getItem(SESSION_TIMESTAMP_KEY)) {
-              localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-            }
-          }
-        } catch (err: any) {
-          console.error('Erro ao sincronizar perfil do usuário:', err);
-        }
+        await syncUserProfile(currentUser);
       }
       setLoading(false);
     });
@@ -313,9 +321,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 1. Try Firebase Auth if available
     try {
-      await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-      return;
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
+      const synced = await syncUserProfile(cred.user);
+      if (synced) return;
+      throw new Error('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
     } catch (err: any) {
+      if (err.message && err.message.includes('Não foi possível carregar seu perfil')) {
+        throw err;
+      }
       // If Firebase Auth is disabled or user not found in Firebase Auth, proceed to application credential check
       console.warn('Firebase Auth login fallback:', err.code || err.message);
     }
