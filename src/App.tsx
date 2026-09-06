@@ -11,6 +11,7 @@ import { DashboardView } from './components/Dashboard/DashboardView';
 import { ImportacaoView } from './components/Importacao/ImportacaoView';
 import { SegmentacoesView } from './components/Segmentacoes/SegmentacoesView';
 import { UsuariosView } from './components/Usuarios/UsuariosView';
+import { RegistrosFilterPayload } from './types';
 import { FileSpreadsheet, RefreshCw, AlertTriangle, X } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
@@ -19,6 +20,20 @@ const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTabType>('registros');
   const [isMinhaContaOpen, setIsMinhaContaOpen] = useState(false);
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
+  const [registrosInitialFilters, setRegistrosInitialFilters] = useState<RegistrosFilterPayload | null>(null);
+
+  const handleNavigateToRegistros = (filters: RegistrosFilterPayload) => {
+    setRegistrosInitialFilters(filters);
+    setActiveTab('registros');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Garantir que ao autenticar/logar, a tela inicial seja sempre a aba "Registros" (Ponto 4)
+  React.useEffect(() => {
+    if (user?.uid) {
+      setActiveTab('registros');
+    }
+  }, [user?.uid]);
 
   if (loading) {
     return (
@@ -75,8 +90,15 @@ const MainLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'registros' && <RegistrosView />}
-        {activeTab === 'dashboard' && <DashboardView />}
+        {activeTab === 'registros' && (
+          <RegistrosView
+            initialFilters={registrosInitialFilters}
+            onClearInitialFilters={() => setRegistrosInitialFilters(null)}
+          />
+        )}
+        {activeTab === 'dashboard' && (
+          <DashboardView onNavigateToRegistros={handleNavigateToRegistros} />
+        )}
         {activeTab === 'importacao' && isAdmin && <ImportacaoView />}
         {activeTab === 'segmentacoes' && isAdmin && <SegmentacoesView />}
         {activeTab === 'usuarios' && isAdmin && <UsuariosView />}

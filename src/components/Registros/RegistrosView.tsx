@@ -6,6 +6,7 @@ import {
   BLOCO_1_KEYS,
   BLOCO_2_KEYS,
   ALL_COLUMNS,
+  RegistrosFilterPayload,
 } from '../../types';
 import {
   exportarRegistrosParaExcel,
@@ -41,7 +42,15 @@ import {
 } from 'lucide-react';
 import { useAutoExportADM } from '../../hooks/useAutoExportADM';
 
-export const RegistrosView: React.FC = () => {
+export interface RegistrosViewProps {
+  initialFilters?: RegistrosFilterPayload | null;
+  onClearInitialFilters?: () => void;
+}
+
+export const RegistrosView: React.FC<RegistrosViewProps> = ({
+  initialFilters,
+  onClearInitialFilters,
+}) => {
   const { isAdmin, user, profile } = useAuth();
   const {
     registros,
@@ -73,7 +82,7 @@ export const RegistrosView: React.FC = () => {
   // 1. Search by DC and Descricao
   const [searchDC, setSearchDC] = useState('');
 
-  // 2. 8 Multi-Select Filters
+  // 2. Multi-Select Filters (including Ponto 5: Novos filtros)
   const [filterRegional, setFilterRegional] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterCarteira, setFilterCarteira] = useState<string[]>([]);
@@ -82,8 +91,15 @@ export const RegistrosView: React.FC = () => {
   const [filterStatusInforme, setFilterStatusInforme] = useState<string[]>([]);
   const [filterResponsavel, setFilterResponsavel] = useState<string[]>([]);
   const [filterTipoProjeto, setFilterTipoProjeto] = useState<string[]>([]);
+  const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
+  const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
 
-  // 3. Pagination & Sorting
+  // Interactive filters triggered by Dashboard clicks
+  const [filterOnlyWithParcial, setFilterOnlyWithParcial] = useState(false);
+  const [filterOnlyWithFinal, setFilterOnlyWithFinal] = useState(false);
+  const [filterOnlyWithMedido, setFilterOnlyWithMedido] = useState(false);
+
+  // 3. Pagination & Sorting (Ponto 3: Persistir ordenação personalizada)
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState<number>(() => {
     try {
@@ -99,13 +115,61 @@ export const RegistrosView: React.FC = () => {
     }
     return 25;
   });
-  const [sortColumn, setSortColumn] = useState<string>('DC');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [sortColumn, setSortColumn] = useState<string>(() => {
+    try {
+      return localStorage.getItem('vtal_registros_sort_col') || 'DC';
+    } catch {
+      return 'DC';
+    }
+  });
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(() => {
+    try {
+      const saved = localStorage.getItem('vtal_registros_sort_dir');
+      return saved === 'desc' ? 'desc' : 'asc';
+    } catch {
+      return 'asc';
+    }
+  });
   const [freezeDcColumn, setFreezeDcColumn] = useState(true);
 
   // Controls for collapsible panels
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(true);
   const [isIndicatorsExpanded, setIsIndicatorsExpanded] = useState(true);
+
+  // Handle initial filters passed from Dashboard
+  useEffect(() => {
+    if (initialFilters) {
+      if (initialFilters.regional !== undefined) {
+        setFilterRegional(initialFilters.regional);
+      }
+      if (initialFilters.responsavel !== undefined) {
+        setFilterResponsavel(initialFilters.responsavel);
+      }
+      if (initialFilters.onlyWithParcial !== undefined) {
+        setFilterOnlyWithParcial(initialFilters.onlyWithParcial);
+      } else {
+        setFilterOnlyWithParcial(false);
+      }
+      if (initialFilters.onlyWithFinal !== undefined) {
+        setFilterOnlyWithFinal(initialFilters.onlyWithFinal);
+      } else {
+        setFilterOnlyWithFinal(false);
+      }
+      if (initialFilters.onlyWithMedido !== undefined) {
+        setFilterOnlyWithMedido(initialFilters.onlyWithMedido);
+      } else {
+        setFilterOnlyWithMedido(false);
+      }
+      if (initialFilters.sortBy) {
+        setSortColumn(initialFilters.sortBy);
+        if (initialFilters.sortDirection) {
+          setSortDirection(initialFilters.sortDirection);
+        }
+      }
+      setCurrentPage(1);
+      setIsFiltersExpanded(true);
+    }
+  }, [initialFilters]);
 
   // Sticky header state
   const [isSticky, setIsSticky] = useState(false);
@@ -185,10 +249,33 @@ export const RegistrosView: React.FC = () => {
       if (!item['Tipo de Projeto'] || !filterTipoProjeto.includes(item['Tipo de Projeto'].trim()))
         return false;
     }
+    // Ponto 5: Novos filtros Status Med. Parcial e Status Med. Final
+    if (excludeKey !== 'STATUS_MED_PARCIAL' && filterStatusMedParcial.length > 0) {
+      const val = (item['Status Med. Parcial'] || '').trim();
+      if (!val || !filterStatusMedParcial.includes(val)) return false;
+    }
+    if (excludeKey !== 'STATUS_MED_FINAL' && filterStatusMedFinal.length > 0) {
+      const val = (item['Status Med. Final'] || '').trim();
+      if (!val || !filterStatusMedFinal.includes(val)) return false;
+    }
+    // Interactive Value Filters from Dashboard
+    if (filterOnlyWithParcial) {
+      const p = parseCurrencyValue(item['Valor Parcial R$']);
+      if (p <= 0) return false;
+    }
+    if (filterOnlyWithFinal) {
+      const f = parseCurrencyValue(item['Valor Final R$']);
+      if (f <= 0) return false;
+    }
+    if (filterOnlyWithMedido) {
+      const p = parseCurrencyValue(item['Valor Parcial R$']);
+      const f = parseCurrencyValue(item['Valor Final R$']);
+      if (p + f <= 0) return false;
+    }
     return true;
   };
 
-  // Derive correlated unique options & counts for the 8 multiselect filters
+  // Derive correlated unique options & counts for the multiselect filters
   const {
     regionalOptions,
     regionalCounts,
@@ -206,6 +293,10 @@ export const RegistrosView: React.FC = () => {
     responsavelCounts,
     tipoProjetoOptions,
     tipoProjetoCounts,
+    statusMedParcialOptions,
+    statusMedParcialCounts,
+    statusMedFinalOptions,
+    statusMedFinalCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
@@ -215,6 +306,8 @@ export const RegistrosView: React.FC = () => {
     const stInfCounts: Record<string, number> = {};
     const respCounts: Record<string, number> = {};
     const projCounts: Record<string, number> = {};
+    const stMedParcCounts: Record<string, number> = {};
+    const stMedFinCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
       // 1. REGIONAL
@@ -296,6 +389,26 @@ export const RegistrosView: React.FC = () => {
           projCounts[val] = 0;
         }
       }
+
+      // 9. Status Med. Parcial
+      if (r['Status Med. Parcial']) {
+        const val = r['Status Med. Parcial'].trim();
+        if (matchesFilterSubset(r, 'STATUS_MED_PARCIAL')) {
+          stMedParcCounts[val] = (stMedParcCounts[val] || 0) + 1;
+        } else if (filterStatusMedParcial.includes(val) && !stMedParcCounts[val]) {
+          stMedParcCounts[val] = 0;
+        }
+      }
+
+      // 10. Status Med. Final
+      if (r['Status Med. Final']) {
+        const val = r['Status Med. Final'].trim();
+        if (matchesFilterSubset(r, 'STATUS_MED_FINAL')) {
+          stMedFinCounts[val] = (stMedFinCounts[val] || 0) + 1;
+        } else if (filterStatusMedFinal.includes(val) && !stMedFinCounts[val]) {
+          stMedFinCounts[val] = 0;
+        }
+      }
     });
 
     // Ensure configured segmentations are present
@@ -336,6 +449,10 @@ export const RegistrosView: React.FC = () => {
       responsavelCounts: respCounts,
       tipoProjetoOptions: Object.keys(projCounts).sort(),
       tipoProjetoCounts: projCounts,
+      statusMedParcialOptions: Object.keys(stMedParcCounts).sort(),
+      statusMedParcialCounts: stMedParcCounts,
+      statusMedFinalOptions: Object.keys(stMedFinCounts).sort(),
+      statusMedFinalCounts: stMedFinCounts,
     };
   }, [
     registros,
@@ -349,9 +466,11 @@ export const RegistrosView: React.FC = () => {
     filterStatusInforme,
     filterResponsavel,
     filterTipoProjeto,
+    filterStatusMedParcial,
+    filterStatusMedFinal,
   ]);
 
-  // Filter Registros (Search in DC or Descricao + 8 Multiselects)
+  // Filter Registros (Search in DC or Descricao + 10 Multiselects + Value filters)
   const filteredRegistros = useMemo(() => {
     return registros.filter((item) => matchesFilterSubset(item));
   }, [
@@ -365,6 +484,11 @@ export const RegistrosView: React.FC = () => {
     filterStatusInforme,
     filterResponsavel,
     filterTipoProjeto,
+    filterStatusMedParcial,
+    filterStatusMedFinal,
+    filterOnlyWithParcial,
+    filterOnlyWithFinal,
+    filterOnlyWithMedido,
   ]);
 
   // Calculate Summary Totals from filtered rows
@@ -426,11 +550,19 @@ export const RegistrosView: React.FC = () => {
   }, [sortedRegistros, currentPage, rowsPerPage]);
 
   const handleSort = (col: string) => {
+    let nextDir: 'asc' | 'desc' = 'asc';
     if (sortColumn === col) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      nextDir = sortDirection === 'asc' ? 'desc' : 'asc';
+      setSortDirection(nextDir);
     } else {
       setSortColumn(col);
       setSortDirection('asc');
+    }
+    try {
+      localStorage.setItem('vtal_registros_sort_col', col);
+      localStorage.setItem('vtal_registros_sort_dir', nextDir);
+    } catch {
+      // ignore
     }
   };
 
@@ -453,6 +585,14 @@ export const RegistrosView: React.FC = () => {
     setFilterStatusInforme([]);
     setFilterResponsavel([]);
     setFilterTipoProjeto([]);
+    setFilterStatusMedParcial([]);
+    setFilterStatusMedFinal([]);
+    setFilterOnlyWithParcial(false);
+    setFilterOnlyWithFinal(false);
+    setFilterOnlyWithMedido(false);
+    if (onClearInitialFilters) {
+      onClearInitialFilters();
+    }
     setCurrentPage(1);
   };
 
@@ -465,7 +605,12 @@ export const RegistrosView: React.FC = () => {
     filterStatusAtual.length +
     filterStatusInforme.length +
     filterResponsavel.length +
-    filterTipoProjeto.length;
+    filterTipoProjeto.length +
+    filterStatusMedParcial.length +
+    filterStatusMedFinal.length +
+    (filterOnlyWithParcial ? 1 : 0) +
+    (filterOnlyWithFinal ? 1 : 0) +
+    (filterOnlyWithMedido ? 1 : 0);
 
   // Status badge styling helper
   const getStatusBadgeClass = (status?: string) => {
@@ -598,22 +743,42 @@ export const RegistrosView: React.FC = () => {
 
     return (
       <tr className="text-white text-[11px] font-bold uppercase tracking-wider">
-        {/* Sticky Action Column */}
+        {/* Sticky Action Column (100% opaco, largura fixa e sem sobreposição) */}
         <th
-          style={getColStyle()}
-          className="py-2 px-2.5 bg-[#001e40] border-r border-slate-700 sticky left-0 z-30 min-w-[80px] text-center"
+          style={{
+            ...getColStyle(),
+            backgroundColor: '#001e40',
+            position: 'sticky',
+            left: 0,
+            zIndex: 45,
+            opacity: 1,
+            isolation: 'isolate',
+          }}
+          className="py-2 px-2 border-r border-b border-slate-700 w-[84px] min-w-[84px] max-w-[84px] text-center"
         >
           Ações
         </th>
 
-        {/* Sticky / Regular DC Identifier */}
+        {/* Sticky / Regular DC Identifier (100% opaco, alinhado e com sombra de elevação) */}
         <th
-          style={getColStyle()}
+          style={{
+            ...getColStyle(),
+            backgroundColor: '#001e40',
+            ...(freezeDcColumn
+              ? {
+                  position: 'sticky',
+                  left: 84,
+                  zIndex: 40,
+                  opacity: 1,
+                  isolation: 'isolate',
+                }
+              : {}),
+          }}
           onClick={() => handleSort('DC')}
-          className={`py-2 px-3 bg-[#001e40] border-r border-slate-700 z-30 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors ${
+          className={`py-2 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors ${
             freezeDcColumn
-              ? 'sticky left-[80px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]'
-              : ''
+              ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-slate-600'
+              : 'z-10'
           }`}
         >
           <div className="flex items-center justify-between space-x-1.5">
@@ -641,7 +806,7 @@ export const RegistrosView: React.FC = () => {
               key={colKey}
               style={getColStyle()}
               onClick={() => handleSort(colKey)}
-              className={`py-2 px-3 bg-[#002855] hover:bg-[#002046] transition-colors border-r border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer ${
+              className={`py-2 px-3 bg-[#002855] hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer ${
                 colKey === 'REG' || colKey === 'UF' || colKey === 'AGING'
                   ? 'min-w-[80px]'
                   : ''
@@ -673,7 +838,7 @@ export const RegistrosView: React.FC = () => {
               key={colKey}
               style={getColStyle()}
               onClick={() => handleSort(colKey)}
-              className="py-2 px-3 bg-[#003875] hover:bg-[#002f66] transition-colors border-r border-slate-700/80 whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
+              className="py-2 px-3 bg-[#003875] hover:bg-[#002f66] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
             >
               <div className="flex items-center justify-center space-x-1.5">
                 <span className="truncate">{colKey}</span>
@@ -800,31 +965,31 @@ export const RegistrosView: React.FC = () => {
               </span>
             </div>
           )}
-          {/* Botão Auditoria */}
-          <div className="flex items-center space-x-1">
-            <button
-              id="btn-export-audit"
-              onClick={async () => {
-                try {
-                  setIsExportingAudit(true);
-                  await exportarAuditoriaGeral(1000);
-                } finally {
-                  setIsExportingAudit(false);
-                }
-              }}
-              disabled={isExportingAudit}
-              title="Exportar relatório de histórico e auditoria de edições"
-              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#002855] border border-slate-300 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-            >
-              {isExportingAudit ? (
-                <RefreshCw className="w-3 h-3 text-cyan-600 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-600" />
-              )}
-              <span>{isExportingAudit ? 'Gerando...' : 'Auditoria'}</span>
-            </button>
+          {/* Botão Auditoria (Ponto 2: Apenas perfil ADM) */}
+          {isAdmin && (
+            <div className="flex items-center space-x-1">
+              <button
+                id="btn-export-audit"
+                onClick={async () => {
+                  try {
+                    setIsExportingAudit(true);
+                    await exportarAuditoriaGeral(1000);
+                  } finally {
+                    setIsExportingAudit(false);
+                  }
+                }}
+                disabled={isExportingAudit}
+                title="Exportar relatório de histórico e auditoria de edições"
+                className="px-2.5 py-1 bg-white hover:bg-slate-50 text-[#002855] border border-slate-300 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+              >
+                {isExportingAudit ? (
+                  <RefreshCw className="w-3 h-3 text-cyan-600 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-600" />
+                )}
+                <span>{isExportingAudit ? 'Gerando...' : 'Auditoria'}</span>
+              </button>
 
-            {isAdmin && (
               <button
                 id="btn-archive-history"
                 onClick={async () => {
@@ -851,8 +1016,8 @@ export const RegistrosView: React.FC = () => {
                 <Archive className="w-3.5 h-3.5 text-amber-600" />
                 <span className="hidden xl:inline">Arquivar &gt;90d</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Botão Exportar Excel */}
           <button
@@ -893,10 +1058,10 @@ export const RegistrosView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Painel Retrátil de Busca e 8 Filtros (Compacto e Responsivo) */}
+      {/* 2. Painel Retrátil de Busca e 10 Filtros (Compacto e Responsivo) */}
       {isFiltersExpanded && (
         <div className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-11 gap-2 items-end">
             {/* Campo de Busca por DC ou Descrição */}
             <div className="xl:col-span-1">
               <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
@@ -973,21 +1138,7 @@ export const RegistrosView: React.FC = () => {
               placeholder="Todas"
             />
 
-            {/* 4. AGING -> Coluna AGING */}
-            <MultiSelectFilter
-              label="AGING"
-              columnRefName="AGING"
-              options={agingOptions}
-              selected={filterAging}
-              onChange={(sel) => {
-                setFilterAging(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={agingCounts}
-              placeholder="Todos"
-            />
-
-            {/* 5. Status da DC (Atual) -> Coluna Status da DC (Atual) */}
+            {/* 4. Status da DC (Atual) -> Coluna Status da DC (Atual) */}
             <MultiSelectFilter
               label="Status DC"
               columnRefName="Atual"
@@ -1042,6 +1193,34 @@ export const RegistrosView: React.FC = () => {
               optionCounts={tipoProjetoCounts}
               placeholder="Todos"
             />
+
+            {/* 9. Status Med. Parcial (Ponto 5) */}
+            <MultiSelectFilter
+              label="Status Med. Parcial"
+              columnRefName="Parcial"
+              options={statusMedParcialOptions}
+              selected={filterStatusMedParcial}
+              onChange={(sel) => {
+                setFilterStatusMedParcial(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={statusMedParcialCounts}
+              placeholder="Todos"
+            />
+
+            {/* 10. Status Med. Final (Ponto 5) */}
+            <MultiSelectFilter
+              label="Status Med. Final"
+              columnRefName="Final"
+              options={statusMedFinalOptions}
+              selected={filterStatusMedFinal}
+              onChange={(sel) => {
+                setFilterStatusMedFinal(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={statusMedFinalCounts}
+              placeholder="Todos"
+            />
           </div>
         </div>
       )}
@@ -1080,6 +1259,46 @@ export const RegistrosView: React.FC = () => {
                 Total Medido: <strong className="text-cyan-800 font-extrabold">{totalMedidoTotal}</strong>
               </span>
             </>
+          )}
+
+          {filterOnlyWithParcial && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+              <span>Parcial &gt; R$ 0</span>
+              <button
+                type="button"
+                onClick={() => setFilterOnlyWithParcial(false)}
+                className="hover:text-emerald-950 ml-0.5 cursor-pointer"
+                title="Remover filtro"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
+          {filterOnlyWithFinal && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+              <span>Final &gt; R$ 0</span>
+              <button
+                type="button"
+                onClick={() => setFilterOnlyWithFinal(false)}
+                className="hover:text-emerald-950 ml-0.5 cursor-pointer"
+                title="Remover filtro"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
+          {filterOnlyWithMedido && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+              <span>Total Medido &gt; R$ 0</span>
+              <button
+                type="button"
+                onClick={() => setFilterOnlyWithMedido(false)}
+                className="hover:text-emerald-950 ml-0.5 cursor-pointer"
+                title="Remover filtro"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
           )}
 
           {activeFiltersCount > 0 && (
@@ -1163,7 +1382,7 @@ export const RegistrosView: React.FC = () => {
                 width: tableWidth > 0 ? `${tableWidth}px` : '100%',
                 minWidth: tableWidth > 0 ? `${tableWidth}px` : '100%',
               }}
-              className="text-left text-xs border-collapse"
+              className="text-left text-xs border-separate border-spacing-0"
             >
               <thead>{renderHeaderRow(true)}</thead>
             </table>
@@ -1179,14 +1398,14 @@ export const RegistrosView: React.FC = () => {
           onScroll={handleHorizontalScroll}
           className="overflow-x-auto relative custom-scrollbar"
         >
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-xs border-separate border-spacing-0">
             {/* Table Header original */}
             <thead ref={originalTheadRef} className="select-none">
               {renderHeaderRow(false)}
             </thead>
 
             {/* Table Body */}
-            <tbody className="divide-y divide-slate-200/80 bg-white">
+            <tbody className="bg-white">
               {paginatedRegistros.length === 0 ? (
                 <tr>
                   <td
@@ -1217,9 +1436,17 @@ export const RegistrosView: React.FC = () => {
                     key={`${item.DC || 'dc'}_${idx}`}
                     className="hover:bg-slate-50/90 transition-colors group"
                   >
-                    {/* Sticky Action Column - Reduced Edit Button + History Button */}
+                    {/* Sticky Action Column (100% opaco, fixo e isolado) */}
                     <td
-                      className="py-2 px-2 sticky left-0 z-20 bg-white group-hover:bg-slate-50 border-r border-slate-200 text-center shadow-xs"
+                      className="py-2 px-2 border-r border-b border-slate-200 text-center w-[84px] min-w-[84px] max-w-[84px]"
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 25,
+                        backgroundColor: '#ffffff',
+                        opacity: 1,
+                        isolation: 'isolate',
+                      }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-center space-x-1.5">
@@ -1243,12 +1470,26 @@ export const RegistrosView: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* Sticky / Regular DC Identifier Column */}
+                    {/* Sticky / Regular DC Identifier Column (100% sólido, z-index superior para cobrir colunas ao rolar) */}
                     <td
-                      className={`py-2 px-3 font-extrabold text-[#002855] bg-white group-hover:bg-slate-50 border-r border-slate-200 whitespace-nowrap select-text ${
+                      style={
                         freezeDcColumn
-                          ? 'sticky left-[80px] z-20 shadow-[3px_0_6px_-2px_rgba(0,0,0,0.12)]'
-                          : 'z-10'
+                          ? {
+                              position: 'sticky',
+                              left: 84,
+                              zIndex: 20,
+                              backgroundColor: '#ffffff',
+                              opacity: 1,
+                              isolation: 'isolate',
+                            }
+                          : {
+                              backgroundColor: '#ffffff',
+                            }
+                      }
+                      className={`py-2 px-3 font-extrabold text-[#002855] border-r border-b whitespace-nowrap select-text min-w-[130px] ${
+                        freezeDcColumn
+                          ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.18)] border-r-2 border-slate-300'
+                          : 'border-slate-200'
                       }`}
                     >
                       {item.DC}
@@ -1263,7 +1504,7 @@ export const RegistrosView: React.FC = () => {
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-slate-100 font-medium text-slate-700 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className="py-2 px-3 border-r border-b border-slate-100 font-medium text-slate-700 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -1276,7 +1517,7 @@ export const RegistrosView: React.FC = () => {
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className="py-2 px-3 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                           >
                             {val || <span className="text-slate-300">—</span>}
                           </td>
@@ -1290,7 +1531,7 @@ export const RegistrosView: React.FC = () => {
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                           >
                             {val ? (
                               <span
@@ -1313,7 +1554,7 @@ export const RegistrosView: React.FC = () => {
                       return (
                         <td
                           key={colKey}
-                          className="py-2 px-3 border-r border-slate-100 text-slate-600 whitespace-nowrap max-w-xs truncate bg-slate-50/20 cursor-default select-text"
+                          className="py-2 px-3 border-r border-b border-slate-100 text-slate-600 whitespace-nowrap max-w-xs truncate bg-slate-50/20 cursor-default select-text"
                           title={val}
                         >
                           {val || <span className="text-slate-300">—</span>}
@@ -1331,7 +1572,7 @@ export const RegistrosView: React.FC = () => {
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-slate-100 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title="Clique para editar este registro"
                           >
                             {val ? (
@@ -1355,7 +1596,7 @@ export const RegistrosView: React.FC = () => {
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-slate-100 font-bold text-slate-800 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-2 px-3 border-r border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title="Clique para editar este registro"
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -1369,7 +1610,7 @@ export const RegistrosView: React.FC = () => {
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-slate-100 text-slate-700 max-w-xs truncate bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 max-w-xs truncate bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title={val || 'Clique para adicionar observação'}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -1382,7 +1623,7 @@ export const RegistrosView: React.FC = () => {
                         <td
                           key={colKey}
                           onClick={() => handleOpenEdit(item)}
-                          className="py-2 px-3 border-r border-slate-100 text-slate-700 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                          className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                           title="Clique para editar este registro"
                         >
                           {val ? (

@@ -517,8 +517,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     []
   );
 
-  // On-demand export for general audit report (only executes when requested)
+  // On-demand export for general audit report (only executes when requested by ADM)
   const exportarAuditoriaGeral = useCallback(async (limite = 1000) => {
+    if (!isAdmin) {
+      throw new Error('Acesso restrito: Apenas administradores possuem permissão para exportar o relatório de auditoria.');
+    }
+
     const cached = getLocalStoredHistorico();
     if (!isFirebaseConfigured) {
       exportarRelatorioHistoricoParaExcel(cached, 'VTAL_Relatorio_Auditoria_Edicoes');
@@ -555,6 +559,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Routine to archive and purge legacy edit history (> X days, default 90 days / 3 months)
   const arquivarELimparHistorico = useCallback(
     async (diasRetencao = 90): Promise<{ exportados: number; removidos: number }> => {
+      if (!isAdmin) {
+        throw new Error('Acesso restrito: Apenas administradores possuem permissão para arquivar o histórico de auditoria.');
+      }
+
       const cutoffTimestamp = Date.now() - diasRetencao * 24 * 60 * 60 * 1000;
       const cached = getLocalStoredHistorico();
       const oldCachedItems = cached.filter((item) => (item.timestamp || 0) < cutoffTimestamp);

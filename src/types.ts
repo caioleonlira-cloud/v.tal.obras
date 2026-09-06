@@ -254,3 +254,26 @@ export function isSystemAdminEmail(email?: string | null): boolean {
   return ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === clean);
 }
 
+export function getRegistroCarteira(r: Partial<Registro> | any): string {
+  if (!r) return '';
+  return (
+    r['TIPO (Cateira)'] ||
+    r['TIPO (CARTEIRA)'] ||
+    r['TIPO (Carteira)'] ||
+    r['Tipo (Carteira)'] ||
+    r['CARTEIRA'] ||
+    r['Carteira'] ||
+    ''
+  ).trim();
+}
+
+export interface RegistrosFilterPayload {
+  regional?: string[];
+  responsavel?: string[];
+  onlyWithParcial?: boolean;
+  onlyWithFinal?: boolean;
+  onlyWithMedido?: boolean;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
