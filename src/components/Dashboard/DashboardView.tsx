@@ -729,9 +729,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           {/* Row 2: Collapsible Filters */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-11 gap-2 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2 items-end">
                 {/* Search DC */}
-                <div className="xl:col-span-1">
+                <div className="w-full">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
                     Buscar DC
                   </label>

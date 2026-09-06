@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   const userName = profile?.name || user?.email?.split('@')[0] || 'caio.lira';
 
   return (
-    <header className="sticky top-0 z-40 w-full shadow-md select-none font-sans">
+    <header id="corporate-header" className="sticky top-0 z-50 w-full shadow-md select-none font-sans isolate bg-[#06152d]">
       {/* =========================================================================
           LINHA 1 — Identidade e Usuário (~40px, fundo #0a1f44)
           ========================================================================= */}

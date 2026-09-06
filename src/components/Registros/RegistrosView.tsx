@@ -171,16 +171,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     }
   }, [initialFilters]);
 
-  // Sticky header state
-  const [isSticky, setIsSticky] = useState(false);
-  const [stickyTop, setStickyTop] = useState(78);
-  const [tableRect, setTableRect] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
-  const [columnWidths, setColumnWidths] = useState<number[]>([]);
-  const [tableWidth, setTableWidth] = useState<number>(0);
-
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const originalTheadRef = useRef<HTMLTableSectionElement>(null);
-  const floatingHeaderScrollRef = useRef<HTMLDivElement>(null);
 
   // Selected row for Edit/View Modal
   const [selectedRegistro, setSelectedRegistro] = useState<Registro | null>(null);
@@ -677,148 +668,55 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   // 2. Team Editable Columns (All Bloco 2)
   const equipeEditableColumns = BLOCO_2_KEYS;
 
-  // Measure column widths from the original thead so the sticky header aligns 100%
-  const measureColumns = useCallback(() => {
-    if (!originalTheadRef.current || !tableContainerRef.current) return;
-    const ths = originalTheadRef.current.querySelectorAll('th');
-    if (ths.length === 0) return;
-    const widths: number[] = [];
-    ths.forEach((th) => {
-      widths.push(th.getBoundingClientRect().width);
-    });
-    setColumnWidths(widths);
-
-    const tableEl = tableContainerRef.current.querySelector('table');
-    if (tableEl) {
-      setTableWidth(tableEl.getBoundingClientRect().width);
-    }
-  }, []);
-
-  // Update sticky state on window scroll & window resize
-  const updateStickyState = useCallback(() => {
-    if (!tableContainerRef.current) return;
-    const headerEl = document.querySelector('header');
-    const headerBottom = headerEl ? headerEl.getBoundingClientRect().bottom : 78;
-    const containerRect = tableContainerRef.current.getBoundingClientRect();
-
-    setStickyTop(headerBottom);
-    setTableRect({ left: containerRect.left, width: containerRect.width });
-
-    // Table header should stick when top of table scrolls past headerBottom
-    // and bottom of table is still below headerBottom + 60px
-    const shouldStick = containerRect.top <= headerBottom && containerRect.bottom > (headerBottom + 60);
-    setIsSticky(shouldStick);
-
-    // Sync horizontal scroll
-    if (floatingHeaderScrollRef.current && tableContainerRef.current) {
-      floatingHeaderScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
-    }
-  }, []);
-
+  // Scroll table container back to top when page changes
   useEffect(() => {
-    measureColumns();
-  }, [measureColumns, sortedRegistros, freezeDcColumn]);
-
-  useEffect(() => {
-    let ticking = false;
-    const onScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          updateStickyState();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    const onResize = () => {
-      measureColumns();
-      updateStickyState();
-    };
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onResize, { passive: true });
-
-    let ro: ResizeObserver | null = null;
-    if (tableContainerRef.current && typeof window !== 'undefined' && 'ResizeObserver' in window) {
-      ro = new ResizeObserver(() => {
-        measureColumns();
-        updateStickyState();
-      });
-      ro.observe(tableContainerRef.current);
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = 0;
     }
+  }, [currentPage]);
 
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onResize);
-      if (ro) ro.disconnect();
-    };
-  }, [measureColumns, updateStickyState]);
+  // Altura máxima calculada para o container de rolagem próprio da tabela (relativo ao viewport)
+  const tableMaxHeight = useMemo(() => {
+    let offset = 245;
+    if (isFiltersExpanded) offset += 105;
+    if (isIndicatorsExpanded) offset += 45;
+    return `calc(100vh - ${offset}px)`;
+  }, [isFiltersExpanded, isIndicatorsExpanded]);
 
-  const handleHorizontalScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const scrollLeft = e.currentTarget.scrollLeft;
-    if (floatingHeaderScrollRef.current && floatingHeaderScrollRef.current.scrollLeft !== scrollLeft) {
-      floatingHeaderScrollRef.current.scrollLeft = scrollLeft;
-    }
-  };
-
-  const handleFloatingScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const scrollLeft = e.currentTarget.scrollLeft;
-    if (tableContainerRef.current && tableContainerRef.current.scrollLeft !== scrollLeft) {
-      tableContainerRef.current.scrollLeft = scrollLeft;
-    }
-  };
-
-  // Render header row for both the natural thead and the floating sticky header
-  const renderHeaderRow = (isFloating: boolean = false) => {
-    let colIndex = 0;
-    const getColStyle = () => {
-      const idx = colIndex++;
-      if (isFloating && columnWidths[idx]) {
-        const w = `${columnWidths[idx]}px`;
-        return { width: w, minWidth: w, maxWidth: w };
-      }
-      return undefined;
-    };
-
+  // Render header row com position: sticky nativo relativo ao container de rolagem
+  const renderHeaderRow = () => {
     return (
       <tr className="text-white text-[11px] font-bold uppercase tracking-wider">
-        {/* Sticky Action Column (100% opaco, largura fixa e sem sobreposição) */}
+        {/* Sticky Action Column (100% opaco, fixo no topo e na esquerda) */}
         <th
           style={{
-            ...getColStyle(),
             backgroundColor: '#001e40',
             position: 'sticky',
+            top: 0,
             left: 0,
-            zIndex: 45,
+            zIndex: 40,
             opacity: 1,
-            isolation: 'isolate',
           }}
-          className="py-2 px-2 border-r border-b border-slate-700 w-[84px] min-w-[84px] max-w-[84px] text-center"
+          className="py-2.5 px-2 border-r border-b border-slate-700 w-[84px] min-w-[84px] max-w-[84px] text-center"
         >
           Ações
         </th>
 
-        {/* Sticky / Regular DC Identifier (100% opaco, alinhado e com sombra de elevação) */}
+        {/* Sticky / Regular DC Identifier (100% opaco, fixo no topo e na esquerda quando congelado) */}
         <th
           style={{
-            ...getColStyle(),
             backgroundColor: '#001e40',
-            ...(freezeDcColumn
-              ? {
-                  position: 'sticky',
-                  left: 84,
-                  zIndex: 40,
-                  opacity: 1,
-                  isolation: 'isolate',
-                }
-              : {}),
+            position: 'sticky',
+            top: 0,
+            zIndex: freezeDcColumn ? 35 : 30,
+            opacity: 1,
+            ...(freezeDcColumn ? { left: 84 } : {}),
           }}
           onClick={() => handleSort('DC')}
-          className={`py-2 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors ${
+          className={`py-2.5 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors ${
             freezeDcColumn
               ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-slate-600'
-              : 'z-10'
+              : ''
           }`}
         >
           <div className="flex items-center justify-between space-x-1.5">
@@ -838,15 +736,21 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           </div>
         </th>
 
-        {/* --- GROUP 1: ALL IMPORTED BASE MATRIZ COLUMNS (First - Read-only) --- */}
+        {/* --- GROUP 1: ALL IMPORTED BASE MATRIZ COLUMNS (Sticky Top, Read-only) --- */}
         {baseMatrizColumns.map((colKey) => {
           const isSorted = sortColumn === colKey;
           return (
             <th
               key={colKey}
-              style={getColStyle()}
+              style={{
+                backgroundColor: '#002855',
+                position: 'sticky',
+                top: 0,
+                zIndex: 30,
+                opacity: 1,
+              }}
               onClick={() => handleSort(colKey)}
-              className={`py-2 px-3 bg-[#002855] hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer ${
+              className={`py-2.5 px-3 hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer ${
                 colKey === 'REG' || colKey === 'UF' || colKey === 'AGING'
                   ? 'min-w-[80px]'
                   : ''
@@ -870,15 +774,21 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           );
         })}
 
-        {/* --- GROUP 2: ALL TEAM EDITABLE COLUMNS (Centered) --- */}
+        {/* --- GROUP 2: ALL TEAM EDITABLE COLUMNS (Sticky Top, Centered) --- */}
         {equipeEditableColumns.map((colKey) => {
           const isSorted = sortColumn === colKey;
           return (
             <th
               key={colKey}
-              style={getColStyle()}
+              style={{
+                backgroundColor: '#003875',
+                position: 'sticky',
+                top: 0,
+                zIndex: 30,
+                opacity: 1,
+              }}
               onClick={() => handleSort(colKey)}
-              className="py-2 px-3 bg-[#003875] hover:bg-[#002f66] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
+              className="py-2.5 px-3 hover:bg-[#002f66] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
             >
               <div className="flex items-center justify-center space-x-1.5">
                 <span className="truncate">{colKey}</span>
@@ -1101,9 +1011,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       {/* 2. Painel Retrátil de Busca e 10 Filtros (Compacto e Responsivo) */}
       {isFiltersExpanded && (
         <div className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-11 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2 items-end">
             {/* Campo de Busca por DC ou Descrição */}
-            <div className="xl:col-span-1">
+            <div className="w-full">
               <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
                 Buscar DC/Descrição
               </label>
@@ -1399,49 +1309,21 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
       </div>
 
-      {/* Floating Sticky Header (Ativado na rolagem vertical da página para manter cabeçalho fixo) */}
-      {isSticky && (
-        <div
-          id="floating-sticky-header"
-          style={{
-            position: 'fixed',
-            top: `${stickyTop}px`,
-            left: `${tableRect.left}px`,
-            width: `${tableRect.width}px`,
-            zIndex: 35,
-          }}
-          className="overflow-hidden bg-[#001e40] shadow-md border-b border-slate-700 select-none rounded-t-xl"
-        >
-          <div
-            ref={floatingHeaderScrollRef}
-            onScroll={handleFloatingScroll}
-            className="overflow-x-hidden"
-          >
-            <table
-              style={{
-                width: tableWidth > 0 ? `${tableWidth}px` : '100%',
-                minWidth: tableWidth > 0 ? `${tableWidth}px` : '100%',
-              }}
-              className="text-left text-xs border-separate border-spacing-0"
-            >
-              <thead>{renderHeaderRow(true)}</thead>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Main Table Container */}
       <div className="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden relative">
-        {/* Scrollable Data Table - Rolagem Horizontal preservada, rolagem vertical conduzida pela página */}
+        {/* Scrollable Data Table - Rolagem Horizontal e Vertical próprias com cabeçalho sticky top: 0 */}
         <div
           ref={tableContainerRef}
-          onScroll={handleHorizontalScroll}
-          className="overflow-x-auto relative custom-scrollbar"
+          style={{
+            maxHeight: tableMaxHeight,
+            minHeight: '400px',
+          }}
+          className="overflow-y-auto overflow-x-auto relative custom-scrollbar"
         >
           <table className="w-full text-left text-xs border-separate border-spacing-0">
-            {/* Table Header original */}
-            <thead ref={originalTheadRef} className="select-none">
-              {renderHeaderRow(false)}
+            {/* Table Header original com sticky nativo */}
+            <thead className="sticky top-0 z-30 select-none">
+              {renderHeaderRow()}
             </thead>
 
             {/* Table Body */}
@@ -1476,16 +1358,15 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                     key={`${item.DC || 'dc'}_${idx}`}
                     className="hover:bg-slate-50/90 transition-colors group"
                   >
-                    {/* Sticky Action Column (100% opaco, fixo e isolado) */}
+                    {/* Sticky Action Column (100% opaco, fixo na esquerda) */}
                     <td
                       className="py-2 px-2 border-r border-b border-slate-200 text-center w-[84px] min-w-[84px] max-w-[84px]"
                       style={{
                         position: 'sticky',
                         left: 0,
-                        zIndex: 25,
+                        zIndex: 20,
                         backgroundColor: '#ffffff',
                         opacity: 1,
-                        isolation: 'isolate',
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -1510,17 +1391,16 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                       </div>
                     </td>
 
-                    {/* Sticky / Regular DC Identifier Column (100% sólido, z-index superior para cobrir colunas ao rolar) */}
+                    {/* Sticky / Regular DC Identifier Column (100% sólido, z-index superior a outras células) */}
                     <td
                       style={
                         freezeDcColumn
                           ? {
                               position: 'sticky',
                               left: 84,
-                              zIndex: 20,
+                              zIndex: 15,
                               backgroundColor: '#ffffff',
                               opacity: 1,
-                              isolation: 'isolate',
                             }
                           : {
                               backgroundColor: '#ffffff',
