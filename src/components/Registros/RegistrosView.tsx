@@ -630,6 +630,46 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     return 'bg-slate-100 text-slate-700 border-slate-300 font-medium';
   };
 
+  // Helper to check if a pendência cell should have its entire square painted green ("quadrado inteiro")
+  const getPendenciaCellClass = (colKey: string, val?: string) => {
+    if (!val) return null;
+    const v = val.trim().toUpperCase();
+    const isOkOrNa =
+      v === 'OK' ||
+      v === 'N/A' ||
+      v === 'NA' ||
+      v === 'N / A' ||
+      v === 'N-A' ||
+      v === 'CONCLUÍDO' ||
+      v === 'CONCLUIDO';
+
+    if (colKey === 'Pendência (Implantação)') {
+      if (isOkOrNa) {
+        return 'bg-emerald-100/80 text-emerald-900 border-l border-r border-b border-slate-100 hover:bg-emerald-200/80 font-bold';
+      }
+    }
+
+    if (colKey === 'Pendência (Celula Sap)') {
+      if (
+        isOkOrNa ||
+        v.includes('MAT. NO DEPOSITO - NA BAIXA V.TAL') ||
+        v.includes('MAT. NO DEPOSITO') ||
+        v.includes('MAT NO DEPOSITO') ||
+        (v.includes('DEPOSITO') && v.includes('BAIXA'))
+      ) {
+        return 'bg-emerald-100/80 text-emerald-900 border-l border-r border-b border-slate-100 hover:bg-emerald-200/80 font-bold';
+      }
+    }
+
+    if (colKey === 'Pendência (Projetos)') {
+      if (isOkOrNa) {
+        return 'bg-emerald-100/80 text-emerald-900 border-l border-r border-b border-slate-100 hover:bg-emerald-200/80 font-bold';
+      }
+    }
+
+    return null;
+  };
+
   // Separation of columns:
   // 1. Base Matriz Imported Columns (All Bloco 1 except DC which is sticky)
   const baseMatrizColumns = BLOCO_1_KEYS.filter((k) => k !== 'DC');
@@ -1618,7 +1658,22 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         );
                       }
 
-                      // Other team editable fields (Pendências, Datas, etc.)
+                      // Pendência columns with whole square painted ("quadrado inteiro")
+                      const pendenciaHighlightClass = getPendenciaCellClass(colKey, val);
+                      if (pendenciaHighlightClass) {
+                        return (
+                          <td
+                            key={colKey}
+                            onClick={() => handleOpenEdit(item)}
+                            className={`py-2 px-3 whitespace-nowrap text-center cursor-pointer transition-colors ${pendenciaHighlightClass}`}
+                            title={`Clique para editar este registro (${colKey}: ${val})`}
+                          >
+                            <span className="font-bold text-[11px]">{val}</span>
+                          </td>
+                        );
+                      }
+
+                      // Other team editable fields (Pendências não preenchidas, Datas, etc.)
                       return (
                         <td
                           key={colKey}
