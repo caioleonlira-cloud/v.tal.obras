@@ -91,7 +91,7 @@ export const OnlineUsersIndicator: React.FC<OnlineUsersIndicatorProps> = ({
               </span>
             </div>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-500/30">
-              Conectado (Event-based)
+              Conectado (Heartbeat & Eventos)
             </span>
           </div>
 
