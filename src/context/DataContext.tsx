@@ -586,59 +586,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [checkIsAdmin]);
 
-  // Routine to archive and purge legacy edit history (> X days, default 90 days / 3 months)
+  // Routine to archive and purge edit history (diasRetencao = 0 means purge ALL, or > 0 for retention)
   const arquivarELimparHistorico = useCallback(
-    async (diasRetencao = 90): Promise<{ exportados: number; removidos: number }> => {
+    async (diasRetencao = 0): Promise<{ exportados: number; removidos: number }> => {
       if (!checkIsAdmin()) {
         throw new Error('Acesso restrito: Apenas administradores possuem permissão para arquivar o histórico de auditoria.');
       }
 
-      const cutoffTimestamp = Date.now() - diasRetencao * 24 * 60 * 60 * 1000;
+      const hasRetention = typeof diasRetencao === 'number' && diasRetencao > 0;
+      const cutoffTimestamp = hasRetention ? Date.now() - diasRetencao * 24 * 60 * 60 * 1000 : Infinity;
       const cached = getLocalStoredHistorico();
-      const oldCachedItems = cached.filter((item) => (item.timestamp || 0) < cutoffTimestamp);
+      const targetCachedItems = hasRetention
+        ? cached.filter((item) => (item.timestamp || 0) < cutoffTimestamp)
+        : [...cached];
 
-      let remoteOldItems: HistoricoEdicaoItem[] = [];
+      let remoteItems: HistoricoEdicaoItem[] = [];
+      let totalDeletedFirestore = 0;
 
       if (isFirebaseConfigured) {
         try {
           const histCol = collection(db, 'historico_edicoes');
-          const q = query(histCol, where('timestamp', '<', cutoffTimestamp));
+          const q = hasRetention
+            ? query(histCol, where('timestamp', '<', cutoffTimestamp))
+            : query(histCol);
           const snap = await getDocs(q);
           snap.forEach((docSnap) => {
-            remoteOldItems.push({ id: docSnap.id, ...docSnap.data() } as HistoricoEdicaoItem);
+            remoteItems.push({ id: docSnap.id, ...docSnap.data() } as HistoricoEdicaoItem);
           });
 
-          // 1. Export Excel backup of all old items to be archived
-          const allOldItems = deduplicateHistorico([...remoteOldItems, ...oldCachedItems]);
-          if (allOldItems.length > 0) {
-            exportarRelatorioHistoricoParaExcel(
-              allOldItems,
-              `VTAL_Backup_Auditoria_Arquivada_${new Date().toLocaleDateString('sv')}`
-            );
-
-            // 2. Batch purge from Firestore (in chunks of 200)
-            const BATCH_SIZE = 200;
-            for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
-              const chunk = snap.docs.slice(i, i + BATCH_SIZE);
-              const batch = writeBatch(db);
-              chunk.forEach((d) => batch.delete(d.ref));
-              await commitBatchWithTimeout(batch, 15000, 'limpeza de histórico arquivado');
-            }
+          // Delete from Firestore in batches of 200
+          const BATCH_SIZE = 200;
+          for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+            const chunk = snap.docs.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach((d) => batch.delete(d.ref));
+            await commitBatchWithTimeout(batch, 20000, 'limpeza de histórico');
+            totalDeletedFirestore += chunk.length;
           }
         } catch (err: any) {
           checkQuotaError(err);
-          console.warn('Erro ao arquivar/limpar histórico antigo:', err?.message);
+          console.warn('Erro ao arquivar/limpar histórico remoto:', err?.message);
         }
       }
 
-      // 3. Purge from local cache and state
-      const remainingItems = cached.filter((item) => (item.timestamp || 0) >= cutoffTimestamp);
+      // 1. Export Excel backup of all items to be purged if any exist
+      const allItemsToPurge = deduplicateHistorico([...remoteItems, ...targetCachedItems]);
+      if (allItemsToPurge.length > 0) {
+        const fileName = hasRetention
+          ? `VTAL_Backup_Auditoria_Arquivada_${diasRetencao}d_${new Date().toLocaleDateString('sv')}`
+          : `VTAL_Backup_Auditoria_Completo_${new Date().toLocaleDateString('sv')}`;
+        exportarRelatorioHistoricoParaExcel(allItemsToPurge, fileName);
+      }
+
+      // 2. Purge from local cache and state
+      const remainingItems = hasRetention
+        ? cached.filter((item) => (item.timestamp || 0) >= cutoffTimestamp)
+        : [];
       setHistoricoEdicoes(remainingItems);
       saveLocalHistorico(remainingItems);
 
+      const totalRemoved = Math.max(
+        totalDeletedFirestore,
+        remoteItems.length,
+        targetCachedItems.length
+      );
+
       return {
-        exportados: remoteOldItems.length || oldCachedItems.length,
-        removidos: remoteOldItems.length || oldCachedItems.length,
+        exportados: allItemsToPurge.length,
+        removidos: totalRemoved,
       };
     },
     [checkIsAdmin]

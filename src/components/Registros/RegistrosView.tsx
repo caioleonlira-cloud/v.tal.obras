@@ -39,6 +39,8 @@ import {
   Clock,
   CheckCircle2,
   Archive,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAutoExportADM } from '../../hooks/useAutoExportADM';
 
@@ -78,6 +80,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   });
 
   const [isExportingAudit, setIsExportingAudit] = useState(false);
+  const [isManageAuditOpen, setIsManageAuditOpen] = useState(false);
 
   // 1. Search by DC and Descricao
   const [searchDC, setSearchDC] = useState('');
@@ -1051,30 +1054,15 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               </button>
 
               <button
-                id="btn-archive-history"
-                onClick={async () => {
-                  if (
-                    window.confirm(
-                      'Deseja exportar e arquivar o histórico de auditoria com mais de 90 dias?\n\nIsso baixará uma planilha Excel de backup e liberará espaço no banco de dados Firestore.'
-                    )
-                  ) {
-                    try {
-                      setIsExportingAudit(true);
-                      const res = await arquivarELimparHistorico(90);
-                      alert(`Histórico arquivado com sucesso!\nItens exportados e liberados do Firestore: ${res.removidos}`);
-                    } catch (e: any) {
-                      alert('Erro ao arquivar histórico: ' + e?.message);
-                    } finally {
-                      setIsExportingAudit(false);
-                    }
-                  }
-                }}
+                id="btn-clean-history"
+                onClick={() => setIsManageAuditOpen(true)}
                 disabled={isExportingAudit}
-                title="Arquivar e limpar histórico com mais de 90 dias (baixa backup Excel e libera espaço no Firestore)"
-                className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                title="Opções para limpar ou arquivar o histórico de auditoria"
+                className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-800 border border-rose-300 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
               >
-                <Archive className="w-3.5 h-3.5 text-amber-600" />
-                <span className="hidden xl:inline">Arquivar &gt;90d</span>
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span className="hidden xl:inline">Limpar Histórico</span>
+                <span className="xl:hidden">Limpar</span>
               </button>
             </div>
           )}
@@ -1807,6 +1795,161 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           isOpen={!!historyDc}
           onClose={() => setHistoryDc(null)}
         />
+      )}
+
+      {/* Modal: Gerenciamento e Limpeza do Histórico de Auditoria */}
+      {isManageAuditOpen && (
+        <div
+          id="modal-manage-audit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="bg-[#002855] text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                  <History className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Limpar / Arquivar Histórico de Auditoria</h3>
+                  <p className="text-xs text-cyan-200">Exportação de backup e limpeza de logs de edição</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isExportingAudit && setIsManageAuditOpen(false)}
+                disabled={isExportingAudit}
+                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-start space-x-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-slate-900">Segurança de Dados:</p>
+                  <p className="mt-0.5 text-slate-600 leading-relaxed">
+                    Antes de qualquer exclusão, o sistema <strong>sempre faz o download automático de uma planilha Excel de backup</strong> com todos os registros afetados.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção 1: Limpeza Total */}
+              <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-50/70 transition-colors">
+                <div className="space-y-1">
+                  <span className="text-xs font-black text-rose-900 uppercase tracking-wider block">
+                    Opção 1: Limpar TODO o Histórico (Reset Completo)
+                  </span>
+                  <p className="text-xs text-rose-800 leading-relaxed">
+                    Baixa uma planilha Excel com <strong>todas as edições registradas</strong> e em seguida apaga 100% dos dados (do Firestore e do cache local).
+                  </p>
+                  <p className="text-[11px] font-semibold text-rose-900">
+                    ✓ Após esta limpeza, clicar em "Auditoria" gerará um Excel zerado (apenas os cabeçalhos das colunas).
+                  </p>
+                </div>
+                <div className="mt-3.5 pt-3 border-t border-rose-200/80 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isExportingAudit}
+                    onClick={async () => {
+                      if (
+                        window.confirm(
+                          'Atenção: Deseja realmente LIMPAR TODO O HISTÓRICO de edições?\n\nO sistema fará o download de uma planilha Excel de backup com todas as alterações e depois apagará todo o histórico do banco de dados.\n\nO relatório de auditoria ficará zerado.'
+                        )
+                      ) {
+                        try {
+                          setIsExportingAudit(true);
+                          const res = await arquivarELimparHistorico(0);
+                          if (res.removidos > 0) {
+                            alert(
+                              `Histórico zerado com sucesso!\n\n${res.removidos} registro(s) de edições foram salvos na planilha de backup baixada e removidos do sistema.\n\nAgora o histórico de auditoria está totalmente limpo.`
+                            );
+                          } else {
+                            alert('O histórico de edições já estava vazio. Nenhuma exclusão necessária.');
+                          }
+                          setIsManageAuditOpen(false);
+                        } catch (err: any) {
+                          alert('Erro ao limpar histórico: ' + (err?.message || err));
+                        } finally {
+                          setIsExportingAudit(false);
+                        }
+                      }
+                    }}
+                    className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isExportingAudit ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isExportingAudit ? 'Processando...' : 'Limpar Todo o Histórico'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Opção 2: Arquivar > 90 dias */}
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                <div className="space-y-1">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                    Opção 2: Arquivar apenas anteriores a 90 dias
+                  </span>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Baixa um backup em Excel apenas das edições com mais de 3 meses e as remove do Firestore para liberar espaço, preservando as edições recentes dos últimos 90 dias.
+                  </p>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-200 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isExportingAudit}
+                    onClick={async () => {
+                      if (
+                        window.confirm(
+                          'Deseja exportar e arquivar o histórico de auditoria com mais de 90 dias?\n\nIsso baixará uma planilha Excel de backup e liberará espaço no Firestore mantendo as alterações recentes.'
+                        )
+                      ) {
+                        try {
+                          setIsExportingAudit(true);
+                          const res = await arquivarELimparHistorico(90);
+                          if (res.removidos > 0) {
+                            alert(
+                              `Histórico arquivado com sucesso!\n\n${res.removidos} registro(s) com mais de 90 dias foram exportados para o backup e liberados do Firestore.`
+                            );
+                          } else {
+                            alert('Nenhum registro com mais de 90 dias encontrado para arquivar.');
+                          }
+                          setIsManageAuditOpen(false);
+                        } catch (err: any) {
+                          alert('Erro ao arquivar histórico: ' + (err?.message || err));
+                        } finally {
+                          setIsExportingAudit(false);
+                        }
+                      }
+                    }}
+                    className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Archive className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Arquivar &gt;90d</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsManageAuditOpen(false)}
+                disabled={isExportingAudit}
+                className="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -912,7 +912,16 @@ export function exportarRelatorioHistoricoParaExcel(
     'Valor Novo': item.valorNovo || '—',
   }));
 
-  const worksheet = XLSX.utils.json_to_sheet(exportData);
+  const headers = [
+    'DC (Obra)',
+    'Usuário que editou',
+    'Coluna editada',
+    'Data/Hora da edição',
+    'Valor Anterior',
+    'Valor Novo',
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(exportData, { header: headers });
   worksheet['!cols'] = [
     { wch: 18 }, // DC
     { wch: 32 }, // Usuário
