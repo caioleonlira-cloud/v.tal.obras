@@ -140,30 +140,99 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   // Handle initial filters passed from Dashboard
   useEffect(() => {
     if (initialFilters) {
-      if (initialFilters.regional !== undefined) {
-        setFilterRegional(initialFilters.regional);
+      // 1. Search DC
+      if (initialFilters.searchDC !== undefined) {
+        setSearchDC(initialFilters.searchDC);
+      } else {
+        setSearchDC('');
       }
+
+      // 2. Regional
+      if (initialFilters.regional !== undefined) {
+        const validRegionais = initialFilters.regional.filter(
+          (r) => r && r.trim().toUpperCase() !== 'TELEMONT'
+        );
+        setFilterRegional(validRegionais);
+      } else {
+        setFilterRegional([]);
+      }
+
+      // 3. UF
+      if (initialFilters.uf !== undefined) {
+        setFilterUF(initialFilters.uf);
+      } else {
+        setFilterUF([]);
+      }
+
+      // 4. Carteira
+      if (initialFilters.carteira !== undefined) {
+        setFilterCarteira(initialFilters.carteira);
+      } else {
+        setFilterCarteira([]);
+      }
+
+      // 5. Aging
+      if (initialFilters.aging !== undefined) {
+        setFilterAging(initialFilters.aging);
+      } else {
+        setFilterAging([]);
+      }
+
+      // 6. Status Atual
+      if (initialFilters.statusAtual !== undefined) {
+        setFilterStatusAtual(initialFilters.statusAtual);
+      } else {
+        setFilterStatusAtual([]);
+      }
+
+      // 7. Status Informe
+      if (initialFilters.statusInforme !== undefined) {
+        setFilterStatusInforme(initialFilters.statusInforme);
+      } else {
+        setFilterStatusInforme([]);
+      }
+
+      // 8. Responsável
       if (initialFilters.responsavel !== undefined) {
         setFilterResponsavel(initialFilters.responsavel);
+      } else {
+        setFilterResponsavel([]);
       }
+
+      // 9. Tipo de Projeto
+      if (initialFilters.tipoProjeto !== undefined) {
+        setFilterTipoProjeto(initialFilters.tipoProjeto);
+      } else {
+        setFilterTipoProjeto([]);
+      }
+
+      // 10. Status Med. Parcial
+      if (initialFilters.statusMedParcial !== undefined) {
+        setFilterStatusMedParcial(initialFilters.statusMedParcial);
+      } else {
+        setFilterStatusMedParcial([]);
+      }
+
+      // 11. Status Med. Final
+      if (initialFilters.statusMedFinal !== undefined) {
+        setFilterStatusMedFinal(initialFilters.statusMedFinal);
+      } else {
+        setFilterStatusMedFinal([]);
+      }
+
+      // 12. Backlog / Input
       if (initialFilters.backlogInput !== undefined) {
         setFilterBacklogInput(initialFilters.backlogInput);
-      }
-      if (initialFilters.onlyWithParcial !== undefined) {
-        setFilterOnlyWithParcial(initialFilters.onlyWithParcial);
       } else {
-        setFilterOnlyWithParcial(false);
+        setFilterBacklogInput([]);
       }
-      if (initialFilters.onlyWithFinal !== undefined) {
-        setFilterOnlyWithFinal(initialFilters.onlyWithFinal);
-      } else {
-        setFilterOnlyWithFinal(false);
-      }
-      if (initialFilters.onlyWithMedido !== undefined) {
-        setFilterOnlyWithMedido(initialFilters.onlyWithMedido);
-      } else {
-        setFilterOnlyWithMedido(false);
-      }
+
+      // 13. Interactive Flags
+      setFilterOnlyWithParcial(!!initialFilters.onlyWithParcial);
+      setFilterOnlyWithFinal(!!initialFilters.onlyWithFinal);
+      setFilterOnlyWithMedido(!!initialFilters.onlyWithMedido);
+
+      // 14. Sorting
       if (initialFilters.sortBy) {
         setSortColumn(initialFilters.sortBy);
         if (initialFilters.sortDirection) {
@@ -172,8 +241,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       }
       setCurrentPage(1);
       setIsFiltersExpanded(true);
+
+      // Consume the initial drill-down filter immediately so it is not re-applied when switching tabs
+      if (onClearInitialFilters) {
+        onClearInitialFilters();
+      }
     }
-  }, [initialFilters]);
+  }, [initialFilters, onClearInitialFilters]);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -237,8 +311,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         return false;
     }
     if (excludeKey !== 'RESPONSAVEL' && filterResponsavel.length > 0) {
-      if (!item.Responsavel || !filterResponsavel.includes(item.Responsavel.trim()))
-        return false;
+      const resp = (item.Responsavel || '').trim();
+      const match = filterResponsavel.some((fr) => {
+        if (fr === 'Não Atribuído' || fr === 'NÃO ATRIBUÍDO') {
+          return !resp || resp === '-' || resp === 'Não Atribuído' || resp === 'NÃO ATRIBUÍDO';
+        }
+        return resp.toLowerCase() === fr.toLowerCase();
+      });
+      if (!match) return false;
     }
     if (excludeKey !== 'TIPO_PROJETO' && filterTipoProjeto.length > 0) {
       if (!item['Tipo de Projeto'] || !filterTipoProjeto.includes(item['Tipo de Projeto'].trim()))

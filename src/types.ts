@@ -268,8 +268,17 @@ export function getRegistroCarteira(r: Partial<Registro> | any): string {
 }
 
 export interface RegistrosFilterPayload {
+  searchDC?: string;
   regional?: string[];
+  uf?: string[];
+  carteira?: string[];
+  aging?: string[];
+  statusAtual?: string[];
+  statusInforme?: string[];
   responsavel?: string[];
+  tipoProjeto?: string[];
+  statusMedParcial?: string[];
+  statusMedFinal?: string[];
   backlogInput?: string[];
   onlyWithParcial?: boolean;
   onlyWithFinal?: boolean;

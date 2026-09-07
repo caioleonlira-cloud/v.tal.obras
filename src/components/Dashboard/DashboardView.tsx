@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
@@ -29,29 +29,577 @@ export interface DashboardViewProps {
   onNavigateToRegistros?: (filters: RegistrosFilterPayload) => void;
 }
 
+const DASHBOARD_STORAGE_KEY = 'vtal_dashboard_filters';
+
+interface SavedDashboardFilters {
+  searchDC?: string;
+  filterRegional?: string[];
+  filterUF?: string[];
+  filterCarteira?: string[];
+  filterAging?: string[];
+  filterStatusAtual?: string[];
+  filterStatusInforme?: string[];
+  filterResponsavel?: string[];
+  filterTipoProjeto?: string[];
+  filterStatusMedParcial?: string[];
+  filterStatusMedFinal?: string[];
+  filterBacklogInput?: string[];
+}
+
+const loadSavedDashboardFilters = (): SavedDashboardFilters => {
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+};
+
+interface MedicaoGroupTableProps {
+  isTelemont?: boolean;
+  group: {
+    regional: string;
+    items: Array<{
+      regional: string;
+      responsavel: string;
+      count: number;
+      orcamento: number;
+      parcial: number;
+      final: number;
+      totalMedido?: number;
+      concluidas?: number;
+    }>;
+    subtotal: {
+      count: number;
+      orcamento: number;
+      parcial: number;
+      final: number;
+      totalMedido: number;
+      concluidas?: number;
+    };
+  };
+  filterRegional: string[];
+  onNavigateToRegistros?: (filters: RegistrosFilterPayload) => void;
+}
+
+const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
+  isTelemont = false,
+  group,
+  filterRegional,
+  onNavigateToRegistros,
+}) => {
+  // Regionais ativas do dashboard (excluindo qualquer menção a 'TELEMONT')
+  const activeDashboardRegionais = (filterRegional || []).filter(
+    (r) => r && r.trim().toUpperCase() !== 'TELEMONT'
+  );
+
+  // Se for TELEMONT, não tem filtro de regional (ou apenas as regionais válidas selecionadas no dashboard).
+  // Nunca deve enviar 'TELEMONT' como filtro de regional pois essa regional não existe no banco.
+  const isTelemontTable = isTelemont || group.regional.toUpperCase() === 'TELEMONT';
+
+  const targetGroupRegional = isTelemontTable
+    ? (activeDashboardRegionais.length > 0 ? activeDashboardRegionais : undefined)
+    : [group.regional];
+
+  const getRowRegional = (rowRegional: string) => {
+    if (isTelemontTable || rowRegional.toUpperCase() === 'TELEMONT') {
+      return activeDashboardRegionais.length > 0 ? activeDashboardRegionais : undefined;
+    }
+    return [rowRegional];
+  };
+
+  const groupLabel = isTelemontTable
+    ? 'TELEMONT (Consolidado - Todas as Regionais)'
+    : `Regional ${group.regional}`;
+
+  return (
+    <div
+      className={`rounded-xl border ${
+        isTelemontTable ? 'border-blue-200/90 hover:border-blue-400' : 'border-slate-200 hover:border-slate-300'
+      } bg-white overflow-hidden shadow-2xs transition-all`}
+    >
+      {/* Block Header */}
+      <div className="bg-slate-50/90 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center space-x-2.5">
+          <span className="px-2.5 py-0.5 rounded-md bg-[#002855] text-white text-xs font-black tracking-wide shadow-2xs">
+            {group.regional}
+          </span>
+          <span className="text-xs font-bold text-slate-800">
+            {groupLabel}
+          </span>
+          <span className="text-[11px] text-slate-500 font-medium">
+            ({group.items.length} {group.items.length === 1 ? 'responsável' : 'responsáveis'})
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            onNavigateToRegistros?.({
+              regional: targetGroupRegional,
+            })
+          }
+          className="inline-flex items-center space-x-1 text-[11px] font-bold text-[#002855] hover:text-blue-700 hover:underline cursor-pointer transition-colors"
+          title={isTelemontTable ? 'Ver todas as obras na aba Registros' : `Ver todas as obras da Regional ${group.regional} na aba Registros`}
+        >
+          <span>Ver todas as obras ({group.subtotal.count})</span>
+          <ExternalLink className="w-3 h-3 ml-0.5" />
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs border-collapse font-sans">
+          <thead>
+            <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200">
+              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px]">
+                Regional
+              </th>
+              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200">
+                Responsável
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[110px]">
+                DC's
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+                Orçamento
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+                Valor Parcial R$
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+                Valor Final R$
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold text-emerald-800 w-[180px]">
+                Valor Total Medido R$
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200/80 text-slate-700">
+            {group.items.map((row, idx) => {
+              const totalMedidoLinha = row.parcial + row.final;
+              const isZebra = idx % 2 === 1;
+
+              return (
+                <tr
+                  key={`${row.regional}_${row.responsavel}_${idx}`}
+                  className={`transition-colors ${
+                    isZebra ? 'bg-[#FAFAFA]' : 'bg-white'
+                  } hover:bg-blue-50/40`}
+                >
+                  {/* Regional */}
+                  <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200">
+                      {row.regional}
+                    </span>
+                  </td>
+
+                  {/* Responsável */}
+                  <td className="py-2.5 px-4 border-b border-r border-slate-200/80">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 truncate">
+                        {row.responsavel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onNavigateToRegistros?.({
+                            regional: getRowRegional(row.regional),
+                            responsavel: [row.responsavel],
+                          })
+                        }
+                        className="opacity-0 group-hover:opacity-100 text-[#002855] hover:text-blue-700 p-0.5 rounded transition-opacity"
+                        title={
+                          isTelemontTable
+                            ? `Filtrar ${row.responsavel} na aba Registros`
+                            : `Filtrar ${row.responsavel} (${row.regional}) na aba Registros`
+                        }
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* DC's */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        sortBy: 'DC',
+                        sortDirection: 'asc',
+                      })
+                    }
+                    className="py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
+                    title={
+                      isTelemontTable
+                        ? `Clique para ver as ${row.count} obras de ${row.responsavel} na aba Registros`
+                        : `Clique para ver as ${row.count} obras de ${row.responsavel} (${row.regional}) na aba Registros`
+                    }
+                  >
+                    <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                      {row.count.toLocaleString('pt-BR')}
+                    </span>
+                  </td>
+
+                  {/* Orçamento */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        sortBy: 'Orçamento',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className="py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
+                    title={
+                      isTelemontTable
+                        ? `Clique para ver as obras de ${row.responsavel} ordenadas por orçamento`
+                        : `Clique para ver as obras de ${row.responsavel} (${row.regional}) ordenadas por orçamento`
+                    }
+                  >
+                    <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                      {formatBRL(row.orcamento)}
+                    </span>
+                  </td>
+
+                  {/* Valor Parcial R$ */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        onlyWithParcial: row.parcial > 0,
+                        sortBy: 'Valor Parcial R$',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
+                      row.parcial > 0
+                        ? 'cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900'
+                        : 'text-slate-400 font-normal'
+                    }`}
+                    title={
+                      row.parcial > 0
+                        ? isTelemontTable
+                          ? `Clique para ver as obras com medição parcial de ${row.responsavel} na aba Registros`
+                          : `Clique para ver as obras com medição parcial de ${row.responsavel} (${row.regional}) na aba Registros`
+                        : undefined
+                    }
+                  >
+                    <span className={`inline-block py-0.5 px-2 rounded ${row.parcial > 0 ? 'group-hover:underline' : ''}`}>
+                      {formatBRL(row.parcial)}
+                    </span>
+                  </td>
+
+                  {/* Valor Final R$ */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        onlyWithFinal: row.final > 0,
+                        sortBy: 'Valor Final R$',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
+                      row.final > 0
+                        ? 'cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900'
+                        : 'text-slate-400 font-normal'
+                    }`}
+                    title={
+                      row.final > 0
+                        ? isTelemontTable
+                          ? `Clique para ver as obras com medição final de ${row.responsavel} na aba Registros`
+                          : `Clique para ver as obras com medição final de ${row.responsavel} (${row.regional}) na aba Registros`
+                        : undefined
+                    }
+                  >
+                    <span className={`inline-block py-0.5 px-2 rounded ${row.final > 0 ? 'group-hover:underline' : ''}`}>
+                      {formatBRL(row.final)}
+                    </span>
+                  </td>
+
+                  {/* Valor Total Medido R$ */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        onlyWithMedido: totalMedidoLinha > 0,
+                        sortBy: 'Valor Final R$',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-slate-200/80 transition-colors group ${
+                      totalMedidoLinha > 0
+                        ? 'cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900'
+                        : 'text-slate-400 font-normal'
+                    }`}
+                    title={
+                      totalMedidoLinha > 0
+                        ? isTelemontTable
+                          ? `Clique para ver as obras medidas de ${row.responsavel} na aba Registros`
+                          : `Clique para ver as obras medidas de ${row.responsavel} (${row.regional}) na aba Registros`
+                        : undefined
+                    }
+                  >
+                    <span className={`inline-block py-0.5 px-2 rounded font-black ${totalMedidoLinha > 0 ? 'group-hover:underline' : ''}`}>
+                      {formatBRL(totalMedidoLinha)}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+
+          {/* Subtotal Footer */}
+          <tfoot>
+            <tr className="bg-slate-100/90 font-bold text-slate-900 border-t-2 border-slate-300">
+              <td
+                colSpan={2}
+                className="py-2.5 px-4 text-left border-r border-slate-200/80 uppercase text-[11px] font-black tracking-wider text-[#002855]"
+              >
+                Subtotal {isTelemontTable ? 'TELEMONT' : group.regional}
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    sortBy: 'DC',
+                    sortDirection: 'asc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver todas as obras na aba Registros'
+                    : `Clique para ver todas as obras da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                  {group.subtotal.count.toLocaleString('pt-BR')}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    sortBy: 'Orçamento',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras orçadas na aba Registros'
+                    : `Clique para ver as obras orçadas da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                  {formatBRL(group.subtotal.orcamento)}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    onlyWithParcial: group.subtotal.parcial > 0,
+                    sortBy: 'Valor Parcial R$',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras com medição parcial na aba Registros'
+                    : `Clique para ver as obras com medição parcial da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
+                  {formatBRL(group.subtotal.parcial)}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    onlyWithFinal: group.subtotal.final > 0,
+                    sortBy: 'Valor Final R$',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras com medição final na aba Registros'
+                    : `Clique para ver as obras com medição final da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
+                  {formatBRL(group.subtotal.final)}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    onlyWithMedido: group.subtotal.totalMedido > 0,
+                    sortBy: 'Valor Final R$',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras medidas na aba Registros'
+                    : `Clique para ver as obras medidas da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                  {formatBRL(group.subtotal.totalMedido)}
+                </span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegistros }) => {
   const { registros, lastImportInfo, loadingRegistros } = useData();
 
+  const initialSavedFilters = useMemo(() => loadSavedDashboardFilters(), []);
+
   // 1. Search by DC
-  const [searchDC, setSearchDC] = useState('');
+  const [searchDC, setSearchDC] = useState(initialSavedFilters.searchDC || '');
 
   // 2. Filters (10 Multi-Selects aligned with RegistrosView)
-  const [filterRegional, setFilterRegional] = useState<string[]>([]);
-  const [filterUF, setFilterUF] = useState<string[]>([]);
-  const [filterCarteira, setFilterCarteira] = useState<string[]>([]);
-  const [filterAging, setFilterAging] = useState<string[]>([]);
-  const [filterStatusAtual, setFilterStatusAtual] = useState<string[]>([]);
-  const [filterStatusInforme, setFilterStatusInforme] = useState<string[]>([]);
-  const [filterResponsavel, setFilterResponsavel] = useState<string[]>([]);
-  const [filterTipoProjeto, setFilterTipoProjeto] = useState<string[]>([]);
-  const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
-  const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
-  const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>([]);
+  const [filterRegional, setFilterRegional] = useState<string[]>(initialSavedFilters.filterRegional || []);
+  const [filterUF, setFilterUF] = useState<string[]>(initialSavedFilters.filterUF || []);
+  const [filterCarteira, setFilterCarteira] = useState<string[]>(initialSavedFilters.filterCarteira || []);
+  const [filterAging, setFilterAging] = useState<string[]>(initialSavedFilters.filterAging || []);
+  const [filterStatusAtual, setFilterStatusAtual] = useState<string[]>(initialSavedFilters.filterStatusAtual || []);
+  const [filterStatusInforme, setFilterStatusInforme] = useState<string[]>(initialSavedFilters.filterStatusInforme || []);
+  const [filterResponsavel, setFilterResponsavel] = useState<string[]>(initialSavedFilters.filterResponsavel || []);
+  const [filterTipoProjeto, setFilterTipoProjeto] = useState<string[]>(initialSavedFilters.filterTipoProjeto || []);
+  const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>(initialSavedFilters.filterStatusMedParcial || []);
+  const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>(initialSavedFilters.filterStatusMedFinal || []);
+  const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>(initialSavedFilters.filterBacklogInput || []);
+
+  // Persist dashboard filter state across page reloads/sessions
+  useEffect(() => {
+    try {
+      const stateToSave: SavedDashboardFilters = {
+        searchDC,
+        filterRegional,
+        filterUF,
+        filterCarteira,
+        filterAging,
+        filterStatusAtual,
+        filterStatusInforme,
+        filterResponsavel,
+        filterTipoProjeto,
+        filterStatusMedParcial,
+        filterStatusMedFinal,
+        filterBacklogInput,
+      };
+      sessionStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch {
+      // ignore
+    }
+  }, [
+    searchDC,
+    filterRegional,
+    filterUF,
+    filterCarteira,
+    filterAging,
+    filterStatusAtual,
+    filterStatusInforme,
+    filterResponsavel,
+    filterTipoProjeto,
+    filterStatusMedParcial,
+    filterStatusMedFinal,
+    filterBacklogInput,
+  ]);
 
   // Accordion for status details
   const [isStatusExpanded, setIsStatusExpanded] = useState(false);
   // Filter panel collapse on smaller screens
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
+
+  // Helper to drilldown preserving all active dashboard filters
+  const handleNavigateWithDashboardFilters = (extraFilters: RegistrosFilterPayload) => {
+    if (!onNavigateToRegistros) return;
+
+    // 1. Gather all active dashboard filters
+    const payload: RegistrosFilterPayload = {};
+
+    if (searchDC.trim()) payload.searchDC = searchDC.trim();
+    if (filterRegional.length > 0) payload.regional = [...filterRegional];
+    if (filterUF.length > 0) payload.uf = [...filterUF];
+    if (filterCarteira.length > 0) payload.carteira = [...filterCarteira];
+    if (filterAging.length > 0) payload.aging = [...filterAging];
+    if (filterStatusAtual.length > 0) payload.statusAtual = [...filterStatusAtual];
+    if (filterStatusInforme.length > 0) payload.statusInforme = [...filterStatusInforme];
+    if (filterResponsavel.length > 0) payload.responsavel = [...filterResponsavel];
+    if (filterTipoProjeto.length > 0) payload.tipoProjeto = [...filterTipoProjeto];
+    if (filterStatusMedParcial.length > 0) payload.statusMedParcial = [...filterStatusMedParcial];
+    if (filterStatusMedFinal.length > 0) payload.statusMedFinal = [...filterStatusMedFinal];
+    if (filterBacklogInput.length > 0) payload.backlogInput = [...filterBacklogInput];
+
+    // 2. Override/add drilldown specifics
+    if ('searchDC' in extraFilters) {
+      payload.searchDC = extraFilters.searchDC;
+    }
+    if ('regional' in extraFilters) {
+      if (extraFilters.regional === undefined || extraFilters.regional.length === 0) {
+        delete payload.regional;
+      } else {
+        payload.regional = extraFilters.regional;
+      }
+    }
+    if ('responsavel' in extraFilters) {
+      if (extraFilters.responsavel === undefined || extraFilters.responsavel.length === 0) {
+        delete payload.responsavel;
+      } else {
+        payload.responsavel = extraFilters.responsavel;
+      }
+    }
+    if ('uf' in extraFilters) payload.uf = extraFilters.uf;
+    if ('carteira' in extraFilters) payload.carteira = extraFilters.carteira;
+    if ('aging' in extraFilters) payload.aging = extraFilters.aging;
+    if ('statusAtual' in extraFilters) payload.statusAtual = extraFilters.statusAtual;
+    if ('statusInforme' in extraFilters) payload.statusInforme = extraFilters.statusInforme;
+    if ('tipoProjeto' in extraFilters) payload.tipoProjeto = extraFilters.tipoProjeto;
+    if ('statusMedParcial' in extraFilters) payload.statusMedParcial = extraFilters.statusMedParcial;
+    if ('statusMedFinal' in extraFilters) payload.statusMedFinal = extraFilters.statusMedFinal;
+    if ('backlogInput' in extraFilters) payload.backlogInput = extraFilters.backlogInput;
+
+    if (extraFilters.onlyWithParcial !== undefined) payload.onlyWithParcial = extraFilters.onlyWithParcial;
+    if (extraFilters.onlyWithFinal !== undefined) payload.onlyWithFinal = extraFilters.onlyWithFinal;
+    if (extraFilters.onlyWithMedido !== undefined) payload.onlyWithMedido = extraFilters.onlyWithMedido;
+    if (extraFilters.sortBy) payload.sortBy = extraFilters.sortBy;
+    if (extraFilters.sortDirection) payload.sortDirection = extraFilters.sortDirection;
+
+    // 3. Clean any 'TELEMONT' literal from regional
+    if (payload.regional) {
+      payload.regional = payload.regional.filter(
+        (r) => r && r.trim().toUpperCase() !== 'TELEMONT'
+      );
+      if (payload.regional.length === 0) {
+        delete payload.regional;
+      }
+    }
+
+    onNavigateToRegistros(payload);
+  };
 
   // Helper to match subset for correlated options
   const matchesFilterSubset = (
@@ -100,7 +648,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         return false;
     }
     if (excludeKey !== 'RESPONSAVEL' && filterResponsavel.length > 0) {
-      if (!item.Responsavel || !filterResponsavel.includes(item.Responsavel.trim())) return false;
+      const resp = (item.Responsavel || '').trim();
+      const match = filterResponsavel.some((fr) => {
+        if (fr === 'Não Atribuído' || fr === 'NÃO ATRIBUÍDO') {
+          return !resp || resp === '-' || resp === 'Não Atribuído' || resp === 'NÃO ATRIBUÍDO';
+        }
+        return resp.toLowerCase() === fr.toLowerCase();
+      });
+      if (!match) return false;
     }
     if (excludeKey !== 'TIPO_PROJETO' && filterTipoProjeto.length > 0) {
       if (!item['Tipo de Projeto'] || !filterTipoProjeto.includes(item['Tipo de Projeto'].trim())) return false;
@@ -311,6 +866,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
     setFilterBacklogInput([]);
+    try {
+      sessionStorage.removeItem(DASHBOARD_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
   };
 
   // Aggregated calculations
@@ -633,9 +1193,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
 
     filteredRegistros.forEach((r) => {
       const respCategory = (r.Responsavel || 'Não Atribuído').trim();
-      const o = parseFloat(r['Orçamento'] || '0') || 0;
-      const p = parseFloat(r['Valor Parcial R$'] || '0') || 0;
-      const f = parseFloat(r['Valor Final R$'] || '0') || 0;
+      const o = parseCurrencyValue(r['Orçamento'] || r.Orçamento);
+      const p = parseCurrencyValue(r['Valor Parcial R$']);
+      const f = parseCurrencyValue(r['Valor Final R$']);
 
       if (!telemontItemsMap[respCategory]) {
         telemontItemsMap[respCategory] = {
@@ -896,17 +1456,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       {/* 2. KPI TOP ROW: 4 Clean, Balanced Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-1">
         {/* Card 1: Total de DCs */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+        <div
+          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
+          title="Clique para ver todos os registros filtrados na aba Registros"
+        >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
                 Total de DCs
               </span>
               <span className="text-3xl font-black text-slate-900 mt-1 block">
                 {totalDcs.toLocaleString('pt-BR')}
               </span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0 group-hover:bg-blue-50 transition-colors">
               <Layers className="w-5 h-5" />
             </div>
           </div>
@@ -924,10 +1488,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         </div>
 
         {/* Card 2: Orçamento Total */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+        <div
+          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
+          title="Clique para ver registros ordenados por orçamento na aba Registros"
+        >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
                 Orçamento Total
               </span>
               <span className="text-2xl font-black text-slate-900 mt-1 block truncate" title={formatBRL(totalOrcamento)}>
@@ -948,7 +1516,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         </div>
 
         {/* Card 3: Valor Medido Total */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-300 transition-all">
+        <div
+          onClick={() =>
+            handleNavigateWithDashboardFilters({
+              onlyWithMedido: true,
+              sortBy: 'Valor Final R$',
+              sortDirection: 'desc',
+            })
+          }
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm cursor-pointer transition-all group"
+          title="Clique para ver todos os registros com medição na aba Registros"
+        >
           <div className="flex items-start justify-between">
             <div>
               <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider block">
@@ -970,7 +1548,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         </div>
 
         {/* Card 4: % de DCs Concluídas */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+        <div
+          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all group"
+          title="Clique para ver obras filtradas na aba Registros"
+        >
           <div className="flex items-start justify-between">
             <div>
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
@@ -1028,576 +1610,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
               Nenhum registro encontrado para os filtros atuais.
             </div>
           ) : (
-            regionalGroups.map((regGroup) => (
-              <div
-                key={regGroup.regional}
-                className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs transition-all hover:border-slate-300"
-              >
-                {/* Regional Block Header */}
-                <div className="bg-slate-50/90 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <span className="px-2.5 py-0.5 rounded-md bg-[#002855] text-white text-xs font-black tracking-wide shadow-2xs">
-                      {regGroup.regional}
-                    </span>
-                    <span className="text-xs font-bold text-slate-800">
-                      Regional {regGroup.regional}
-                    </span>
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      ({regGroup.items.length} {regGroup.items.length === 1 ? 'responsável' : 'responsáveis'})
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onNavigateToRegistros?.({
-                        regional: [regGroup.regional],
-                      })
-                    }
-                    className="inline-flex items-center space-x-1 text-[11px] font-bold text-[#002855] hover:text-blue-700 hover:underline cursor-pointer transition-colors"
-                    title={`Ver todas as obras da Regional ${regGroup.regional} na aba Registros`}
-                  >
-                    <span>Ver todas as obras ({regGroup.subtotal.count})</span>
-                    <ExternalLink className="w-3 h-3 ml-0.5" />
-                  </button>
-                </div>
+            <>
+              {/* 1. Tabela Consolidada TELEMONT em PRIMEIRO (conforme Ponto 1) */}
+              {showTelemontTable && (
+                <MedicaoGroupTable
+                  isTelemont
+                  group={telemontGroup}
+                  filterRegional={filterRegional}
+                  onNavigateToRegistros={handleNavigateWithDashboardFilters}
+                />
+              )}
 
-                {/* Table for this Regional */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse font-sans">
-                    <thead>
-                      <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200">
-                        <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px]">
-                          Regional
-                        </th>
-                        <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200">
-                          Responsável
-                        </th>
-                        <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[110px]">
-                          DC's
-                        </th>
-                        <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                          Orçamento
-                        </th>
-                        <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                          Valor Parcial R$
-                        </th>
-                        <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                          Valor Final R$
-                        </th>
-                        <th className="py-2.5 px-4 text-center font-semibold text-emerald-800 w-[180px]">
-                          Valor Total Medido R$
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200/80 text-slate-700">
-                      {regGroup.items.map((row, idx) => {
-                        const totalMedidoLinha = row.parcial + row.final;
-                        const isZebra = idx % 2 === 1;
+              {/* 2. Regionais Separadas Abaixo da TELEMONT (conforme Ponto 1) */}
+              {regionalGroups.map((regGroup) => (
+                <MedicaoGroupTable
+                  key={regGroup.regional}
+                  group={regGroup}
+                  filterRegional={filterRegional}
+                  onNavigateToRegistros={handleNavigateWithDashboardFilters}
+                />
+              ))}
 
-                        return (
-                          <tr
-                            key={`${row.regional}_${row.responsavel}_${idx}`}
-                            className={`transition-colors ${
-                              isZebra ? 'bg-[#FAFAFA]' : 'bg-white'
-                            } hover:bg-blue-50/40`}
-                          >
-                            {/* Regional */}
-                            <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
-                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200">
-                                {row.regional}
-                              </span>
-                            </td>
-
-                            {/* Responsável */}
-                            <td className="py-2.5 px-4 font-medium text-slate-800 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onNavigateToRegistros?.({
-                                    regional: [row.regional],
-                                    responsavel: [row.responsavel],
-                                  })
-                                }
-                                className="text-left hover:text-[#002855] hover:underline cursor-pointer font-semibold transition-colors flex items-center space-x-1.5 group"
-                                title={`Ver obras de ${row.responsavel} (${row.regional}) na aba Registros`}
-                              >
-                                <span>{row.responsavel}</span>
-                                <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-[#002855] opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </button>
-                            </td>
-
-                            {/* DC's (centered & clickable) */}
-                            <td
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: [row.regional],
-                                  responsavel: [row.responsavel],
-                                  sortBy: 'DC',
-                                  sortDirection: 'asc',
-                                })
-                              }
-                              className="py-2.5 px-4 text-center font-bold text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 hover:text-[#002855] transition-colors group"
-                              title={`Clique para ver as ${row.count} DC's de ${row.responsavel} (${row.regional}) na aba Registros`}
-                            >
-                              <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                                {row.count.toLocaleString('pt-BR')}
-                              </span>
-                            </td>
-
-                            {/* Orçamento (centered & clickable) */}
-                            <td
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: [row.regional],
-                                  responsavel: [row.responsavel],
-                                  sortBy: 'Orçamento',
-                                  sortDirection: 'desc',
-                                })
-                              }
-                              className="py-2.5 px-4 text-center font-bold text-slate-900 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 hover:text-[#002855] transition-colors group"
-                              title={`Clique para ver as obras de ${row.responsavel} (${row.regional}) com orçamento na aba Registros`}
-                            >
-                              <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                                {formatBRL(row.orcamento)}
-                              </span>
-                            </td>
-
-                            {/* Valor Parcial R$ (centered & clickable) */}
-                            <td
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: [row.regional],
-                                  responsavel: [row.responsavel],
-                                  onlyWithParcial: row.parcial > 0,
-                                  sortBy: 'Valor Parcial R$',
-                                  sortDirection: 'desc',
-                                })
-                              }
-                              className="py-2.5 px-4 text-center font-medium text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 hover:text-emerald-950 transition-colors group"
-                              title={`Clique para ver as obras com medição parcial de ${row.responsavel} (${row.regional}) na aba Registros`}
-                            >
-                              <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                                {formatBRL(row.parcial)}
-                              </span>
-                            </td>
-
-                            {/* Valor Final R$ (centered & clickable) */}
-                            <td
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: [row.regional],
-                                  responsavel: [row.responsavel],
-                                  onlyWithFinal: row.final > 0,
-                                  sortBy: 'Valor Final R$',
-                                  sortDirection: 'desc',
-                                })
-                              }
-                              className="py-2.5 px-4 text-center font-medium text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 hover:text-emerald-950 transition-colors group"
-                              title={`Clique para ver as obras com medição final de ${row.responsavel} (${row.regional}) na aba Registros`}
-                            >
-                              <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                                {formatBRL(row.final)}
-                              </span>
-                            </td>
-
-                            {/* Valor Total Medido R$ (centered & clickable) */}
-                            <td
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: [row.regional],
-                                  responsavel: [row.responsavel],
-                                  onlyWithMedido: totalMedidoLinha > 0,
-                                  sortBy: 'Valor Final R$',
-                                  sortDirection: 'desc',
-                                })
-                              }
-                              className="py-2.5 px-4 text-center font-extrabold text-emerald-800 tabular-nums whitespace-nowrap border-b border-slate-200/80 cursor-pointer hover:bg-emerald-200/70 hover:text-emerald-950 transition-colors group"
-                              title={`Clique para ver as obras medidas de ${row.responsavel} (${row.regional}) na aba Registros`}
-                            >
-                              <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                                {formatBRL(totalMedidoLinha)}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-
-                    {/* Subtotal da Regional */}
-                    <tfoot>
-                      <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
-                        <td
-                          colSpan={2}
-                          className="py-2.5 px-4 text-left border-r border-slate-200/80 uppercase text-[11px] font-black tracking-wider text-slate-800"
-                        >
-                          Subtotal {regGroup.regional}
-                        </td>
-                        <td
-                          onClick={() =>
-                            onNavigateToRegistros?.({
-                              regional: [regGroup.regional],
-                              sortBy: 'DC',
-                              sortDirection: 'asc',
-                            })
-                          }
-                          className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors group"
-                          title={`Clique para ver todas as ${regGroup.subtotal.count} DC's da ${regGroup.regional} na aba Registros`}
-                        >
-                          <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                            {regGroup.subtotal.count.toLocaleString('pt-BR')}
-                          </span>
-                        </td>
-                        <td
-                          onClick={() =>
-                            onNavigateToRegistros?.({
-                              regional: [regGroup.regional],
-                              sortBy: 'Orçamento',
-                              sortDirection: 'desc',
-                            })
-                          }
-                          className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
-                          title={`Clique para ver as obras orçadas da ${regGroup.regional} na aba Registros`}
-                        >
-                          <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                            {formatBRL(regGroup.subtotal.orcamento)}
-                          </span>
-                        </td>
-                        <td
-                          onClick={() =>
-                            onNavigateToRegistros?.({
-                              regional: [regGroup.regional],
-                              onlyWithParcial: regGroup.subtotal.parcial > 0,
-                              sortBy: 'Valor Parcial R$',
-                              sortDirection: 'desc',
-                            })
-                          }
-                          className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                          title={`Clique para ver as obras com medição parcial da ${regGroup.regional} na aba Registros`}
-                        >
-                          <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                            {formatBRL(regGroup.subtotal.parcial)}
-                          </span>
-                        </td>
-                        <td
-                          onClick={() =>
-                            onNavigateToRegistros?.({
-                              regional: [regGroup.regional],
-                              onlyWithFinal: regGroup.subtotal.final > 0,
-                              sortBy: 'Valor Final R$',
-                              sortDirection: 'desc',
-                            })
-                          }
-                          className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                          title={`Clique para ver as obras com medição final da ${regGroup.regional} na aba Registros`}
-                        >
-                          <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                            {formatBRL(regGroup.subtotal.final)}
-                          </span>
-                        </td>
-                        <td
-                          onClick={() =>
-                            onNavigateToRegistros?.({
-                              regional: [regGroup.regional],
-                              onlyWithMedido: regGroup.subtotal.totalMedido > 0,
-                              sortBy: 'Valor Final R$',
-                              sortDirection: 'desc',
-                            })
-                          }
-                          className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
-                          title={`Clique para ver as obras medidas da ${regGroup.regional} na aba Registros`}
-                        >
-                          <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                            {formatBRL(regGroup.subtotal.totalMedido)}
-                          </span>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            ))
-          )}
-
-          {/* Tabela Consolidada TELEMONT (RCO, RSUL, RMG juntas no mesmo formato) */}
-          {showTelemontTable && (
-            <div className="rounded-xl border border-blue-200/90 bg-white overflow-hidden shadow-2xs transition-all hover:border-blue-400">
-              {/* TELEMONT Block Header */}
-              <div className="bg-slate-50/90 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
-                <div className="flex items-center space-x-2.5">
-                  <span className="px-2.5 py-0.5 rounded-md bg-[#002855] text-white text-xs font-bold tracking-wide shadow-2xs">
-                    TELEMONT
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    TELEMONT (Consolidado - Todas as Regionais)
-                  </span>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    ({telemontGroup.items.length} {telemontGroup.items.length === 1 ? 'responsável' : 'responsáveis'})
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onNavigateToRegistros?.({
-                      regional: filterRegional.length > 0 ? filterRegional : undefined,
-                    })
-                  }
-                  className="inline-flex items-center space-x-1 text-[11px] font-bold text-[#002855] hover:text-blue-700 hover:underline cursor-pointer transition-colors"
-                  title="Ver todas as obras TELEMONT na aba Registros"
-                >
-                  <span>Ver todas as obras ({telemontGroup.subtotal.count})</span>
-                  <ExternalLink className="w-3 h-3 ml-0.5" />
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse font-sans">
-                  <thead>
-                    <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200">
-                      <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px]">
-                        Regional
-                      </th>
-                      <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200">
-                        Responsável
-                      </th>
-                      <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[110px]">
-                        DC's
-                      </th>
-                      <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                        Orçamento
-                      </th>
-                      <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                        Valor Parcial R$
-                      </th>
-                      <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
-                        Valor Final R$
-                      </th>
-                      <th className="py-2.5 px-4 text-center font-semibold text-emerald-800 w-[180px]">
-                        Valor Total Medido R$
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {telemontGroup.items.map((row) => {
-                      const totalMedidoLinha = row.parcial + row.final;
-                      return (
-                        <tr
-                          key={`telemont-${row.responsavel}`}
-                          className="hover:bg-blue-50/40 transition-colors group/row"
-                        >
-                          {/* Coluna Regional com Badge TELEMONT */}
-                          <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
-                            <span className="px-2 py-0.5 rounded-md bg-[#002855] text-white text-[11px] font-bold border border-blue-950/40 shadow-2xs">
-                              TELEMONT
-                            </span>
-                          </td>
-
-                          {/* Responsável */}
-                          <td className="py-2.5 px-4 font-medium text-slate-800 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onNavigateToRegistros?.({
-                                  regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                  responsavel: [row.responsavel],
-                                })
-                              }
-                              className="text-left hover:text-[#002855] hover:underline cursor-pointer font-semibold transition-colors flex items-center space-x-1.5 group"
-                              title={`Ver obras de ${row.responsavel} (TELEMONT) na aba Registros`}
-                            >
-                              <span>{row.responsavel}</span>
-                              <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-[#002855] opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </button>
-                          </td>
-
-                          {/* DC's */}
-                          <td
-                            onClick={() =>
-                              onNavigateToRegistros?.({
-                                regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                responsavel: [row.responsavel],
-                                sortBy: 'DC',
-                                sortDirection: 'asc',
-                              })
-                            }
-                            className="py-2.5 px-4 text-center font-bold text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 hover:text-[#002855] transition-colors group"
-                            title={`Clique para ver as ${row.count} DC's de ${row.responsavel} na aba Registros`}
-                          >
-                            <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                              {row.count.toLocaleString('pt-BR')}
-                            </span>
-                          </td>
-
-                          {/* Orçamento */}
-                          <td
-                            onClick={() =>
-                              onNavigateToRegistros?.({
-                                regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                responsavel: [row.responsavel],
-                                sortBy: 'Orçamento',
-                                sortDirection: 'desc',
-                              })
-                            }
-                            className="py-2.5 px-4 text-center font-bold text-slate-900 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 hover:text-[#002855] transition-colors group"
-                            title={`Clique para ver as obras de ${row.responsavel} com orçamento na aba Registros`}
-                          >
-                            <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                              {formatBRL(row.orcamento)}
-                            </span>
-                          </td>
-
-                          {/* Valor Parcial R$ */}
-                          <td
-                            onClick={() =>
-                              onNavigateToRegistros?.({
-                                regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                responsavel: [row.responsavel],
-                                onlyWithParcial: row.parcial > 0,
-                                sortBy: 'Valor Parcial R$',
-                                sortDirection: 'desc',
-                              })
-                            }
-                            className="py-2.5 px-4 text-center font-medium text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 hover:text-emerald-950 transition-colors group"
-                            title={`Clique para ver as obras com medição parcial de ${row.responsavel} na aba Registros`}
-                          >
-                            <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                              {formatBRL(row.parcial)}
-                            </span>
-                          </td>
-
-                          {/* Valor Final R$ */}
-                          <td
-                            onClick={() =>
-                              onNavigateToRegistros?.({
-                                regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                responsavel: [row.responsavel],
-                                onlyWithFinal: row.final > 0,
-                                sortBy: 'Valor Final R$',
-                                sortDirection: 'desc',
-                              })
-                            }
-                            className="py-2.5 px-4 text-center font-medium text-slate-800 tabular-nums whitespace-nowrap border-b border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 hover:text-emerald-950 transition-colors group"
-                            title={`Clique para ver as obras com medição final de ${row.responsavel} na aba Registros`}
-                          >
-                            <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                              {formatBRL(row.final)}
-                            </span>
-                          </td>
-
-                          {/* Valor Total Medido R$ */}
-                          <td
-                            onClick={() =>
-                              onNavigateToRegistros?.({
-                                regional: filterRegional.length > 0 ? filterRegional : undefined,
-                                responsavel: [row.responsavel],
-                                onlyWithMedido: totalMedidoLinha > 0,
-                                sortBy: 'Valor Final R$',
-                                sortDirection: 'desc',
-                              })
-                            }
-                            className="py-2.5 px-4 text-center font-extrabold text-emerald-800 tabular-nums whitespace-nowrap border-b border-slate-200/80 cursor-pointer hover:bg-emerald-200/70 hover:text-emerald-950 transition-colors group"
-                            title={`Clique para ver as obras medidas de ${row.responsavel} (TELEMONT) na aba Registros`}
-                          >
-                            <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                              {formatBRL(totalMedidoLinha)}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-
-                  {/* Subtotal TELEMONT */}
-                  <tfoot>
-                    <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold text-slate-900">
-                      <td
-                        colSpan={2}
-                        className="py-2.5 px-4 text-left border-r border-slate-200/80 uppercase text-[11px] font-black tracking-wider text-[#002855]"
-                      >
-                        Subtotal TELEMONT
-                      </td>
-                      <td
-                        onClick={() =>
-                          onNavigateToRegistros?.({
-                            regional: filterRegional.length > 0 ? filterRegional : undefined,
-                            sortBy: 'DC',
-                            sortDirection: 'asc',
-                          })
-                        }
-                        className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors group"
-                        title={`Clique para ver todas as ${telemontGroup.subtotal.count} DC's da TELEMONT na aba Registros`}
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                          {telemontGroup.subtotal.count.toLocaleString('pt-BR')}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          onNavigateToRegistros?.({
-                            regional: filterRegional.length > 0 ? filterRegional : undefined,
-                            sortBy: 'Orçamento',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
-                        title="Clique para ver as obras orçadas da TELEMONT na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                          {formatBRL(telemontGroup.subtotal.orcamento)}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          onNavigateToRegistros?.({
-                            regional: filterRegional.length > 0 ? filterRegional : undefined,
-                            onlyWithParcial: telemontGroup.subtotal.parcial > 0,
-                            sortBy: 'Valor Parcial R$',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                        title="Clique para ver as obras com medição parcial da TELEMONT na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                          {formatBRL(telemontGroup.subtotal.parcial)}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          onNavigateToRegistros?.({
-                            regional: filterRegional.length > 0 ? filterRegional : undefined,
-                            onlyWithFinal: telemontGroup.subtotal.final > 0,
-                            sortBy: 'Valor Final R$',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                        title="Clique para ver as obras com medição final da TELEMONT na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                          {formatBRL(telemontGroup.subtotal.final)}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          onNavigateToRegistros?.({
-                            regional: filterRegional.length > 0 ? filterRegional : undefined,
-                            onlyWithMedido: telemontGroup.subtotal.totalMedido > 0,
-                            sortBy: 'Valor Final R$',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
-                        title="Clique para ver as obras medidas da TELEMONT na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
-                          {formatBRL(telemontGroup.subtotal.totalMedido)}
-                        </span>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
+            </>
           )}
 
           {/* Card Consolidado: Exibido caso TELEMONT não esteja ativo mas haja mais de 1 regional (ex: 2 regionais) */}
@@ -1636,7 +1670,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                         Soma das Regionais Filtradas
                       </td>
                       <td
-                        onClick={() => onNavigateToRegistros?.({ sortBy: 'DC', sortDirection: 'asc' })}
+                        onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
                         className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-slate-900 font-black transition-colors group"
                         title="Clique para ver todas as obras filtradas na aba Registros"
                       >
@@ -1645,7 +1679,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                         </span>
                       </td>
                       <td
-                        onClick={() => onNavigateToRegistros?.({ sortBy: 'Orçamento', sortDirection: 'desc' })}
+                        onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
                         className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-[#002855] font-black transition-colors group"
                         title="Clique para ver todas as obras ordenadas por orçamento"
                       >
@@ -1655,7 +1689,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       </td>
                       <td
                         onClick={() =>
-                          onNavigateToRegistros?.({
+                          handleNavigateWithDashboardFilters({
                             onlyWithParcial: true,
                             sortBy: 'Valor Parcial R$',
                             sortDirection: 'desc',
@@ -1670,7 +1704,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       </td>
                       <td
                         onClick={() =>
-                          onNavigateToRegistros?.({
+                          handleNavigateWithDashboardFilters({
                             onlyWithFinal: true,
                             sortBy: 'Valor Final R$',
                             sortDirection: 'desc',
@@ -1685,7 +1719,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       </td>
                       <td
                         onClick={() =>
-                          onNavigateToRegistros?.({
+                          handleNavigateWithDashboardFilters({
                             onlyWithMedido: true,
                             sortBy: 'Valor Final R$',
                             sortDirection: 'desc',
@@ -1792,7 +1826,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                         <button
                           type="button"
                           onClick={() =>
-                            onNavigateToRegistros?.({
+                            handleNavigateWithDashboardFilters({
                               responsavel: item.rawNames && item.rawNames.length > 0 ? item.rawNames : [item.responsavel],
                               sortBy: 'Orçamento',
                               sortDirection: 'desc',
@@ -1807,7 +1841,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       <button
                         type="button"
                         onClick={() =>
-                          onNavigateToRegistros?.({
+                          handleNavigateWithDashboardFilters({
                             responsavel: item.rawNames && item.rawNames.length > 0 ? item.rawNames : [item.responsavel],
                             sortBy: 'DC',
                             sortDirection: 'asc',
@@ -1893,11 +1927,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {rawStatusStats.map((item) => (
-                  <div key={item.status} className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between">
-                    <span className="font-medium text-slate-700 truncate max-w-[70%]" title={item.status}>
+                  <div
+                    key={item.status}
+                    onClick={() => handleNavigateWithDashboardFilters({ statusInforme: [item.status] })}
+                    className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between cursor-pointer hover:bg-blue-50/80 hover:border-blue-300 transition-colors group"
+                    title={`Filtrar status "${item.status}" na aba Registros`}
+                  >
+                    <span className="font-medium text-slate-700 truncate max-w-[70%] group-hover:text-blue-900" title={item.status}>
                       {item.status}
                     </span>
-                    <span className="font-bold text-slate-900 shrink-0">
+                    <span className="font-bold text-slate-900 shrink-0 group-hover:text-blue-900 group-hover:underline">
                       {item.count} DCs
                     </span>
                   </div>

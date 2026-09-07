@@ -23,7 +23,7 @@ const MainLayout: React.FC = () => {
   const [registrosInitialFilters, setRegistrosInitialFilters] = useState<RegistrosFilterPayload | null>(null);
 
   const handleNavigateToRegistros = (filters: RegistrosFilterPayload) => {
-    setRegistrosInitialFilters(filters);
+    setRegistrosInitialFilters({ ...filters });
     setActiveTab('registros');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -90,18 +90,24 @@ const MainLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'registros' && (
+        <div className={activeTab === 'registros' ? 'block' : 'hidden'}>
           <RegistrosView
             initialFilters={registrosInitialFilters}
             onClearInitialFilters={() => setRegistrosInitialFilters(null)}
           />
-        )}
-        {activeTab === 'dashboard' && (
+        </div>
+
+        <div className={activeTab === 'dashboard' ? 'block' : 'hidden'}>
           <DashboardView onNavigateToRegistros={handleNavigateToRegistros} />
+        </div>
+
+        {isAdmin && (
+          <>
+            {activeTab === 'importacao' && <ImportacaoView />}
+            {activeTab === 'segmentacoes' && <SegmentacoesView />}
+            {activeTab === 'usuarios' && <UsuariosView />}
+          </>
         )}
-        {activeTab === 'importacao' && isAdmin && <ImportacaoView />}
-        {activeTab === 'segmentacoes' && isAdmin && <SegmentacoesView />}
-        {activeTab === 'usuarios' && isAdmin && <UsuariosView />}
       </main>
 
       {/* Account / Change Password Modal */}
