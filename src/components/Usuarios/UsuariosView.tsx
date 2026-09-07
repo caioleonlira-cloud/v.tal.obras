@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   LogOut,
   AlertTriangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 export const UsuariosView: React.FC = () => {
@@ -29,6 +31,7 @@ export const UsuariosView: React.FC = () => {
     updateUserStatus,
     updateUserRole,
     updateUserName,
+    updateUserPassword,
     removeUser,
     logoutAllUsers,
   } = useAuth();
@@ -38,6 +41,8 @@ export const UsuariosView: React.FC = () => {
   const [isLogoutAllModalOpen, setIsLogoutAllModalOpen] = useState(false);
   const [logoutAllLoading, setLogoutAllLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [editPasswordValue, setEditPasswordValue] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   // New User Form State
   const [newEmail, setNewEmail] = useState('');
@@ -98,8 +103,11 @@ export const UsuariosView: React.FC = () => {
       await updateUserName(editingUser.uid, editingUser.name);
       await updateUserRole(editingUser.uid, editingUser.role);
       await updateUserStatus(editingUser.uid, editingUser.status);
+      if (editPasswordValue && editPasswordValue !== editingUser.password) {
+        await updateUserPassword(editingUser.uid, editPasswordValue);
+      }
       setEditingUser(null);
-      showFeedback('Perfil de usuário atualizado!');
+      showFeedback('Perfil e dados de acesso do usuário atualizados com sucesso!');
     } catch (err: any) {
       setFormError(err.message || 'Erro ao atualizar usuário.');
     } finally {
@@ -308,7 +316,11 @@ export const UsuariosView: React.FC = () => {
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1">
                           <button
-                            onClick={() => setEditingUser({ ...u })}
+                            onClick={() => {
+                              setEditingUser({ ...u });
+                              setEditPasswordValue(u.password || '');
+                              setShowEditPassword(false);
+                            }}
                             className="p-1.5 text-slate-500 hover:text-[#002855] hover:bg-slate-100 rounded-lg transition-colors"
                             title="Editar usuário"
                           >
@@ -478,6 +490,46 @@ export const UsuariosView: React.FC = () => {
                   value={editingUser.email}
                   className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-500 cursor-not-allowed font-mono"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Senha do Usuário
+                  </label>
+                  {editPasswordValue ? (
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-medium border border-emerald-200">
+                      Senha disponível
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200">
+                      Sem senha registrada
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    value={editPasswordValue}
+                    onChange={(e) => setEditPasswordValue(e.target.value)}
+                    placeholder="Digite para ver ou redefinir a senha"
+                    className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title={showEditPassword ? 'Ocultar senha' : 'Ver senha'}
+                  >
+                    {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Clique no ícone do olho para visualizar a senha. Se desejar alterá-la, basta digitar uma nova senha e clicar em Salvar.
+                </p>
               </div>
 
               <div>

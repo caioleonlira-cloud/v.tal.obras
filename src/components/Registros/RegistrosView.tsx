@@ -93,6 +93,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [filterTipoProjeto, setFilterTipoProjeto] = useState<string[]>([]);
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
+  const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>([]);
 
   // Interactive filters triggered by Dashboard clicks
   const [filterOnlyWithParcial, setFilterOnlyWithParcial] = useState(false);
@@ -144,6 +145,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       }
       if (initialFilters.responsavel !== undefined) {
         setFilterResponsavel(initialFilters.responsavel);
+      }
+      if (initialFilters.backlogInput !== undefined) {
+        setFilterBacklogInput(initialFilters.backlogInput);
       }
       if (initialFilters.onlyWithParcial !== undefined) {
         setFilterOnlyWithParcial(initialFilters.onlyWithParcial);
@@ -249,6 +253,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       const val = (item['Status Med. Final'] || '').trim();
       if (!val || !filterStatusMedFinal.includes(val)) return false;
     }
+    if (excludeKey !== 'BACKLOG_INPUT' && filterBacklogInput.length > 0) {
+      const val = (item['Backlog/Input?'] || '').trim();
+      if (!val || !filterBacklogInput.includes(val)) return false;
+    }
     // Interactive Value Filters from Dashboard
     if (filterOnlyWithParcial) {
       const p = parseCurrencyValue(item['Valor Parcial R$']);
@@ -288,6 +296,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     statusMedParcialCounts,
     statusMedFinalOptions,
     statusMedFinalCounts,
+    backlogInputOptions,
+    backlogInputCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
@@ -299,6 +309,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     const projCounts: Record<string, number> = {};
     const stMedParcCounts: Record<string, number> = {};
     const stMedFinCounts: Record<string, number> = {};
+    const backlogInpCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
       // 1. REGIONAL
@@ -400,6 +411,16 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           stMedFinCounts[val] = 0;
         }
       }
+
+      // 11. Backlog/Input?
+      if (r['Backlog/Input?']) {
+        const val = r['Backlog/Input?'].trim();
+        if (matchesFilterSubset(r, 'BACKLOG_INPUT')) {
+          backlogInpCounts[val] = (backlogInpCounts[val] || 0) + 1;
+        } else if (filterBacklogInput.includes(val) && !backlogInpCounts[val]) {
+          backlogInpCounts[val] = 0;
+        }
+      }
     });
 
     // Ensure configured segmentations are present
@@ -444,6 +465,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       statusMedParcialCounts: stMedParcCounts,
       statusMedFinalOptions: Object.keys(stMedFinCounts).sort(),
       statusMedFinalCounts: stMedFinCounts,
+      backlogInputOptions: Object.keys(backlogInpCounts).sort(),
+      backlogInputCounts: backlogInpCounts,
     };
   }, [
     registros,
@@ -459,9 +482,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterTipoProjeto,
     filterStatusMedParcial,
     filterStatusMedFinal,
+    filterBacklogInput,
   ]);
 
-  // Filter Registros (Search in DC or Descricao + 10 Multiselects + Value filters)
+  // Filter Registros (Search in DC or Descricao + Multiselects + Value filters)
   const filteredRegistros = useMemo(() => {
     return registros.filter((item) => matchesFilterSubset(item));
   }, [
@@ -477,6 +501,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterTipoProjeto,
     filterStatusMedParcial,
     filterStatusMedFinal,
+    filterBacklogInput,
     filterOnlyWithParcial,
     filterOnlyWithFinal,
     filterOnlyWithMedido,
@@ -578,6 +603,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     setFilterTipoProjeto([]);
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
+    setFilterBacklogInput([]);
     setFilterOnlyWithParcial(false);
     setFilterOnlyWithFinal(false);
     setFilterOnlyWithMedido(false);
@@ -599,6 +625,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterTipoProjeto.length +
     filterStatusMedParcial.length +
     filterStatusMedFinal.length +
+    filterBacklogInput.length +
     (filterOnlyWithParcial ? 1 : 0) +
     (filterOnlyWithFinal ? 1 : 0) +
     (filterOnlyWithMedido ? 1 : 0);
@@ -1008,10 +1035,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Painel Retrátil de Busca e 10 Filtros (Compacto e Responsivo) */}
+      {/* 2. Painel Retrátil de Busca e Filtros (Compacto e Responsivo) */}
       {isFiltersExpanded && (
         <div className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
             {/* Campo de Busca por DC ou Descrição */}
             <div className="w-full">
               <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
@@ -1169,6 +1196,20 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 setCurrentPage(1);
               }}
               optionCounts={statusMedFinalCounts}
+              placeholder="Todos"
+            />
+
+            {/* 11. Backlog/Input? (Ponto 3) */}
+            <MultiSelectFilter
+              label="Backlog/Input"
+              columnRefName="Tipo"
+              options={backlogInputOptions}
+              selected={filterBacklogInput}
+              onChange={(sel) => {
+                setFilterBacklogInput(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={backlogInputCounts}
               placeholder="Todos"
             />
           </div>

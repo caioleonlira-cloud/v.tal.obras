@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { KeyRound, X, Check, AlertCircle, Lock } from 'lucide-react';
+import { KeyRound, X, Check, AlertCircle, Lock, Eye, EyeOff } from 'lucide-react';
 
 interface MinhaContaModalProps {
   isOpen: boolean;
@@ -12,6 +12,9 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -104,13 +107,21 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
                 <Lock className="w-3.5 h-3.5 text-slate-400" />
               </div>
               <input
-                type="password"
+                type={showOldPassword ? 'text' : 'password'}
                 required
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
                 placeholder="Digite sua senha atual"
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
+                className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
               />
+              <button
+                type="button"
+                onClick={() => setShowOldPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                title={showOldPassword ? 'Ocultar senha' : 'Ver senha'}
+              >
+                {showOldPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
@@ -123,14 +134,22 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
                 <Lock className="w-3.5 h-3.5 text-slate-400" />
               </div>
               <input
-                type="password"
+                type={showNewPassword ? 'text' : 'password'}
                 required
                 minLength={6}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Digite a nova senha"
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
+                className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
               />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                title={showNewPassword ? 'Ocultar senha' : 'Ver senha'}
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
@@ -143,14 +162,22 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
                 <Lock className="w-3.5 h-3.5 text-slate-400" />
               </div>
               <input
-                type="password"
+                type={showConfirmPassword ? 'text' : 'password'}
                 required
                 minLength={6}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repita a nova senha"
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
+                className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855] focus:border-transparent text-slate-900"
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                title={showConfirmPassword ? 'Ocultar senha' : 'Ver senha'}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 

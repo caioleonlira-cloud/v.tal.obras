@@ -89,16 +89,20 @@ service cloud.firestore {
       // Qualquer usuário logado pode ler para montar a lista de equipe e verificar perfis
       allow read: if isSignedIn();
 
-      // Somente ADM pode criar ou excluir usuários
-      allow create, delete: if isAdmin();
+      // ADM pode criar qualquer usuário; o próprio usuário autenticado pode inicializar seu próprio perfil
+      allow create: if isSignedIn() && (isAdmin() || request.auth.uid == userId);
+      allow delete: if isAdmin();
 
       // Atualização:
       // - ADM pode editar qualquer campo e alterar papéis (role/status)
-      // - O próprio usuário pode atualizar apenas seus dados (nome, senha, etc.), sem poder mudar seu role ou status
+      // - O próprio usuário autenticado pode atualizar seu perfil, preservando seu papel (ou promovendo apenas se for o Administrador Master)
       allow update: if isSignedIn() && (
         isAdmin() ||
-        (request.auth.uid == userId &&
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']))
+        (request.auth.uid == userId && (
+          request.resource.data.role == resource.data.role ||
+          request.resource.data.role != 'ADM' ||
+          isMasterAdmin()
+        ))
       );
     }
 

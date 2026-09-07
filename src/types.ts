@@ -270,6 +270,7 @@ export function getRegistroCarteira(r: Partial<Registro> | any): string {
 export interface RegistrosFilterPayload {
   regional?: string[];
   responsavel?: string[];
+  backlogInput?: string[];
   onlyWithParcial?: boolean;
   onlyWithFinal?: boolean;
   onlyWithMedido?: boolean;

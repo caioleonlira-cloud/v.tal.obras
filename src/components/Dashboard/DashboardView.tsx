@@ -46,6 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
   const [filterTipoProjeto, setFilterTipoProjeto] = useState<string[]>([]);
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
+  const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>([]);
 
   // Accordion for status details
   const [isStatusExpanded, setIsStatusExpanded] = useState(false);
@@ -66,6 +67,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       | 'TIPO_PROJETO'
       | 'STATUS_MED_PARCIAL'
       | 'STATUS_MED_FINAL'
+      | 'BACKLOG_INPUT'
   ) => {
     if (searchDC.trim()) {
       const q = searchDC.trim().toLowerCase();
@@ -111,6 +113,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       const val = (item['Status Med. Final'] || '').trim();
       if (!val || !filterStatusMedFinal.includes(val)) return false;
     }
+    if (excludeKey !== 'BACKLOG_INPUT' && filterBacklogInput.length > 0) {
+      const val = (item['Backlog/Input?'] || '').trim();
+      if (!val || !filterBacklogInput.includes(val)) return false;
+    }
     return true;
   };
 
@@ -136,6 +142,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     statusMedParcialCounts,
     statusMedFinalOptions,
     statusMedFinalCounts,
+    backlogInputOptions,
+    backlogInputCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
@@ -147,6 +155,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     const projCounts: Record<string, number> = {};
     const stMedParcCounts: Record<string, number> = {};
     const stMedFinCounts: Record<string, number> = {};
+    const backlogInpCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
       if (r.REG) {
@@ -199,6 +208,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         if (matchesFilterSubset(r, 'STATUS_MED_FINAL')) stMedFinCounts[val] = (stMedFinCounts[val] || 0) + 1;
         else if (filterStatusMedFinal.includes(val) && !stMedFinCounts[val]) stMedFinCounts[val] = 0;
       }
+      if (r['Backlog/Input?']) {
+        const val = r['Backlog/Input?'].trim();
+        if (matchesFilterSubset(r, 'BACKLOG_INPUT')) backlogInpCounts[val] = (backlogInpCounts[val] || 0) + 1;
+        else if (filterBacklogInput.includes(val) && !backlogInpCounts[val]) backlogInpCounts[val] = 0;
+      }
     });
 
     const sortNumericOrAlpha = (arr: string[]) => {
@@ -231,6 +245,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       statusMedParcialCounts: stMedParcCounts,
       statusMedFinalOptions: Object.keys(stMedFinCounts).sort(),
       statusMedFinalCounts: stMedFinCounts,
+      backlogInputOptions: Object.keys(backlogInpCounts).sort(),
+      backlogInputCounts: backlogInpCounts,
     };
   }, [
     registros,
@@ -245,6 +261,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterTipoProjeto,
     filterStatusMedParcial,
     filterStatusMedFinal,
+    filterBacklogInput,
   ]);
 
   // Filtered dataset
@@ -263,6 +280,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterTipoProjeto,
     filterStatusMedParcial,
     filterStatusMedFinal,
+    filterBacklogInput,
   ]);
 
   // Active filters count
@@ -277,7 +295,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterResponsavel.length +
     filterTipoProjeto.length +
     filterStatusMedParcial.length +
-    filterStatusMedFinal.length;
+    filterStatusMedFinal.length +
+    filterBacklogInput.length;
 
   const handleClearFilters = () => {
     setSearchDC('');
@@ -291,6 +310,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     setFilterTipoProjeto([]);
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
+    setFilterBacklogInput([]);
   };
 
   // Aggregated calculations
@@ -729,7 +749,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           {/* Row 2: Collapsible Filters */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
                 {/* Search DC */}
                 <div className="w-full">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
@@ -854,6 +874,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   selected={filterStatusMedFinal}
                   onChange={setFilterStatusMedFinal}
                   optionCounts={statusMedFinalCounts}
+                  placeholder="Todos"
+                />
+
+                {/* 11. Backlog/Input? (Ponto 3) */}
+                <MultiSelectFilter
+                  label="Backlog/Input"
+                  columnRefName="Tipo"
+                  options={backlogInputOptions}
+                  selected={filterBacklogInput}
+                  onChange={setFilterBacklogInput}
+                  optionCounts={backlogInputCounts}
                   placeholder="Todos"
                 />
               </div>

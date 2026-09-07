@@ -8,6 +8,8 @@ import {
   createUserWithEmailAndPassword,
   updatePassword,
   getAuth,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
 } from 'firebase/auth';
 import {
   doc,
@@ -18,6 +20,8 @@ import {
   collection,
   onSnapshot,
   getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { auth, db, firebaseConfig } from '../lib/firebase';
 import { UserProfile, UserRole, INITIAL_ADMIN_EMAIL, ADMIN_EMAILS, isSystemAdminEmail } from '../types';
@@ -39,6 +43,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   logoutAllUsers: () => Promise<void>;
   changePassword: (oldPass: string, newPass: string) => Promise<void>;
+  updateUserPassword: (uid: string, newPassword: string) => Promise<void>;
   createUser: (email: string, pass: string, name: string, role: UserRole) => Promise<void>;
   updateUserStatus: (uid: string, status: 'active' | 'inactive') => Promise<void>;
   updateUserRole: (uid: string, role: UserRole) => Promise<void>;
@@ -62,21 +67,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Seed default admin in Firestore if needed
   const ensureAdminDoc = async () => {
+    if (!auth.currentUser || !isSystemAdminEmail(auth.currentUser.email)) {
+      return;
+    }
     try {
-      const adminDocRef = doc(db, 'users', 'admin-caio-lira');
+      const adminDocRef = doc(db, 'users', auth.currentUser.uid);
       const snap = await getDoc(adminDocRef);
       if (!snap.exists()) {
         const adminProfile: UserProfile = {
-          uid: 'admin-caio-lira',
-          email: INITIAL_ADMIN_EMAIL,
-          name: 'Caio Lira',
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email || INITIAL_ADMIN_EMAIL,
+          name: auth.currentUser.displayName || 'Caio Lira',
           role: 'ADM',
           status: 'active',
           password: '123456',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        await setDoc(adminDocRef, adminProfile);
+        await setDoc(adminDocRef, adminProfile, { merge: true });
       }
     } catch (e) {
       console.warn('Erro ao verificar/criar admin doc:', e);
@@ -103,18 +111,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const data = userDoc.data() as UserProfile;
         syncedProfile = {
           ...data,
+          uid: currentUser.uid,
           role: isInitialAdmin ? ('ADM' as UserRole) : data.role,
         };
+        if (isInitialAdmin && data.role !== 'ADM') {
+          try {
+            await setDoc(userDocRef, { role: 'ADM', updatedAt: new Date().toISOString() }, { merge: true });
+          } catch (_) {}
+        }
       } else {
+        // Look up by email in case admin registered this user earlier under a temporary doc ID
+        let existingData: UserProfile | null = null;
+        let oldDocId: string | null = null;
+        try {
+          const cleanEmail = (currentUser.email || '').trim().toLowerCase();
+          if (cleanEmail) {
+            const usersCol = collection(db, 'users');
+            const q = query(usersCol, where('email', '==', cleanEmail));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              existingData = snap.docs[0].data() as UserProfile;
+              oldDocId = snap.docs[0].id;
+            }
+          }
+        } catch (queryErr) {
+          console.warn('Busca fallback de usuário por email:', queryErr);
+        }
+
         syncedProfile = {
           uid: currentUser.uid,
-          email: currentUser.email || '',
-          name: defaultName,
-          role: isInitialAdmin ? 'ADM' : 'PADRAO',
-          status: 'active',
-          createdAt: new Date().toISOString(),
+          email: currentUser.email?.toLowerCase() || '',
+          name: existingData?.name || defaultName,
+          role: isInitialAdmin ? 'ADM' : (existingData?.role || 'PADRAO'),
+          status: existingData?.status || 'active',
+          password: existingData?.password,
+          createdAt: existingData?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
-        await setDoc(userDocRef, syncedProfile, { merge: true });
+
+        try {
+          await setDoc(userDocRef, syncedProfile, { merge: true });
+        } catch (writeErr) {
+          console.warn('Tentativa de persistência do perfil no Firestore:', writeErr);
+        }
+
+        // Clean up temporary ID if it was different from currentUser.uid
+        if (oldDocId && oldDocId !== currentUser.uid) {
+          deleteDoc(doc(db, 'users', oldDocId)).catch(() => {});
+        }
+      }
+
+      if (syncedProfile.status === 'inactive') {
+        await fbSignOut(auth);
+        throw new Error('Este usuário foi desativado pelo administrador.');
       }
 
       setProfile(syncedProfile);
@@ -134,6 +183,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return true;
     } catch (err: any) {
+      if (err.message && err.message.includes('desativado')) {
+        throw err;
+      }
       console.warn(`Tentativa ${attempt} de sincronizar perfil falhou:`, err?.message || err);
       if (attempt < 4) {
         await new Promise((resolve) => setTimeout(resolve, attempt * 400));
@@ -319,142 +371,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // 1. Try Firebase Auth if available
+    if (!cleanEmail || !cleanPass) {
+      throw new Error('Por favor, informe o e-mail e a senha.');
+    }
+
+    let authUser: User | null = null;
+
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-      const synced = await syncUserProfile(cred.user);
-      if (synced) return;
-      throw new Error('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
+      authUser = cred.user;
     } catch (err: any) {
-      if (err.message && err.message.includes('Não foi possível carregar seu perfil')) {
-        throw err;
+      const errCode = err?.code;
+
+      if (errCode === 'auth/operation-not-allowed') {
+        throw new Error(
+          'O provedor Email/Senha não está ativado no Firebase Console. Acesse o Firebase Console > Authentication > Sign-in method e ative o provedor "E-mail/Senha".'
+        );
       }
-      // If Firebase Auth is disabled or user not found in Firebase Auth, proceed to application credential check
-      console.warn('Firebase Auth login fallback:', err.code || err.message);
-    }
 
-    // 2. Check for System Admin accounts (caio.lira@telemontrms.com.br / caioleonlira@gmail.com)
-    if (isSystemAdminEmail(cleanEmail)) {
-      if (cleanPass === '123456' || cleanPass.length >= 4) {
-        // Ensure Firebase Auth session is active so Firestore rules request.auth is populated
+      // Se for primeira inicialização da conta do administrador com a senha padrão inicial 123456
+      if (
+        (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') &&
+        isSystemAdminEmail(cleanEmail) &&
+        cleanPass === '123456'
+      ) {
         try {
-          if (!auth.currentUser) {
-            try {
-              await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-            } catch (authErr: any) {
-              if (authErr.code === 'auth/operation-not-allowed') {
-                throw new Error(
-                  'O provedor Email/Senha não está ativado no Firebase Console. Acesse o Firebase Console > Authentication > Sign-in method e ative o provedor "E-mail/Senha" para autorizar operações administrativas.'
-                );
-              }
-              if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-                try {
-                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-                } catch (createErr: any) {
-                  console.warn('Auto-criação de conta admin no Firebase Auth:', createErr?.code || createErr?.message);
-                }
-              }
-            }
-          }
-        } catch (e: any) {
-          if (e.message?.includes('provedor Email/Senha')) {
-            throw e;
-          }
+          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, '123456');
+          authUser = cred.user;
+        } catch {
+          throw new Error('E-mail ou senha incorretos.');
         }
-
-        const adminUid = auth.currentUser?.uid || `admin-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-        const adminProfile: UserProfile = {
-          uid: adminUid,
-          email: cleanEmail,
-          name: 'Caio Lira',
-          role: 'ADM',
-          status: 'active',
-          updatedAt: new Date().toISOString(),
-        };
-
-        // Persist to Firestore in both UID and legacy key to guarantee RBAC matches rules
+      } else if (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') {
+        // Tentar registrar usuário recém-criado pelo admin que ainda não possui credencial no Firebase Auth
         try {
-          await setDoc(doc(db, 'users', adminProfile.uid), adminProfile, { merge: true });
-          if (auth.currentUser?.uid && adminProfile.uid !== 'admin-caio_lira_telemontrms_com_br') {
-            await setDoc(doc(db, 'users', 'admin-caio_lira_telemontrms_com_br'), adminProfile, { merge: true });
-          }
-        } catch (e) {
-          console.warn('Erro ao salvar admin no Firestore:', e);
+          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
+          authUser = cred.user;
+        } catch {
+          // Se já está em uso ou outro erro, a senha fornecida está incorreta!
+          throw new Error('E-mail ou senha incorretos.');
         }
-
-        setUser({ uid: adminProfile.uid, email: cleanEmail, displayName: 'Caio Lira' });
-        setProfile(adminProfile);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(adminProfile));
-        localStorage.setItem(SESSION_DATE_KEY, new Date().toLocaleDateString('sv'));
-        localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-        return;
+      } else if (errCode === 'auth/wrong-password') {
+        throw new Error('E-mail ou senha incorretos.');
+      } else if (errCode === 'auth/user-disabled') {
+        throw new Error('Este usuário foi desativado no Firebase Authentication.');
+      } else if (errCode === 'auth/too-many-requests') {
+        throw new Error('Muitas tentativas sem sucesso. Aguarde alguns instantes e tente novamente.');
       } else {
-        throw new Error('Senha incorreta para o administrador.');
+        throw new Error(err?.message || 'E-mail ou senha incorretos.');
       }
     }
 
-    // 3. Search in Firestore users collection
-    try {
-      const usersCol = collection(db, 'users');
-      const snap = await getDocs(usersCol);
-      let matchedUser: UserProfile | null = null;
-
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as UserProfile;
-        if (data.email && data.email.trim().toLowerCase() === cleanEmail) {
-          matchedUser = { uid: docSnap.id, ...data };
-        }
-      });
-
-      if (matchedUser) {
-        const u = matchedUser as UserProfile;
-        if (u.status === 'inactive') {
-          throw new Error('Este usuário foi desativado pelo administrador.');
-        }
-
-        // Validate password if stored, or allow login if created
-        if (u.password && u.password !== cleanPass) {
-          throw new Error('Senha incorreta.');
-        }
-
-        // Ensure Firebase Auth session is active
-        try {
-          if (!auth.currentUser) {
-            try {
-              await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
-            } catch (authErr: any) {
-              if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-                try {
-                  await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-                } catch (_) {}
-              }
-            }
-          }
-        } catch (_) {}
-
-        const authenticatedProfile: UserProfile = {
-          ...u,
-          updatedAt: new Date().toISOString(),
-        };
-
-        setUser({
-          uid: u.uid,
-          email: u.email,
-          displayName: u.name,
-        });
-        setProfile(authenticatedProfile);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(authenticatedProfile));
-        localStorage.setItem(SESSION_DATE_KEY, new Date().toLocaleDateString('sv'));
-        localStorage.setItem(SESSION_TIMESTAMP_KEY, String(Date.now()));
-        return;
-      }
-    } catch (dbErr: any) {
-      if (dbErr.message && !dbErr.message.includes('permission')) {
-        throw dbErr;
-      }
+    if (!authUser) {
+      throw new Error('E-mail ou senha incorretos.');
     }
 
-    throw new Error('E-mail ou senha incorretos.');
+    const synced = await syncUserProfile(authUser);
+    if (!synced) {
+      throw new Error('Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.');
+    }
   };
 
   const logout = async () => {
@@ -511,12 +485,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Nenhum usuário conectado.');
     }
 
-    // If Firebase Auth currentUser is logged in, attempt Firebase update
-    if (auth.currentUser) {
+    if (auth.currentUser && auth.currentUser.email) {
       try {
+        const cred = EmailAuthProvider.credential(auth.currentUser.email, oldPass);
+        await reauthenticateWithCredential(auth.currentUser, cred);
         await updatePassword(auth.currentUser, newPass);
       } catch (err: any) {
-        console.warn('Firebase Auth updatePassword:', err.message);
+        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+          throw new Error('A senha atual informada está incorreta.');
+        }
+        if (err.code === 'auth/weak-password') {
+          throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+        }
+        // Fallback: tentar atualizar direto caso o provedor permita
+        try {
+          await updatePassword(auth.currentUser, newPass);
+        } catch (upErr: any) {
+          console.warn('Firebase Auth updatePassword error:', upErr.message);
+        }
       }
     }
 
@@ -530,6 +516,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updated = { ...profile, password: newPass };
     setProfile(updated);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const updateUserPassword = async (uid: string, newPassword: string) => {
+    if (!isAdmin) {
+      throw new Error('Apenas administradores podem alterar senhas de outros usuários.');
+    }
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+    }
+
+    const userDocRef = doc(db, 'users', uid);
+    await updateDoc(userDocRef, {
+      password: newPassword,
+      updatedAt: new Date().toISOString(),
+    });
+
+    setUsersList((prev) =>
+      prev.map((u) => (u.uid === uid ? { ...u, password: newPassword } : u))
+    );
   };
 
   const createUser = async (email: string, pass: string, name: string, role: UserRole) => {
@@ -654,6 +659,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         logoutAllUsers,
         changePassword,
+        updateUserPassword,
         createUser,
         updateUserStatus,
         updateUserRole,
