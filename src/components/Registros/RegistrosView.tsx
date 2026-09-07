@@ -1031,6 +1031,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                   try {
                     setIsExportingAudit(true);
                     await exportarAuditoriaGeral(1000);
+                  } catch (err: any) {
+                    console.error('Erro ao exportar auditoria:', err);
+                    alert(err?.message || 'Erro ao exportar relatório de auditoria.');
                   } finally {
                     setIsExportingAudit(false);
                   }

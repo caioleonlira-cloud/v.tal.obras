@@ -28,6 +28,7 @@ import {
   ALL_COLUMNS,
   ImportMetadata,
   HistoricoEdicaoItem,
+  isSystemAdminEmail,
 } from '../types';
 import { matchCanonicalColumn, exportarRelatorioHistoricoParaExcel } from '../utils/excel';
 
@@ -212,6 +213,35 @@ function sanitizeRecord<T extends Record<string, any>>(obj: T): T {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, profile, isAdmin } = useAuth();
+  const isAdminRef = React.useRef(isAdmin);
+  const userRef = React.useRef(user);
+  const profileRef = React.useRef(profile);
+
+  useEffect(() => {
+    isAdminRef.current = isAdmin;
+  }, [isAdmin]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  const checkIsAdmin = useCallback(() => {
+    return (
+      isAdmin ||
+      isAdminRef.current ||
+      profile?.role === 'ADM' ||
+      profileRef.current?.role === 'ADM' ||
+      isSystemAdminEmail(user?.email) ||
+      isSystemAdminEmail(userRef.current?.email) ||
+      isSystemAdminEmail(profile?.email) ||
+      isSystemAdminEmail(profileRef.current?.email)
+    );
+  }, [isAdmin, profile, user]);
+
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [segmentacoes, setSegmentacoes] = useState<Record<SegmentacaoKey, string[]>>(DEFAULT_SEGMENTATIONS);
   const [lastImportInfo, setLastImportInfo] = useState<ImportMetadata | null>(null);
@@ -519,7 +549,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // On-demand export for general audit report (only executes when requested by ADM)
   const exportarAuditoriaGeral = useCallback(async (limite = 1000) => {
-    if (!isAdmin) {
+    if (!checkIsAdmin()) {
       throw new Error('Acesso restrito: Apenas administradores possuem permissão para exportar o relatório de auditoria.');
     }
 
@@ -554,12 +584,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Erro ao exportar auditoria sob demanda:', err?.message);
       exportarRelatorioHistoricoParaExcel(cached, 'VTAL_Relatorio_Auditoria_Edicoes');
     }
-  }, []);
+  }, [checkIsAdmin]);
 
   // Routine to archive and purge legacy edit history (> X days, default 90 days / 3 months)
   const arquivarELimparHistorico = useCallback(
     async (diasRetencao = 90): Promise<{ exportados: number; removidos: number }> => {
-      if (!isAdmin) {
+      if (!checkIsAdmin()) {
         throw new Error('Acesso restrito: Apenas administradores possuem permissão para arquivar o histórico de auditoria.');
       }
 
@@ -611,7 +641,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         removidos: remoteOldItems.length || oldCachedItems.length,
       };
     },
-    []
+    [checkIsAdmin]
   );
 
   // 2. Subscribe to metadata/importInfo and trigger refresh if a new import happens
