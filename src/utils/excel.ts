@@ -586,7 +586,7 @@ export async function readExcelFile(file: File): Promise<{
  * Downloads standard Base Matriz (Bloco 1) Template
  */
 export function downloadModeloImportacaoPadrao() {
-  const headers = BLOCO_1_KEYS;
+  const headers = BLOCO_1_KEYS.map((k) => (k === 'Backlog/Input?' ? 'Plan. Estruturante' : k));
   const sampleRow1: Record<string, string> = {
     'DC': 'DC-100201',
     'REG': 'SUL',
@@ -610,7 +610,7 @@ export function downloadModeloImportacaoPadrao() {
     'Tipo de Projeto': 'EXPANSÃO PON',
     'Descricao': 'OBRA FIBRA BAIRRO CENTRO',
     'Status da DC (Atual)': 'EM ANDAMENTO',
-    'Backlog/Input?': 'INPUT',
+    'Plan. Estruturante': 'INPUT',
   };
 
   const sampleRow2: Record<string, string> = {
@@ -636,7 +636,7 @@ export function downloadModeloImportacaoPadrao() {
     'Tipo de Projeto': 'ANEL DEDICADO',
     'Descricao': 'LANÇAMENTO DE CABO 36 FO',
     'Status da DC (Atual)': 'PENDÊNCIA DOC',
-    'Backlog/Input?': 'BACKLOG',
+    'Plan. Estruturante': 'BACKLOG',
   };
 
   const worksheet = XLSX.utils.json_to_sheet([sampleRow1, sampleRow2], { header: headers });

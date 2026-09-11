@@ -1334,6 +1334,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               }}
               optionCounts={backlogInputCounts}
               placeholder="Todos"
+              align="right"
             />
 
             {/* 11. Resp. Medição (Ponto 3) */}
@@ -1348,6 +1349,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               }}
               optionCounts={respMedicaoCounts}
               placeholder="Todos"
+              align="right"
             />
           </div>
         </div>

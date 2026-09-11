@@ -1607,6 +1607,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   onChange={setFilterBacklogInput}
                   optionCounts={backlogInputCounts}
                   placeholder="Todos"
+                  align="right"
                 />
 
                 {/* 11. Resp. Medição */}
@@ -1618,6 +1619,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   onChange={setFilterRespMedicao}
                   optionCounts={respMedicaoCounts}
                   placeholder="Todos"
+                  align="right"
                 />
               </div>
             </div>

@@ -9,6 +9,7 @@ interface MultiSelectFilterProps {
   onChange: (selected: string[]) => void;
   optionCounts?: Record<string, number>;
   placeholder?: string;
+  align?: 'left' | 'right';
 }
 
 export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
@@ -19,22 +20,33 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   onChange,
   optionCounts,
   placeholder = 'Todas',
+  align,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [openRight, setOpenRight] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [openRight, setOpenRight] = useState(align === 'right');
 
   // Check if dropdown should align to right edge when opening to prevent cut-off
-  useEffect(() => {
-    if (isOpen && dropdownRef.current) {
+  const handleToggleDropdown = () => {
+    if (!isOpen && dropdownRef.current) {
       const rect = dropdownRef.current.getBoundingClientRect();
-      // Dropdown panel has width 256px (w-64). If opening left-aligned would overflow the window, flip to right:
-      if (rect.left + 260 > window.innerWidth) {
-        setOpenRight(true);
-      } else {
-        setOpenRight(false);
-      }
+      const shouldAlignRight = align === 'right' || rect.left + 260 > window.innerWidth;
+      setOpenRight(shouldAlignRight);
+    }
+    setIsOpen((prev) => !prev);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      // Focus without causing layout/viewport scroll jump (prevents screen flicker)
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus({ preventScroll: true });
+      }, 10);
+      return () => clearTimeout(timer);
+    } else {
+      setSearch('');
     }
   }, [isOpen]);
 
@@ -112,7 +124,7 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
       {/* Trigger Button */}
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleDropdown}
         className={`w-full flex items-center justify-between px-2 py-1 bg-white border rounded-md text-[11px] font-medium transition-all shadow-2xs cursor-pointer h-[28px] ${
           selected.length > 0
             ? 'border-[#002855] text-slate-900 ring-1 ring-[#002855]/20 bg-blue-50/20'
@@ -159,19 +171,19 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
         <div
           className={`absolute ${
             openRight ? 'right-0' : 'left-0'
-          } mt-1 w-64 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 duration-100`}
+          } mt-1 w-64 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in duration-75`}
         >
           {/* Internal Search */}
           {options.length > 6 && (
             <div className="relative mb-2">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Filtrar opções..."
                 className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#002855] focus:bg-white"
-                autoFocus
               />
               {search && (
                 <button
