@@ -97,11 +97,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
   const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>([]);
+  const [filterRespMedicao, setFilterRespMedicao] = useState<string[]>([]);
 
   // Interactive filters triggered by Dashboard clicks
   const [filterOnlyWithParcial, setFilterOnlyWithParcial] = useState(false);
   const [filterOnlyWithFinal, setFilterOnlyWithFinal] = useState(false);
   const [filterOnlyWithMedido, setFilterOnlyWithMedido] = useState(false);
+  const [filterOnlyWithFaturado, setFilterOnlyWithFaturado] = useState(false);
+  const [filterOnlyWithSaldo, setFilterOnlyWithSaldo] = useState(false);
 
   // 3. Pagination & Sorting (Ponto 3: Persistir ordenação personalizada)
   const [currentPage, setCurrentPage] = useState(1);
@@ -230,12 +233,21 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         setFilterBacklogInput([]);
       }
 
-      // 13. Interactive Flags
+      // 13. Resp. Medição (Ponto 3)
+      if (initialFilters.respMedicao !== undefined) {
+        setFilterRespMedicao(initialFilters.respMedicao);
+      } else {
+        setFilterRespMedicao([]);
+      }
+
+      // 14. Interactive Flags
       setFilterOnlyWithParcial(!!initialFilters.onlyWithParcial);
       setFilterOnlyWithFinal(!!initialFilters.onlyWithFinal);
       setFilterOnlyWithMedido(!!initialFilters.onlyWithMedido);
+      setFilterOnlyWithFaturado(!!initialFilters.onlyWithFaturado);
+      setFilterOnlyWithSaldo(!!initialFilters.onlyWithSaldo);
 
-      // 14. Sorting
+      // 15. Sorting
       if (initialFilters.sortBy) {
         setSortColumn(initialFilters.sortBy);
         if (initialFilters.sortDirection) {
@@ -280,7 +292,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     if (searchDC.trim()) {
       const term = searchDC.toLowerCase().trim();
       const dcVal = (item.DC || '').toLowerCase();
-      const descVal = (item.Descricao || '').toLowerCase();
+      const descVal = (item['Descrição da DC'] || item.Descricao || '').toLowerCase();
       if (!dcVal.includes(term) && !descVal.includes(term)) {
         return false;
       }
@@ -340,6 +352,17 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       const val = (item['Backlog/Input?'] || '').trim();
       if (!val || !filterBacklogInput.includes(val)) return false;
     }
+    // Ponto 3: Novo filtro Resp. Medição
+    if (excludeKey !== 'RESP_MEDICAO' && filterRespMedicao.length > 0) {
+      const respMed = (item['Resp.Medição'] || '').trim();
+      const match = filterRespMedicao.some((frm) => {
+        if (frm === 'Não Atribuído' || frm === 'NÃO ATRIBUÍDO' || frm === 'Sem Resp.') {
+          return !respMed || respMed === '-' || respMed === 'Não Atribuído' || respMed === 'NÃO ATRIBUÍDO';
+        }
+        return respMed.toLowerCase() === frm.toLowerCase();
+      });
+      if (!match) return false;
+    }
     // Interactive Value Filters from Dashboard
     if (filterOnlyWithParcial) {
       const p = parseCurrencyValue(item['Valor Parcial R$']);
@@ -353,6 +376,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       const p = parseCurrencyValue(item['Valor Parcial R$']);
       const f = parseCurrencyValue(item['Valor Final R$']);
       if (p + f <= 0) return false;
+    }
+    if (filterOnlyWithFaturado) {
+      const fat = parseCurrencyValue(item['Valor Faturado']);
+      if (fat <= 0) return false;
+    }
+    if (filterOnlyWithSaldo) {
+      const sal = parseCurrencyValue(item['Saldo']);
+      if (sal <= 0) return false;
     }
     return true;
   };
@@ -381,6 +412,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     statusMedFinalCounts,
     backlogInputOptions,
     backlogInputCounts,
+    respMedicaoOptions,
+    respMedicaoCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
@@ -393,6 +426,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     const stMedParcCounts: Record<string, number> = {};
     const stMedFinCounts: Record<string, number> = {};
     const backlogInpCounts: Record<string, number> = {};
+    const respMedCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
       // 1. REGIONAL
@@ -504,6 +538,16 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           backlogInpCounts[val] = 0;
         }
       }
+
+      // 12. Resp. Medição (Ponto 3)
+      if (r['Resp.Medição']) {
+        const val = r['Resp.Medição'].trim();
+        if (matchesFilterSubset(r, 'RESP_MEDICAO')) {
+          respMedCounts[val] = (respMedCounts[val] || 0) + 1;
+        } else if (filterRespMedicao.includes(val) && !respMedCounts[val]) {
+          respMedCounts[val] = 0;
+        }
+      }
     });
 
     // Ensure configured segmentations are present
@@ -550,6 +594,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       statusMedFinalCounts: stMedFinCounts,
       backlogInputOptions: Object.keys(backlogInpCounts).sort(),
       backlogInputCounts: backlogInpCounts,
+      respMedicaoOptions: Object.keys(respMedCounts).sort(),
+      respMedicaoCounts: respMedCounts,
     };
   }, [
     registros,
@@ -566,6 +612,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterRespMedicao,
   ]);
 
   // Filter Registros (Search in DC or Descricao + Multiselects + Value filters)
@@ -585,21 +632,28 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterRespMedicao,
     filterOnlyWithParcial,
     filterOnlyWithFinal,
     filterOnlyWithMedido,
+    filterOnlyWithFaturado,
+    filterOnlyWithSaldo,
   ]);
 
   // Calculate Summary Totals from filtered rows
-  const { totalOrcamento, totalParcial, totalFinal, totalMedidoTotal } = useMemo(() => {
+  const { totalOrcamento, totalParcial, totalFinal, totalMedidoTotal, totalFaturado, totalSaldo } = useMemo(() => {
     let orc = 0;
     let parc = 0;
     let fin = 0;
+    let fat = 0;
+    let sal = 0;
 
     filteredRegistros.forEach((r) => {
       orc += parseCurrencyValue(r.Orçamento);
       parc += parseCurrencyValue(r['Valor Parcial R$']);
       fin += parseCurrencyValue(r['Valor Final R$']);
+      fat += parseCurrencyValue(r['Valor Faturado']);
+      sal += parseCurrencyValue(r['Saldo']);
     });
 
     return {
@@ -607,6 +661,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       totalParcial: formatBRL(parc),
       totalFinal: formatBRL(fin),
       totalMedidoTotal: formatBRL(parc + fin),
+      totalFaturado: formatBRL(fat),
+      totalSaldo: formatBRL(sal),
     };
   }, [filteredRegistros]);
 
@@ -687,9 +743,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
     setFilterBacklogInput([]);
+    setFilterRespMedicao([]);
     setFilterOnlyWithParcial(false);
     setFilterOnlyWithFinal(false);
     setFilterOnlyWithMedido(false);
+    setFilterOnlyWithFaturado(false);
+    setFilterOnlyWithSaldo(false);
     if (onClearInitialFilters) {
       onClearInitialFilters();
     }
@@ -709,9 +768,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial.length +
     filterStatusMedFinal.length +
     filterBacklogInput.length +
+    filterRespMedicao.length +
     (filterOnlyWithParcial ? 1 : 0) +
     (filterOnlyWithFinal ? 1 : 0) +
-    (filterOnlyWithMedido ? 1 : 0);
+    (filterOnlyWithMedido ? 1 : 0) +
+    (filterOnlyWithFaturado ? 1 : 0) +
+    (filterOnlyWithSaldo ? 1 : 0);
 
   // Status badge styling helper
   const getStatusBadgeClass = (status?: string) => {
@@ -868,7 +930,11 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             >
               <div className="flex items-center justify-between space-x-1.5">
                 <span className="truncate text-slate-100">
-                  {colKey === 'TIPO (Cateira)' ? 'TIPO (CARTEIRA)' : colKey}
+                  {colKey === 'TIPO (Cateira)'
+                    ? 'TIPO (CARTEIRA)'
+                    : colKey === 'Backlog/Input?'
+                    ? 'Plan. Estruturante'
+                    : colKey}
                 </span>
                 {isSorted ? (
                   sortDirection === 'asc' ? (
@@ -1106,7 +1172,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Painel Retrátil de Busca e Filtros (Compacto e Responsivo) */}
+      {/* 2. Painel Retrátil de Busca e Filtros (Responsivo e Sem Scrollbar Interna) */}
       {isFiltersExpanded && (
         <div className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
@@ -1242,21 +1308,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todos"
             />
 
-            {/* 9. Status Med. Parcial (Ponto 5) */}
-            <MultiSelectFilter
-              label="Status Med. Parcial"
-              columnRefName="Parcial"
-              options={statusMedParcialOptions}
-              selected={filterStatusMedParcial}
-              onChange={(sel) => {
-                setFilterStatusMedParcial(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={statusMedParcialCounts}
-              placeholder="Todos"
-            />
-
-            {/* 10. Status Med. Final (Ponto 5) */}
+            {/* 9. Status Med. Final (Ponto 5) */}
             <MultiSelectFilter
               label="Status Med. Final"
               columnRefName="Final"
@@ -1270,10 +1322,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todos"
             />
 
-            {/* 11. Backlog/Input? (Ponto 3) */}
+            {/* 11. Plan. Estruturante (Antigo Backlog/Input?) */}
             <MultiSelectFilter
-              label="Backlog/Input"
-              columnRefName="Tipo"
+              label="Plan. Estruturante"
+              columnRefName="Plan. Estruturante"
               options={backlogInputOptions}
               selected={filterBacklogInput}
               onChange={(sel) => {
@@ -1281,6 +1333,20 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 setCurrentPage(1);
               }}
               optionCounts={backlogInputCounts}
+              placeholder="Todos"
+            />
+
+            {/* 11. Resp. Medição (Ponto 3) */}
+            <MultiSelectFilter
+              label="Resp. Medição"
+              columnRefName="Resp.Medição"
+              options={respMedicaoOptions}
+              selected={filterRespMedicao}
+              onChange={(sel) => {
+                setFilterRespMedicao(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={respMedicaoCounts}
               placeholder="Todos"
             />
           </div>
@@ -1313,12 +1379,28 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               <span>
                 Total Medido: <strong className="text-cyan-800 font-extrabold">{totalMedidoTotal}</strong>
               </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Saldo: <strong className="text-indigo-700 font-bold">{totalSaldo}</strong>
+              </span>
             </>
           ) : (
             <>
               <span className="text-slate-300">•</span>
               <span>
                 Total Medido: <strong className="text-cyan-800 font-extrabold">{totalMedidoTotal}</strong>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
+              </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                Saldo: <strong className="text-indigo-700 font-bold">{totalSaldo}</strong>
               </span>
             </>
           )}
@@ -1356,6 +1438,32 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 type="button"
                 onClick={() => setFilterOnlyWithMedido(false)}
                 className="hover:text-emerald-950 ml-0.5 cursor-pointer"
+                title="Remover filtro"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
+          {filterOnlyWithFaturado && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold border border-blue-300">
+              <span>Faturado &gt; R$ 0</span>
+              <button
+                type="button"
+                onClick={() => setFilterOnlyWithFaturado(false)}
+                className="hover:text-blue-950 ml-0.5 cursor-pointer"
+                title="Remover filtro"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
+          {filterOnlyWithSaldo && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-bold border border-indigo-300">
+              <span>Saldo &gt; R$ 0</span>
+              <button
+                type="button"
+                onClick={() => setFilterOnlyWithSaldo(false)}
+                className="hover:text-indigo-950 ml-0.5 cursor-pointer"
                 title="Remover filtro"
               >
                 <X className="w-2.5 h-2.5" />
@@ -1578,6 +1686,36 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                             ) : (
                               <span className="text-slate-300">—</span>
                             )}
+                          </td>
+                        );
+                      }
+
+                      // Pedido, Valor Faturado, Saldo
+                      if (colKey === 'Valor Faturado' || colKey === 'Saldo') {
+                        const numVal = parseCurrencyValue(val);
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text"
+                            title={val}
+                          >
+                            {numVal > 0 ? (
+                              formatBRL(numVal)
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      }
+
+                      if (colKey === 'Pedido') {
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text"
+                            title={val}
+                          >
+                            {val || <span className="text-slate-300">—</span>}
                           </td>
                         );
                       }

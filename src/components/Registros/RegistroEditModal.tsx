@@ -409,7 +409,7 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-0.5">
                         <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-tight truncate">
-                          {key}
+                          {key === 'Backlog/Input?' ? 'Plan. Estruturante' : key}
                         </span>
                         <button
                           type="button"

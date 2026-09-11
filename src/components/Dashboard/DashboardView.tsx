@@ -44,6 +44,7 @@ interface SavedDashboardFilters {
   filterStatusMedParcial?: string[];
   filterStatusMedFinal?: string[];
   filterBacklogInput?: string[];
+  filterRespMedicao?: string[];
 }
 
 const loadSavedDashboardFilters = (): SavedDashboardFilters => {
@@ -69,6 +70,8 @@ interface MedicaoGroupTableProps {
       orcamento: number;
       parcial: number;
       final: number;
+      faturado?: number;
+      saldo?: number;
       totalMedido?: number;
       concluidas?: number;
     }>;
@@ -77,6 +80,8 @@ interface MedicaoGroupTableProps {
       orcamento: number;
       parcial: number;
       final: number;
+      faturado?: number;
+      saldo?: number;
       totalMedido: number;
       concluidas?: number;
     };
@@ -153,27 +158,33 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse font-sans">
           <thead>
-            <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200">
-              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px]">
+            <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200 whitespace-nowrap">
+              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px] whitespace-nowrap">
                 Regional
               </th>
-              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200">
+              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 min-w-[160px] whitespace-nowrap">
                 Responsável
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[110px]">
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[100px] whitespace-nowrap">
                 DC's
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
                 Orçamento
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
                 Valor Parcial R$
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[160px]">
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
                 Valor Final R$
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold text-emerald-800 w-[180px]">
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[185px] w-[185px] whitespace-nowrap">
                 Valor Total Medido R$
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
+                Valor Faturado
+              </th>
+              <th className="py-2.5 px-4 text-center font-semibold min-w-[140px] w-[140px] whitespace-nowrap">
+                Saldo
               </th>
             </tr>
           </thead>
@@ -335,7 +346,7 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                         sortDirection: 'desc',
                       })
                     }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-slate-200/80 transition-colors group ${
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
                       totalMedidoLinha > 0
                         ? 'cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900'
                         : 'text-slate-400 font-normal'
@@ -350,6 +361,64 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                   >
                     <span className={`inline-block py-0.5 px-2 rounded font-black ${totalMedidoLinha > 0 ? 'group-hover:underline' : ''}`}>
                       {formatBRL(totalMedidoLinha)}
+                    </span>
+                  </td>
+
+                  {/* Valor Faturado */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        onlyWithFaturado: (row.faturado || 0) > 0,
+                        sortBy: 'Valor Faturado',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
+                      (row.faturado || 0) > 0
+                        ? 'cursor-pointer hover:bg-blue-100/70 font-bold text-slate-900'
+                        : 'text-slate-400 font-normal'
+                    }`}
+                    title={
+                      (row.faturado || 0) > 0
+                        ? isTelemontTable
+                          ? `Clique para ver as obras faturadas de ${row.responsavel} na aba Registros`
+                          : `Clique para ver as obras faturadas de ${row.responsavel} (${row.regional}) na aba Registros`
+                        : undefined
+                    }
+                  >
+                    <span className={`inline-block py-0.5 px-2 rounded ${(row.faturado || 0) > 0 ? 'group-hover:underline' : ''}`}>
+                      {formatBRL(row.faturado || 0)}
+                    </span>
+                  </td>
+
+                  {/* Saldo */}
+                  <td
+                    onClick={() =>
+                      onNavigateToRegistros?.({
+                        regional: getRowRegional(row.regional),
+                        responsavel: [row.responsavel],
+                        onlyWithSaldo: (row.saldo || 0) > 0,
+                        sortBy: 'Saldo',
+                        sortDirection: 'desc',
+                      })
+                    }
+                    className={`py-2.5 px-4 text-center tabular-nums border-b border-slate-200/80 transition-colors group ${
+                      (row.saldo || 0) > 0
+                        ? 'cursor-pointer hover:bg-indigo-100/70 font-bold text-slate-900'
+                        : 'text-slate-400 font-normal'
+                    }`}
+                    title={
+                      (row.saldo || 0) > 0
+                        ? isTelemontTable
+                          ? `Clique para ver as obras com saldo de ${row.responsavel} na aba Registros`
+                          : `Clique para ver as obras com saldo de ${row.responsavel} (${row.regional}) na aba Registros`
+                        : undefined
+                    }
+                  >
+                    <span className={`inline-block py-0.5 px-2 rounded ${(row.saldo || 0) > 0 ? 'group-hover:underline' : ''}`}>
+                      {formatBRL(row.saldo || 0)}
                     </span>
                   </td>
                 </tr>
@@ -453,7 +522,7 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'desc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver as obras medidas na aba Registros'
@@ -462,6 +531,46 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
               >
                 <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.totalMedido)}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    onlyWithFaturado: (group.subtotal.faturado || 0) > 0,
+                    sortBy: 'Valor Faturado',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 font-black text-blue-900 transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras faturadas na aba Registros'
+                    : `Clique para ver as obras faturadas da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                  {formatBRL(group.subtotal.faturado || 0)}
+                </span>
+              </td>
+              <td
+                onClick={() =>
+                  onNavigateToRegistros?.({
+                    regional: targetGroupRegional,
+                    onlyWithSaldo: (group.subtotal.saldo || 0) > 0,
+                    sortBy: 'Saldo',
+                    sortDirection: 'desc',
+                  })
+                }
+                className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-indigo-100/70 font-black text-indigo-900 transition-colors group"
+                title={
+                  isTelemontTable
+                    ? 'Clique para ver as obras com saldo na aba Registros'
+                    : `Clique para ver as obras com saldo da ${group.regional} na aba Registros`
+                }
+              >
+                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                  {formatBRL(group.subtotal.saldo || 0)}
                 </span>
               </td>
             </tr>
@@ -492,6 +601,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>(initialSavedFilters.filterStatusMedParcial || []);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>(initialSavedFilters.filterStatusMedFinal || []);
   const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>(initialSavedFilters.filterBacklogInput || []);
+  const [filterRespMedicao, setFilterRespMedicao] = useState<string[]>(initialSavedFilters.filterRespMedicao || []);
 
   // Persist dashboard filter state across page reloads/sessions
   useEffect(() => {
@@ -509,6 +619,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         filterStatusMedParcial,
         filterStatusMedFinal,
         filterBacklogInput,
+        filterRespMedicao,
       };
       sessionStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(stateToSave));
     } catch {
@@ -527,6 +638,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterRespMedicao,
   ]);
 
   // Accordion for status details
@@ -553,6 +665,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if (filterStatusMedParcial.length > 0) payload.statusMedParcial = [...filterStatusMedParcial];
     if (filterStatusMedFinal.length > 0) payload.statusMedFinal = [...filterStatusMedFinal];
     if (filterBacklogInput.length > 0) payload.backlogInput = [...filterBacklogInput];
+    if (filterRespMedicao.length > 0) payload.respMedicao = [...filterRespMedicao];
 
     // 2. Override/add drilldown specifics
     if ('searchDC' in extraFilters) {
@@ -572,6 +685,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         payload.responsavel = extraFilters.responsavel;
       }
     }
+    if ('respMedicao' in extraFilters) payload.respMedicao = extraFilters.respMedicao;
     if ('uf' in extraFilters) payload.uf = extraFilters.uf;
     if ('carteira' in extraFilters) payload.carteira = extraFilters.carteira;
     if ('aging' in extraFilters) payload.aging = extraFilters.aging;
@@ -585,6 +699,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if (extraFilters.onlyWithParcial !== undefined) payload.onlyWithParcial = extraFilters.onlyWithParcial;
     if (extraFilters.onlyWithFinal !== undefined) payload.onlyWithFinal = extraFilters.onlyWithFinal;
     if (extraFilters.onlyWithMedido !== undefined) payload.onlyWithMedido = extraFilters.onlyWithMedido;
+    if (extraFilters.onlyWithFaturado !== undefined) payload.onlyWithFaturado = extraFilters.onlyWithFaturado;
+    if (extraFilters.onlyWithSaldo !== undefined) payload.onlyWithSaldo = extraFilters.onlyWithSaldo;
     if (extraFilters.sortBy) payload.sortBy = extraFilters.sortBy;
     if (extraFilters.sortDirection) payload.sortDirection = extraFilters.sortDirection;
 
@@ -616,6 +732,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       | 'STATUS_MED_PARCIAL'
       | 'STATUS_MED_FINAL'
       | 'BACKLOG_INPUT'
+      | 'RESP_MEDICAO'
   ) => {
     if (searchDC.trim()) {
       const q = searchDC.trim().toLowerCase();
@@ -672,6 +789,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       const val = (item['Backlog/Input?'] || '').trim();
       if (!val || !filterBacklogInput.includes(val)) return false;
     }
+    if (excludeKey !== 'RESP_MEDICAO' && filterRespMedicao.length > 0) {
+      const val = (item['Resp.Medição'] || (item as any)['Resp. Medição'] || '').trim();
+      if (!val || !filterRespMedicao.includes(val)) return false;
+    }
     return true;
   };
 
@@ -699,6 +820,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     statusMedFinalCounts,
     backlogInputOptions,
     backlogInputCounts,
+    respMedicaoOptions,
+    respMedicaoCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
@@ -711,6 +834,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     const stMedParcCounts: Record<string, number> = {};
     const stMedFinCounts: Record<string, number> = {};
     const backlogInpCounts: Record<string, number> = {};
+    const respMedCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
       if (r.REG) {
@@ -768,6 +892,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         if (matchesFilterSubset(r, 'BACKLOG_INPUT')) backlogInpCounts[val] = (backlogInpCounts[val] || 0) + 1;
         else if (filterBacklogInput.includes(val) && !backlogInpCounts[val]) backlogInpCounts[val] = 0;
       }
+      const rmVal = (r['Resp.Medição'] || (r as any)['Resp. Medição'] || '').trim();
+      if (rmVal) {
+        if (matchesFilterSubset(r, 'RESP_MEDICAO')) respMedCounts[rmVal] = (respMedCounts[rmVal] || 0) + 1;
+        else if (filterRespMedicao.includes(rmVal) && !respMedCounts[rmVal]) respMedCounts[rmVal] = 0;
+      }
     });
 
     const sortNumericOrAlpha = (arr: string[]) => {
@@ -802,6 +931,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       statusMedFinalCounts: stMedFinCounts,
       backlogInputOptions: Object.keys(backlogInpCounts).sort(),
       backlogInputCounts: backlogInpCounts,
+      respMedicaoOptions: Object.keys(respMedCounts).sort(),
+      respMedicaoCounts: respMedCounts,
     };
   }, [
     registros,
@@ -817,6 +948,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterRespMedicao,
   ]);
 
   // Filtered dataset
@@ -836,6 +968,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterRespMedicao,
   ]);
 
   // Active filters count
@@ -851,7 +984,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterTipoProjeto.length +
     filterStatusMedParcial.length +
     filterStatusMedFinal.length +
-    filterBacklogInput.length;
+    filterBacklogInput.length +
+    filterRespMedicao.length;
 
   const handleClearFilters = () => {
     setSearchDC('');
@@ -866,6 +1000,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
     setFilterBacklogInput([]);
+    setFilterRespMedicao([]);
     try {
       sessionStorage.removeItem(DASHBOARD_STORAGE_KEY);
     } catch {
@@ -880,6 +1015,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     totalParcial,
     totalFinal,
     totalMedido,
+    totalFaturado,
+    totalSaldo,
     pctMedido,
     concluidasCount,
     emExecucaoCount,
@@ -897,6 +1034,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     let orc = 0;
     let parc = 0;
     let fin = 0;
+    let fatTotal = 0;
+    let sldTotal = 0;
 
     let concl = 0;
     let exec = 0;
@@ -929,18 +1068,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     const rawStatusMap: Record<string, { count: number; orcamento: number; medido: number }> = {};
     const regRespComboMap: Record<
       string,
-      { regional: string; responsavel: string; count: number; orcamento: number; parcial: number; final: number }
+      {
+        regional: string;
+        responsavel: string;
+        count: number;
+        orcamento: number;
+        parcial: number;
+        final: number;
+        faturado: number;
+        saldo: number;
+      }
     > = {};
 
     filteredRegistros.forEach((r) => {
       const o = parseCurrencyValue(r.Orçamento);
       const p = parseCurrencyValue(r['Valor Parcial R$']);
       const f = parseCurrencyValue(r['Valor Final R$']);
+      const fat = parseCurrencyValue(r['Valor Faturado']);
+      const sld = parseCurrencyValue(r.Saldo);
       const m = p + f;
 
       orc += o;
       parc += p;
       fin += f;
+      fatTotal += fat;
+      sldTotal += sld;
 
       // Status classification into 4 macro categories
       const stInf = (r['Status Informe (Campo)'] || 'NÃO INFORMADO').trim().toUpperCase();
@@ -1040,12 +1192,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           orcamento: 0,
           parcial: 0,
           final: 0,
+          faturado: 0,
+          saldo: 0,
         };
       }
       regRespComboMap[comboKey].count++;
       regRespComboMap[comboKey].orcamento += o;
       regRespComboMap[comboKey].parcial += p;
       regRespComboMap[comboKey].final += f;
+      regRespComboMap[comboKey].faturado += fat;
+      regRespComboMap[comboKey].saldo += sld;
 
       // UF Grouping
       const uf = (r.UF || 'OUTRO').trim().toUpperCase();
@@ -1152,6 +1308,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           orcamento: number;
           parcial: number;
           final: number;
+          faturado: number;
+          saldo: number;
           totalMedido: number;
         };
       }
@@ -1163,7 +1321,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         regionalGroupsMap[reg] = {
           regional: reg,
           items: [],
-          subtotal: { count: 0, orcamento: 0, parcial: 0, final: 0, totalMedido: 0 },
+          subtotal: { count: 0, orcamento: 0, parcial: 0, final: 0, faturado: 0, saldo: 0, totalMedido: 0 },
         };
       }
       regionalGroupsMap[reg].items.push(row);
@@ -1171,6 +1329,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       regionalGroupsMap[reg].subtotal.orcamento += row.orcamento;
       regionalGroupsMap[reg].subtotal.parcial += row.parcial;
       regionalGroupsMap[reg].subtotal.final += row.final;
+      regionalGroupsMap[reg].subtotal.faturado += row.faturado || 0;
+      regionalGroupsMap[reg].subtotal.saldo += row.saldo || 0;
       regionalGroupsMap[reg].subtotal.totalMedido += row.parcial + row.final;
     });
 
@@ -1188,6 +1348,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         orcamento: number;
         parcial: number;
         final: number;
+        faturado: number;
+        saldo: number;
       }
     > = {};
 
@@ -1196,6 +1358,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       const o = parseCurrencyValue(r['Orçamento'] || r.Orçamento);
       const p = parseCurrencyValue(r['Valor Parcial R$']);
       const f = parseCurrencyValue(r['Valor Final R$']);
+      const fat = parseCurrencyValue(r['Valor Faturado']);
+      const sld = parseCurrencyValue(r.Saldo);
 
       if (!telemontItemsMap[respCategory]) {
         telemontItemsMap[respCategory] = {
@@ -1205,12 +1369,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           orcamento: 0,
           parcial: 0,
           final: 0,
+          faturado: 0,
+          saldo: 0,
         };
       }
       telemontItemsMap[respCategory].count++;
       telemontItemsMap[respCategory].orcamento += o;
       telemontItemsMap[respCategory].parcial += p;
       telemontItemsMap[respCategory].final += f;
+      telemontItemsMap[respCategory].faturado += fat;
+      telemontItemsMap[respCategory].saldo += sld;
     });
 
     const telemontItems = Object.values(telemontItemsMap).sort((a, b) => b.orcamento - a.orcamento);
@@ -1221,10 +1389,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         acc.orcamento += cur.orcamento;
         acc.parcial += cur.parcial;
         acc.final += cur.final;
+        acc.faturado += cur.faturado;
+        acc.saldo += cur.saldo;
         acc.totalMedido += cur.parcial + cur.final;
         return acc;
       },
-      { count: 0, orcamento: 0, parcial: 0, final: 0, totalMedido: 0 }
+      { count: 0, orcamento: 0, parcial: 0, final: 0, faturado: 0, saldo: 0, totalMedido: 0 }
     );
 
     const telemontGroup = {
@@ -1239,6 +1409,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       totalParcial: parc,
       totalFinal: fin,
       totalMedido: totMed,
+      totalFaturado: fatTotal,
+      totalSaldo: sldTotal,
       pctMedido: pMed,
       concluidasCount: concl,
       emExecucaoCount: exec,
@@ -1306,7 +1478,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
             </div>
           </div>
 
-          {/* Row 2: Collapsible Filters */}
+          {/* Row 2: Collapsible Filters (Responsivo e Sem Scrollbar Interna) */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
@@ -1415,18 +1587,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todos"
                 />
 
-                {/* 9. Status Med. Parcial (Ponto 5) */}
-                <MultiSelectFilter
-                  label="Status Med. Parcial"
-                  columnRefName="Parcial"
-                  options={statusMedParcialOptions}
-                  selected={filterStatusMedParcial}
-                  onChange={setFilterStatusMedParcial}
-                  optionCounts={statusMedParcialCounts}
-                  placeholder="Todos"
-                />
-
-                {/* 10. Status Med. Final (Ponto 5) */}
+                {/* 9. Status Med. Final (Ponto 5) */}
                 <MultiSelectFilter
                   label="Status Med. Final"
                   columnRefName="Final"
@@ -1437,14 +1598,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todos"
                 />
 
-                {/* 11. Backlog/Input? (Ponto 3) */}
+                {/* 10. Plan. Estruturante (Antigo Backlog/Input?) */}
                 <MultiSelectFilter
-                  label="Backlog/Input"
+                  label="Plan. Estruturante"
                   columnRefName="Tipo"
                   options={backlogInputOptions}
                   selected={filterBacklogInput}
                   onChange={setFilterBacklogInput}
                   optionCounts={backlogInputCounts}
+                  placeholder="Todos"
+                />
+
+                {/* 11. Resp. Medição */}
+                <MultiSelectFilter
+                  label="Resp. Medição"
+                  columnRefName="Medição"
+                  options={respMedicaoOptions}
+                  selected={filterRespMedicao}
+                  onChange={setFilterRespMedicao}
+                  optionCounts={respMedicaoCounts}
                   placeholder="Todos"
                 />
               </div>
@@ -1508,10 +1680,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           </div>
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <span>Média por obra:</span>
-            <span className="font-bold text-slate-800">
-              {totalDcs > 0 ? formatBRL(totalOrcamento / totalDcs) : 'R$ 0,00'}
-            </span>
+            <span>Faturado: <strong className="text-blue-700 font-bold">{formatBRL(totalFaturado)}</strong></span>
+            <span>Saldo: <strong className="text-indigo-700 font-bold">{formatBRL(totalSaldo)}</strong></span>
           </div>
         </div>
 
@@ -1640,38 +1810,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse font-sans">
                   <thead>
-                    <tr className="bg-slate-200/80 text-slate-700 uppercase text-[11px] font-black tracking-wider select-none border-b border-slate-300">
-                      <th colSpan={2} className="py-3 px-4 text-left font-black border-r border-slate-300">
+                    <tr className="bg-slate-200/80 text-slate-700 uppercase text-[11px] font-black tracking-wider select-none border-b border-slate-300 whitespace-nowrap">
+                      <th colSpan={2} className="py-3 px-4 text-left font-black border-r border-slate-300 whitespace-nowrap">
                         Total Geral Consolidado ({regionalGroups.length} Regionais)
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[110px]">
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[100px] whitespace-nowrap">
                         DC's
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[160px]">
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
                         Orçamento
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[160px]">
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
                         Valor Parcial R$
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[160px]">
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
                         Valor Final R$
                       </th>
-                      <th className="py-3 px-4 text-center font-black text-emerald-900 w-[180px]">
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[185px] w-[185px] whitespace-nowrap">
                         Valor Total Medido R$
+                      </th>
+                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
+                        Valor Faturado
+                      </th>
+                      <th className="py-3 px-4 text-center font-black min-w-[140px] w-[140px] whitespace-nowrap">
+                        Saldo
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="bg-white font-bold text-slate-900">
+                    <tr className="bg-white font-bold text-slate-900 whitespace-nowrap">
                       <td
                         colSpan={2}
-                        className="py-3 px-4 text-left border-r border-slate-300 uppercase text-[11px] font-black tracking-wider text-[#002855]"
+                        className="py-3 px-4 text-left border-r border-slate-300 uppercase text-[11px] font-black tracking-wider text-[#002855] whitespace-nowrap"
                       >
                         Soma das Regionais Filtradas
                       </td>
                       <td
                         onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-slate-900 font-black transition-colors group"
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-slate-900 font-black transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras filtradas na aba Registros"
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
@@ -1680,7 +1856,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       </td>
                       <td
                         onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-[#002855] font-black transition-colors group"
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-[#002855] font-black transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras ordenadas por orçamento"
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
@@ -1695,7 +1871,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group"
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras com medição parcial na aba Registros"
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
@@ -1710,7 +1886,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group"
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras com medição final na aba Registros"
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
@@ -1725,11 +1901,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums cursor-pointer hover:bg-emerald-200/80 font-black text-emerald-900 transition-colors group"
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-200/80 font-black text-emerald-900 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras com medições (parcial ou final) na aba Registros"
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
                           {formatBRL(totalParcial + totalFinal)}
+                        </span>
+                      </td>
+                      <td
+                        onClick={() =>
+                          handleNavigateWithDashboardFilters({
+                            onlyWithFaturado: true,
+                            sortBy: 'Valor Faturado',
+                            sortDirection: 'desc',
+                          })
+                        }
+                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 font-black text-blue-800 transition-colors group whitespace-nowrap"
+                        title="Clique para ver todas as obras faturadas na aba Registros"
+                      >
+                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                          {formatBRL(totalFaturado)}
+                        </span>
+                      </td>
+                      <td
+                        onClick={() =>
+                          handleNavigateWithDashboardFilters({
+                            onlyWithSaldo: true,
+                            sortBy: 'Saldo',
+                            sortDirection: 'desc',
+                          })
+                        }
+                        className="py-3 px-4 text-center tabular-nums cursor-pointer hover:bg-indigo-100/80 font-black text-indigo-900 transition-colors group whitespace-nowrap"
+                        title="Clique para ver todas as obras com saldo a faturar na aba Registros"
+                      >
+                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                          {formatBRL(totalSaldo)}
                         </span>
                       </td>
                     </tr>

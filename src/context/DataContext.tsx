@@ -908,6 +908,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (row[canonicalKey] !== undefined && row[canonicalKey] !== null) {
       return String(row[canonicalKey]).trim();
     }
+    // Direct alias handling for Backlog/Input? / Plan. Estruturante
+    if (canonicalKey === 'Backlog/Input?') {
+      const planVal =
+        row['Plan. Estruturante'] ??
+        row['Plan Estruturante'] ??
+        row['Planejamento Estruturante'] ??
+        row['Backlog/Input'] ??
+        row['Backlog/Input?'];
+      if (planVal !== undefined && planVal !== null) {
+        return String(planVal).trim();
+      }
+    }
     // Search by key aliases in row
     for (const key of Object.keys(row)) {
       const matched = matchCanonicalColumn(key);
@@ -957,6 +969,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': extractRowField(linha, 'Valor Parcial R$'),
         'Status Med. Final': extractRowField(linha, 'Status Med. Final'),
         'Valor Final R$': extractRowField(linha, 'Valor Final R$'),
+        'Pedido': extractRowField(linha, 'Pedido'),
+        'Valor Faturado': extractRowField(linha, 'Valor Faturado'),
+        'Saldo': extractRowField(linha, 'Saldo'),
         'Tempo': extractRowField(linha, 'Tempo'),
         'AGING': extractRowField(linha, 'AGING'),
         'Data Status': extractRowField(linha, 'Data Status'),
@@ -1345,6 +1360,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': '18.450,00',
         'Status Med. Final': 'EM ANÁLISE',
         'Valor Final R$': '42.300,00',
+        'Pedido': 'PED-904120',
+        'Valor Faturado': '18.450,00',
+        'Saldo': '23.850,00',
         'Tempo': '45',
         'AGING': '12',
         'Data Status': '28/08/2024',
@@ -1377,6 +1395,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': '8.200,00',
         'Status Med. Final': 'NÃO INICIADA',
         'Valor Final R$': '26.800,00',
+        'Pedido': 'PED-904121',
+        'Valor Faturado': '0,00',
+        'Saldo': '26.800,00',
         'Tempo': '62',
         'AGING': '25',
         'Data Status': '20/08/2024',
@@ -1409,6 +1430,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': '12.000,00',
         'Status Med. Final': 'APROVADA',
         'Valor Final R$': '15.500,00',
+        'Pedido': 'PED-904122',
+        'Valor Faturado': '27.500,00',
+        'Saldo': '0,00',
         'Tempo': '30',
         'AGING': '5',
         'Data Status': '30/08/2024',
@@ -1441,6 +1465,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': '0,00',
         'Status Med. Final': 'PENDENTE',
         'Valor Final R$': '34.900,00',
+        'Pedido': 'PED-904123',
+        'Valor Faturado': '0,00',
+        'Saldo': '34.900,00',
         'Tempo': '80',
         'AGING': '40',
         'Data Status': '15/08/2024',
@@ -1473,6 +1500,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Valor Parcial R$': '5.400,00',
         'Status Med. Final': 'NÃO INICIADA',
         'Valor Final R$': '19.200,00',
+        'Pedido': 'PED-904124',
+        'Valor Faturado': '5.400,00',
+        'Saldo': '19.200,00',
         'Tempo': '22',
         'AGING': '8',
         'Data Status': '25/08/2024',

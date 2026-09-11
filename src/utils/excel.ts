@@ -102,6 +102,41 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
     return 'Status Med. Final';
   }
 
+  // Pedido
+  if (
+    clean === 'PEDIDO' ||
+    clean === 'N PEDIDO' ||
+    clean === 'NR PEDIDO' ||
+    clean === 'NUM PEDIDO' ||
+    clean === 'NUMERO PEDIDO' ||
+    clean === 'COD PEDIDO' ||
+    clean.includes('PEDIDO')
+  ) {
+    return 'Pedido';
+  }
+
+  // Valor Faturado
+  if (
+    clean.includes('FATURAD') ||
+    clean.includes('FATURAMENTO') ||
+    clean === 'VALOR FATURADO' ||
+    clean === 'FATURADO R$' ||
+    clean === 'VALOR FATURADO R$'
+  ) {
+    return 'Valor Faturado';
+  }
+
+  // Saldo
+  if (
+    clean === 'SALDO' ||
+    clean === 'SALDO R$' ||
+    clean === 'VALOR SALDO' ||
+    clean === 'SALDO DISPONIVEL' ||
+    clean.includes('SALDO')
+  ) {
+    return 'Saldo';
+  }
+
   if (clean === 'TEMPO' || clean === 'TEMPO DIAS' || clean === 'DIAS') return 'Tempo';
   
   if (clean === 'AGING' || clean === 'AGING DIAS' || clean === 'AGING TEMPO') return 'AGING';
@@ -137,7 +172,18 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
     return 'Status da DC (Atual)';
   }
 
-  if (clean.includes('BACKLOG') || clean.includes('INPUT')) {
+  // Plan. Estruturante / Backlog/Input? (Base Matriz Header Mapping)
+  if (
+    clean === 'BACKLOG INPUT' ||
+    clean === 'BACKLOG INPUT?' ||
+    clean === 'BACKLOG/INPUT' ||
+    clean === 'BACKLOG/INPUT?' ||
+    clean === 'PLAN ESTRUTURANTE' ||
+    clean === 'PLANEJAMENTO ESTRUTURANTE' ||
+    clean.includes('ESTRUTURANTE') ||
+    clean.includes('BACKLOG') ||
+    clean.includes('INPUT')
+  ) {
     return 'Backlog/Input?';
   }
 
@@ -497,7 +543,9 @@ export async function readExcelFile(file: File): Promise<{
           if (
             canonical === 'Valor Parcial R$' ||
             canonical === 'Valor Final R$' ||
-            canonical === 'Orçamento'
+            canonical === 'Orçamento' ||
+            canonical === 'Valor Faturado' ||
+            canonical === 'Saldo'
           ) {
             if (formattedVal !== '') {
               const parsed = parseCurrencyValue(rawVal !== undefined ? rawVal : formattedVal);
@@ -551,6 +599,9 @@ export function downloadModeloImportacaoPadrao() {
     'Valor Parcial R$': '15.200,00',
     'Status Med. Final': 'EM ANÁLISE',
     'Valor Final R$': '38.500,00',
+    'Pedido': 'PED-100201',
+    'Valor Faturado': '38.500,00',
+    'Saldo': '0,00',
     'Tempo': '35',
     'AGING': '10',
     'Data Status': '15/08/2024',
@@ -574,6 +625,9 @@ export function downloadModeloImportacaoPadrao() {
     'Valor Parcial R$': '0,00',
     'Status Med. Final': 'NÃO INICIADA',
     'Valor Final R$': '22.100,00',
+    'Pedido': 'PED-100202',
+    'Valor Faturado': '0,00',
+    'Saldo': '22.100,00',
     'Tempo': '40',
     'AGING': '18',
     'Data Status': '20/08/2024',
@@ -652,6 +706,8 @@ export const CURRENCY_COLUMNS = new Set([
   'Orçamento',
   'Valor Parcial R$',
   'Valor Final R$',
+  'Valor Faturado',
+  'Saldo',
 ]);
 
 export const INTEGER_COLUMNS = new Set([
@@ -801,33 +857,38 @@ export function parseNumberForExcel(val?: any, isCurrencyCol = false): number | 
  * Exports records list to Excel with native Date and Number cell types
  */
 export function exportarRegistrosParaExcel(registros: Registro[], nomeArquivo = 'VTAL_OBRAS_Registros') {
+  const exportHeaders = ALL_COLUMNS.map((col) =>
+    col === 'Backlog/Input?' ? 'Plan. Estruturante' : col
+  );
+
   const exportData = registros.map((item) => {
     const row: Record<string, any> = {};
     ALL_COLUMNS.forEach((col) => {
+      const headerKey = col === 'Backlog/Input?' ? 'Plan. Estruturante' : col;
       const rawVal = (item as any)[col];
       if (rawVal === undefined || rawVal === null || rawVal === '') {
-        row[col] = '';
+        row[headerKey] = '';
         return;
       }
 
       if (DATE_COLUMNS.has(col)) {
         const parsedDate = parseDateForExcel(rawVal);
-        row[col] = parsedDate ? parsedDate : (rawVal ? String(rawVal).trim() : '');
+        row[headerKey] = parsedDate ? parsedDate : (rawVal ? String(rawVal).trim() : '');
       } else if (CURRENCY_COLUMNS.has(col)) {
         const parsedNum = parseNumberForExcel(rawVal, true);
-        row[col] = parsedNum !== null ? parsedNum : (rawVal ? String(rawVal).trim() : '');
+        row[headerKey] = parsedNum !== null ? parsedNum : (rawVal ? String(rawVal).trim() : '');
       } else if (INTEGER_COLUMNS.has(col)) {
         const parsedInt = parseNumberForExcel(rawVal, false);
-        row[col] = parsedInt !== null ? Math.round(parsedInt) : (rawVal ? String(rawVal).trim() : '');
+        row[headerKey] = parsedInt !== null ? Math.round(parsedInt) : (rawVal ? String(rawVal).trim() : '');
       } else {
-        row[col] = String(rawVal).trim();
+        row[headerKey] = String(rawVal).trim();
       }
     });
     return row;
   });
 
   const worksheet = XLSX.utils.json_to_sheet(exportData, {
-    header: ALL_COLUMNS,
+    header: exportHeaders,
     cellDates: true,
     dateNF: 'dd/mm/yyyy',
   });

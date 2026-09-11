@@ -23,6 +23,20 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [openRight, setOpenRight] = useState(false);
+
+  // Check if dropdown should align to right edge when opening to prevent cut-off
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      // Dropdown panel has width 256px (w-64). If opening left-aligned would overflow the window, flip to right:
+      if (rect.left + 260 > window.innerWidth) {
+        setOpenRight(true);
+      } else {
+        setOpenRight(false);
+      }
+    }
+  }, [isOpen]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -71,7 +85,7 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   }, [selected, options.length, placeholder]);
 
   return (
-    <div className="relative inline-block w-full text-left" ref={dropdownRef}>
+    <div className={`relative inline-block w-full text-left ${isOpen ? 'z-50' : 'z-10'}`} ref={dropdownRef}>
       {/* Field Label */}
       <div className="flex items-center justify-between mb-0.5">
         <label className="block text-[10px] font-bold text-slate-700 tracking-tight truncate leading-tight">
@@ -142,7 +156,11 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
 
       {/* Popover Dropdown Panel */}
       {isOpen && (
-        <div className="absolute left-0 mt-1 w-64 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={`absolute ${
+            openRight ? 'right-0' : 'left-0'
+          } mt-1 w-64 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 duration-100`}
+        >
           {/* Internal Search */}
           {options.length > 6 && (
             <div className="relative mb-2">

@@ -10,6 +10,9 @@ export interface RegistroBloco1 {
   'Valor Parcial R$': string;
   'Status Med. Final': string;
   'Valor Final R$': string;
+  'Pedido'?: string;
+  'Valor Faturado'?: string;
+  'Saldo'?: string;
   'Tempo': string;
   'AGING': string;
   'Data Status': string;
@@ -105,6 +108,9 @@ export const BLOCO_1_KEYS: (keyof RegistroBloco1)[] = [
   'Valor Parcial R$',
   'Status Med. Final',
   'Valor Final R$',
+  'Pedido',
+  'Valor Faturado',
+  'Saldo',
   'Tempo',
   'AGING',
   'Data Status',
@@ -276,6 +282,7 @@ export interface RegistrosFilterPayload {
   statusAtual?: string[];
   statusInforme?: string[];
   responsavel?: string[];
+  respMedicao?: string[];
   tipoProjeto?: string[];
   statusMedParcial?: string[];
   statusMedFinal?: string[];
@@ -283,6 +290,8 @@ export interface RegistrosFilterPayload {
   onlyWithParcial?: boolean;
   onlyWithFinal?: boolean;
   onlyWithMedido?: boolean;
+  onlyWithFaturado?: boolean;
+  onlyWithSaldo?: boolean;
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
 }
