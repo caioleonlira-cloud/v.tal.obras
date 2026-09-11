@@ -138,6 +138,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn('Busca fallback de usuário por email:', queryErr);
         }
 
+        // Se o usuário não foi previamente cadastrado pelo Administrador no Firestore e não é o Admin inicial do sistema
+        if (!isInitialAdmin && !existingData) {
+          await fbSignOut(auth);
+          throw new Error('Acesso não autorizado. Usuário não cadastrado pelo Administrador.');
+        }
+
         syncedProfile = {
           uid: currentUser.uid,
           email: currentUser.email?.toLowerCase() || '',
@@ -401,19 +407,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch {
           throw new Error('E-mail ou senha incorretos.');
         }
-      } else if (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') {
-        // Tentar registrar usuário recém-criado pelo admin que ainda não possui credencial no Firebase Auth
-        try {
-          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-          authUser = cred.user;
-        } catch {
-          // Se já está em uso ou outro erro, a senha fornecida está incorreta!
-          throw new Error('E-mail ou senha incorretos.');
-        }
-      } else if (errCode === 'auth/wrong-password') {
+      } else if (errCode === 'auth/wrong-password' || errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') {
         throw new Error('E-mail ou senha incorretos.');
       } else if (errCode === 'auth/user-disabled') {
-        throw new Error('Este usuário foi desativado no Firebase Authentication.');
+        throw new Error('Este usuário foi desativado pelo administrador.');
       } else if (errCode === 'auth/too-many-requests') {
         throw new Error('Muitas tentativas sem sucesso. Aguarde alguns instantes e tente novamente.');
       } else {

@@ -91,7 +91,7 @@ service cloud.firestore {
 
       // ADM pode criar qualquer usuário; o próprio usuário autenticado pode inicializar seu próprio perfil
       allow create: if isSignedIn() && (isAdmin() || request.auth.uid == userId);
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
 
       // Atualização:
       // - ADM pode editar qualquer campo e alterar papéis (role/status)
@@ -99,6 +99,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isAdmin() ||
         (request.auth.uid == userId && (
+          !('role' in request.resource.data) ||
           request.resource.data.role == resource.data.role ||
           request.resource.data.role != 'ADM' ||
           isMasterAdmin()
