@@ -89,7 +89,7 @@ const MainLayout: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 w-full min-w-0 max-w-full px-4 sm:px-6 lg:px-8 py-6">
         <div className={activeTab === 'registros' ? 'block' : 'hidden'}>
           <RegistrosView
             initialFilters={registrosInitialFilters}

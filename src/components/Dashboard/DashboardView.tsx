@@ -155,7 +155,7 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-w-full">
         <table className="w-full text-left text-xs border-collapse font-sans">
           <thead>
             <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200 whitespace-nowrap">
@@ -170,12 +170,6 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
               </th>
               <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
                 Orçamento
-              </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
-                Valor Parcial R$
-              </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
-                Valor Final R$
               </th>
               <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[185px] w-[185px] whitespace-nowrap">
                 Valor Total Medido R$
@@ -274,64 +268,6 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                   >
                     <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
                       {formatBRL(row.orcamento)}
-                    </span>
-                  </td>
-
-                  {/* Valor Parcial R$ */}
-                  <td
-                    onClick={() =>
-                      onNavigateToRegistros?.({
-                        regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
-                        onlyWithParcial: row.parcial > 0,
-                        sortBy: 'Valor Parcial R$',
-                        sortDirection: 'desc',
-                      })
-                    }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
-                      row.parcial > 0
-                        ? 'cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900'
-                        : 'text-slate-400 font-normal'
-                    }`}
-                    title={
-                      row.parcial > 0
-                        ? isTelemontTable
-                          ? `Clique para ver as obras com medição parcial de ${row.responsavel} na aba Registros`
-                          : `Clique para ver as obras com medição parcial de ${row.responsavel} (${row.regional}) na aba Registros`
-                        : undefined
-                    }
-                  >
-                    <span className={`inline-block py-0.5 px-2 rounded ${row.parcial > 0 ? 'group-hover:underline' : ''}`}>
-                      {formatBRL(row.parcial)}
-                    </span>
-                  </td>
-
-                  {/* Valor Final R$ */}
-                  <td
-                    onClick={() =>
-                      onNavigateToRegistros?.({
-                        regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
-                        onlyWithFinal: row.final > 0,
-                        sortBy: 'Valor Final R$',
-                        sortDirection: 'desc',
-                      })
-                    }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
-                      row.final > 0
-                        ? 'cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900'
-                        : 'text-slate-400 font-normal'
-                    }`}
-                    title={
-                      row.final > 0
-                        ? isTelemontTable
-                          ? `Clique para ver as obras com medição final de ${row.responsavel} na aba Registros`
-                          : `Clique para ver as obras com medição final de ${row.responsavel} (${row.regional}) na aba Registros`
-                        : undefined
-                    }
-                  >
-                    <span className={`inline-block py-0.5 px-2 rounded ${row.final > 0 ? 'group-hover:underline' : ''}`}>
-                      {formatBRL(row.final)}
                     </span>
                   </td>
 
@@ -471,46 +407,6 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
               >
                 <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.orcamento)}
-                </span>
-              </td>
-              <td
-                onClick={() =>
-                  onNavigateToRegistros?.({
-                    regional: targetGroupRegional,
-                    onlyWithParcial: group.subtotal.parcial > 0,
-                    sortBy: 'Valor Parcial R$',
-                    sortDirection: 'desc',
-                  })
-                }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                title={
-                  isTelemontTable
-                    ? 'Clique para ver as obras com medição parcial na aba Registros'
-                    : `Clique para ver as obras com medição parcial da ${group.regional} na aba Registros`
-                }
-              >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                  {formatBRL(group.subtotal.parcial)}
-                </span>
-              </td>
-              <td
-                onClick={() =>
-                  onNavigateToRegistros?.({
-                    regional: targetGroupRegional,
-                    onlyWithFinal: group.subtotal.final > 0,
-                    sortBy: 'Valor Final R$',
-                    sortDirection: 'desc',
-                  })
-                }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-100/70 font-bold text-slate-900 transition-colors group"
-                title={
-                  isTelemontTable
-                    ? 'Clique para ver as obras com medição final na aba Registros'
-                    : `Clique para ver as obras com medição final da ${group.regional} na aba Registros`
-                }
-              >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-bold">
-                  {formatBRL(group.subtotal.final)}
                 </span>
               </td>
               <td
@@ -1434,9 +1330,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     telemontGroup.items.length > 0;
 
   return (
-    <div className="space-y-6 font-sans pb-10 bg-[#F8FAFC]">
-      {/* 1. TOP STICKY FILTER BAR (Clean, high contrast, non-intrusive) */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs py-2.5 px-4 rounded-b-2xl transition-all">
+    <div className="space-y-6 font-sans pb-10 bg-[#F8FAFC] min-w-0 max-w-full">
+      {/* 1. Painel de Filtros (Consistente com a aba Registros, em fluxo normal sem conflito com menu superior) */}
+      <div className="bg-white border border-slate-200 shadow-xs py-3 px-4 rounded-xl transition-all">
         <div className="flex flex-col gap-2">
           {/* Row 1: Quick status indicator & Search & Clear */}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1809,7 +1705,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           {/* Card Consolidado: Exibido caso TELEMONT não esteja ativo mas haja mais de 1 regional (ex: 2 regionais) */}
           {!showTelemontTable && regionalGroups.length > 1 && (
             <div className="rounded-xl border-2 border-slate-300 bg-slate-100/90 shadow-xs overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-w-full">
                 <table className="w-full text-xs border-collapse font-sans">
                   <thead>
                     <tr className="bg-slate-200/80 text-slate-700 uppercase text-[11px] font-black tracking-wider select-none border-b border-slate-300 whitespace-nowrap">
@@ -1821,12 +1717,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       </th>
                       <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
                         Orçamento
-                      </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
-                        Valor Parcial R$
-                      </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
-                        Valor Final R$
                       </th>
                       <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[185px] w-[185px] whitespace-nowrap">
                         Valor Total Medido R$
@@ -1863,36 +1753,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       >
                         <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
                           {formatBRL(totalOrcamento)}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          handleNavigateWithDashboardFilters({
-                            onlyWithParcial: true,
-                            sortBy: 'Valor Parcial R$',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group whitespace-nowrap"
-                        title="Clique para ver todas as obras com medição parcial na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                          {formatBRL(totalParcial)}
-                        </span>
-                      </td>
-                      <td
-                        onClick={() =>
-                          handleNavigateWithDashboardFilters({
-                            onlyWithFinal: true,
-                            sortBy: 'Valor Final R$',
-                            sortDirection: 'desc',
-                          })
-                        }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-100/80 font-black text-slate-900 transition-colors group whitespace-nowrap"
-                        title="Clique para ver todas as obras com medição final na aba Registros"
-                      >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
-                          {formatBRL(totalFinal)}
                         </span>
                       </td>
                       <td
