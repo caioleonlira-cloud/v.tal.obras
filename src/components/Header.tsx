@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenFirebaseConfig,
 }) => {
   const { profile, user, logout, isAdmin } = useAuth();
-  const { registros, frRegistros, loadingRegistros, refreshRegistros, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
+  const { registros, frRegistros, loadingRegistros, loadingFRs, refreshRegistros, refreshFRs, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
 
   // Presença online em tempo real (Firestore event-based, exclusivo ADM)
   const {
@@ -210,12 +210,15 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Ícone de Refresh / Recarregar */}
           <button
             type="button"
-            onClick={() => refreshRegistros()}
-            title="Recarregar base de dados"
+            onClick={() => {
+              refreshRegistros();
+              refreshFRs();
+            }}
+            title="Recarregar base de dados (Obras e FR)"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer border border-white/10"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${loadingRegistros ? 'animate-spin text-cyan-400' : ''}`}
+              className={`w-3.5 h-3.5 ${loadingRegistros || loadingFRs ? 'animate-spin text-cyan-400' : ''}`}
             />
           </button>
 

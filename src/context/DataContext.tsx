@@ -102,6 +102,9 @@ interface DataContextType {
     fileName: string,
     onProgress?: (porcentagem: number, etapa: string) => void
   ) => Promise<{ total: number; erro?: string }>;
+  sincronizarFRLocalParaFirestore: (
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => Promise<{ success: boolean; total?: number; erro?: string }>;
   popularDadosExemplo: () => Promise<void>;
 }
 
@@ -597,6 +600,45 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const frCol = collection(db, 'fr_registros');
     let isCancelled = false;
 
+    // Helper: se a base remota no Firebase estiver vazia, mas houver dados importados localmente,
+    // sincroniza automaticamente com o Firestore em segundo plano sem exigir ação manual
+    const autoSyncLocalToRemote = async (localList: FRRegistro[]) => {
+      if (!localList || localList.length === 0) return;
+      try {
+        const nowIso = new Date().toISOString();
+        const updatedBy = user?.email || auth?.currentUser?.email || 'Sistema (Auto-Sync)';
+        const BATCH_SIZE = 100;
+
+        for (let i = 0; i < localList.length; i += BATCH_SIZE) {
+          const slice = localList.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const item of slice) {
+            const docId = item.id && !item.id.startsWith('fr_local_') ? item.id : doc(frCol).id;
+            const docRef = doc(db, 'fr_registros', docId);
+            batch.set(docRef, {
+              ...sanitizeRecord(item),
+              _updatedAt: item._updatedAt || nowIso,
+              _updatedBy: item._updatedBy || updatedBy,
+            });
+          }
+          await commitBatchWithTimeout(batch, 30000, `auto-sync lote FR (${i + 1}-${i + slice.length})`);
+        }
+
+        const metaInfo: ImportInfoFR = cachedMeta || {
+          fileName: 'Auto-sincronizado da base local',
+          importedAt: nowIso,
+          importedBy: updatedBy,
+          totalLinhas: localList.length,
+        };
+        await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
+        console.log(`[Auto-Sync] ${localList.length} registros de FR sincronizados automaticamente com o Firestore.`);
+      } catch (autoErr: any) {
+        console.warn('[Auto-Sync] Tentativa de sincronização automática de FR:', autoErr?.message);
+      }
+    };
+
+    let hasReceivedInitialSnapshot = false;
+
     const unsub = onSnapshot(
       frCol,
       (snap) => {
@@ -605,14 +647,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         snap.forEach((d) => {
           list.push({ id: d.id, ...d.data() } as FRRegistro);
         });
-        setFrRegistros(list);
-        saveLocalFR(list);
+
+        if (list.length > 0) {
+          // Nuvem tem dados atualizados: atualiza o estado e armazena no cache local
+          setFrRegistros(list);
+          saveLocalFR(list);
+        } else if (!hasReceivedInitialSnapshot && cachedFR && cachedFR.length > 0) {
+          // A nuvem está vazia, mas esta máquina possui uma base local recém-importada:
+          // aciona sincronização automática transparente para a nuvem
+          autoSyncLocalToRemote(cachedFR);
+        } else {
+          setFrRegistros([]);
+          saveLocalFR([]);
+        }
+
+        hasReceivedInitialSnapshot = true;
         setLoadingFRs(false);
       },
       (err) => {
         if (!isCancelled) {
-          console.warn('Erro ao sincronizar FRs em tempo real:', err?.message);
-          setLoadingFRs(false);
+          console.warn('Aviso ao sincronizar FRs em tempo real, tentando consulta direta getDocs:', err?.message);
+          getDocs(frCol)
+            .then((snap) => {
+              if (isCancelled) return;
+              const list: FRRegistro[] = [];
+              snap.forEach((d) => {
+                list.push({ id: d.id, ...d.data() } as FRRegistro);
+              });
+              if (list.length > 0) {
+                setFrRegistros(list);
+                saveLocalFR(list);
+              } else if (cachedFR && cachedFR.length > 0) {
+                autoSyncLocalToRemote(cachedFR);
+              }
+            })
+            .catch((e2) => console.warn('Falha também no fallback getDocs de FR:', e2?.message))
+            .finally(() => setLoadingFRs(false));
         }
       }
     );
@@ -1929,8 +1999,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const totalToDelete = existingDocs.length;
 
-        // 1. Delete all existing FR docs in batches of 200
-        const BATCH_SIZE = 200;
+        // 1. Delete all existing FR docs in batches of 100
+        const BATCH_SIZE = 100;
         let deleted = 0;
         for (let i = 0; i < existingDocs.length; i += BATCH_SIZE) {
           const slice = existingDocs.slice(i, i + BATCH_SIZE);
@@ -1939,21 +2009,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             batch.delete(d.ref);
           }
           try {
-            await commitBatchWithTimeout(batch, 30000, `exclusão de lote FR (${deleted}/${totalToDelete})`);
+            await commitBatchWithTimeout(batch, 25000, `exclusão de lote FR (${deleted}/${totalToDelete})`);
           } catch (delErr: any) {
-            console.warn('Aviso exclusão lote FR Firestore:', delErr?.message);
+            console.warn('Tentando novamente exclusão lote FR Firestore:', delErr?.message);
+            const retryBatch = writeBatch(db);
+            for (const d of slice) {
+              retryBatch.delete(d.ref);
+            }
+            await retryBatch.commit();
           }
           deleted += slice.length;
-          const pct = Math.round((deleted / (totalToDelete + totalNew || 1)) * 45);
-          onProgress?.(pct, `Removendo base anterior: ${deleted} de ${totalToDelete}...`);
+          const pct = Math.round((deleted / (totalToDelete + totalNew || 1)) * 40);
+          onProgress?.(pct, `Removendo base anterior no Firebase: ${deleted} de ${totalToDelete}...`);
         }
 
-        // 2. Insert new docs in batches of 200
+        // 2. Insert new docs in batches of 100
         let inserted = 0;
         const createdList: FRRegistro[] = [];
         for (let i = 0; i < dados.length; i += BATCH_SIZE) {
           const slice = dados.slice(i, i + BATCH_SIZE);
           const batch = writeBatch(db);
+          const batchItems: FRRegistro[] = [];
+
           for (const item of slice) {
             const newDocRef = doc(frCol);
             const sanitized = sanitizeRecord(item);
@@ -1962,21 +2039,38 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               _updatedAt: nowIso,
               _updatedBy: updatedBy,
             });
-            createdList.push({
+            batchItems.push({
               id: newDocRef.id,
               ...item,
               _updatedAt: nowIso,
               _updatedBy: updatedBy,
             });
           }
+
           try {
-            await commitBatchWithTimeout(batch, 35000, `gravação de lote FR (${inserted}/${totalNew})`);
+            await commitBatchWithTimeout(batch, 30000, `gravação de lote FR (${inserted}/${totalNew})`);
           } catch (insErr: any) {
-            console.warn('Aviso gravação lote FR Firestore:', insErr?.message);
+            console.warn('Tentando novamente gravação lote FR Firestore:', insErr?.message);
+            const retryBatch = writeBatch(db);
+            for (const bItem of batchItems) {
+              const dRef = doc(db, 'fr_registros', bItem.id);
+              retryBatch.set(dRef, {
+                ...sanitizeRecord(bItem),
+                _updatedAt: nowIso,
+                _updatedBy: updatedBy,
+              });
+            }
+            try {
+              await retryBatch.commit();
+            } catch (retryErr: any) {
+              throw new Error(`Falha ao gravar registros no Firebase (${inserted + 1} a ${inserted + slice.length}): ${retryErr?.message || insErr?.message}`);
+            }
           }
+
+          createdList.push(...batchItems);
           inserted += slice.length;
-          const pct = 45 + Math.round((inserted / totalNew) * 50);
-          onProgress?.(pct, `Gravando novos registros de FR: ${inserted} de ${totalNew}...`);
+          const pct = 40 + Math.round((inserted / totalNew) * 55);
+          onProgress?.(pct, `Gravando registros de FR no Firebase: ${inserted} de ${totalNew}...`);
         }
 
         // 3. Save import metadata
@@ -2032,6 +2126,119 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const sincronizarFRLocalParaFirestore = useCallback(
+    async (
+      onProgress?: (porcentagem: number, etapa: string) => void
+    ): Promise<{ success: boolean; total?: number; erro?: string }> => {
+      if (!isFirebaseConfigured) {
+        return { success: false, erro: 'Firebase não está configurado.' };
+      }
+      const localData = frRegistros && frRegistros.length > 0 ? frRegistros : getLocalStoredFR();
+      if (!localData || localData.length === 0) {
+        return { success: false, erro: 'Nenhum registro de FR encontrado localmente para sincronizar.' };
+      }
+
+      try {
+        const nowIso = new Date().toISOString();
+        const updatedBy = user?.email || auth?.currentUser?.email || 'ADM';
+        const frCol = collection(db, 'fr_registros');
+
+        onProgress?.(5, 'Consultando base remota no Firebase...');
+        const existingSnap = await getDocs(frCol);
+        const existingDocs = existingSnap.docs;
+        const totalToDelete = existingDocs.length;
+        const totalNew = localData.length;
+
+        const BATCH_SIZE = 100;
+        let deleted = 0;
+        for (let i = 0; i < existingDocs.length; i += BATCH_SIZE) {
+          const slice = existingDocs.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const d of slice) {
+            batch.delete(d.ref);
+          }
+          try {
+            await commitBatchWithTimeout(batch, 25000, `limpeza pré-sincronização FR (${deleted}/${totalToDelete})`);
+          } catch (delErr: any) {
+            const retryBatch = writeBatch(db);
+            for (const d of slice) retryBatch.delete(d.ref);
+            await retryBatch.commit();
+          }
+          deleted += slice.length;
+          const pct = Math.round((deleted / (totalToDelete + totalNew || 1)) * 35);
+          onProgress?.(pct, `Preparando Firebase: removendo ${deleted} de ${totalToDelete}...`);
+        }
+
+        let inserted = 0;
+        const syncedList: FRRegistro[] = [];
+        for (let i = 0; i < localData.length; i += BATCH_SIZE) {
+          const slice = localData.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          const batchItems: FRRegistro[] = [];
+
+          for (const item of slice) {
+            const docId = item.id && !item.id.startsWith('fr_local_') ? item.id : doc(frCol).id;
+            const newDocRef = doc(db, 'fr_registros', docId);
+            const sanitized = sanitizeRecord(item);
+            batch.set(newDocRef, {
+              ...sanitized,
+              _updatedAt: item._updatedAt || nowIso,
+              _updatedBy: item._updatedBy || updatedBy,
+            });
+            batchItems.push({
+              ...item,
+              id: docId,
+              _updatedAt: item._updatedAt || nowIso,
+              _updatedBy: item._updatedBy || updatedBy,
+            });
+          }
+
+          try {
+            await commitBatchWithTimeout(batch, 30000, `sincronização lote FR (${inserted}/${totalNew})`);
+          } catch (insErr: any) {
+            const retryBatch = writeBatch(db);
+            for (const bItem of batchItems) {
+              const dRef = doc(db, 'fr_registros', bItem.id);
+              retryBatch.set(dRef, {
+                ...sanitizeRecord(bItem),
+                _updatedAt: bItem._updatedAt,
+                _updatedBy: bItem._updatedBy,
+              });
+            }
+            await retryBatch.commit();
+          }
+
+          syncedList.push(...batchItems);
+          inserted += slice.length;
+          const pct = 35 + Math.round((inserted / totalNew) * 60);
+          onProgress?.(pct, `Enviando para o Firebase: ${inserted} de ${totalNew}...`);
+        }
+
+        const metaInfo: ImportInfoFR = importInfoFR || {
+          fileName: 'Sincronização Base Local',
+          importedAt: nowIso,
+          importedBy: updatedBy,
+          totalLinhas: totalNew,
+        };
+        await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
+
+        setFrRegistros(syncedList);
+        saveLocalFR(syncedList);
+        setImportInfoFR(metaInfo);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(metaInfo));
+        } catch (e) {}
+
+        onProgress?.(100, 'Sincronização com o Firebase concluída com sucesso!');
+        return { success: true, total: totalNew };
+      } catch (err: any) {
+        console.error('Erro ao sincronizar FR com Firebase:', err);
+        return { success: false, erro: err?.message || 'Falha ao sincronizar com o Firebase.' };
+      }
+    },
+    [user, isFirebaseConfigured, frRegistros, importInfoFR]
+  );
+
   return (
     <DataContext.Provider
       value={{
@@ -2069,6 +2276,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         executarImportacaoPadrao,
         executarImportacaoMassiva,
         executarImportacaoFR,
+        sincronizarFRLocalParaFirestore,
         popularDadosExemplo,
       }}
     >
