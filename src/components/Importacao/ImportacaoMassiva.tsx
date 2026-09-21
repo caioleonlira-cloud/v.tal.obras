@@ -164,10 +164,34 @@ export const ImportacaoMassiva: React.FC = () => {
 
         <button
           onClick={downloadModeloImportacaoMassiva}
-          className="shrink-0 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition-colors flex items-center space-x-2 cursor-pointer"
+          className="shrink-0 px-4 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
+          title="Baixar modelo oficial .xlsx para atualização massiva do Bloco 2"
         >
-          <Download className="w-4 h-4 text-slate-600" />
+          <Download className="w-4 h-4 text-cyan-300" />
           <span>Baixar Modelo Massivo (.xlsx)</span>
+        </button>
+      </div>
+
+      {/* Template Instructions Card */}
+      <div className="bg-gradient-to-r from-blue-50/70 to-slate-50 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-start space-x-3">
+          <FileSpreadsheet className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-slate-900 block">
+              Modelo de Planilha para Acompanhamento Massivo
+            </span>
+            <span className="text-slate-600 mt-0.5 block leading-relaxed">
+              A planilha deve conter a coluna obrigatória <strong>DC</strong> para identificação dos registros, acompanhada das colunas de equipe que deseja atualizar (ex: Status Informe, Resp.Medição, Pendências, Datas). Baixe o modelo oficial com linhas preenchidas para testar.
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={downloadModeloImportacaoMassiva}
+          className="self-start sm:self-center shrink-0 px-3.5 py-2 bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+        >
+          <Download className="w-3.5 h-3.5 text-blue-700" />
+          <span>Exportar Template .xlsx</span>
         </button>
       </div>
 

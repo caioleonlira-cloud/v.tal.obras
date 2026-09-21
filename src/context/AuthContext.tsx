@@ -97,74 +97,106 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const currentLocalDate = new Date().toLocaleDateString('sv');
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
-
       const isInitialAdmin = isSystemAdminEmail(currentUser.email);
       const defaultName =
         currentUser.displayName ||
         (isInitialAdmin ? 'Caio Lira' : currentUser.email?.split('@')[0] || 'Usuário');
 
-      let syncedProfile: UserProfile;
+      let syncedProfile: UserProfile | null = null;
+      const userDocRef = doc(db, 'users', currentUser.uid);
 
-      if (userDoc.exists()) {
-        const data = userDoc.data() as UserProfile;
-        syncedProfile = {
-          ...data,
-          uid: currentUser.uid,
-          role: isInitialAdmin ? ('ADM' as UserRole) : data.role,
-        };
-        if (isInitialAdmin && data.role !== 'ADM') {
-          try {
-            await setDoc(userDocRef, { role: 'ADM', updatedAt: new Date().toISOString() }, { merge: true });
-          } catch (_) {}
-        }
-      } else {
-        // Look up by email in case admin registered this user earlier under a temporary doc ID
-        let existingData: UserProfile | null = null;
-        let oldDocId: string | null = null;
-        try {
-          const cleanEmail = (currentUser.email || '').trim().toLowerCase();
-          if (cleanEmail) {
-            const usersCol = collection(db, 'users');
-            const q = query(usersCol, where('email', '==', cleanEmail));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              existingData = snap.docs[0].data() as UserProfile;
-              oldDocId = snap.docs[0].id;
-            }
+      try {
+        const userDoc = await getDoc(userDocRef);
+
+        if (userDoc.exists()) {
+          const data = userDoc.data() as UserProfile;
+          syncedProfile = {
+            ...data,
+            uid: currentUser.uid,
+            role: isInitialAdmin ? ('ADM' as UserRole) : data.role,
+          };
+          if (isInitialAdmin && data.role !== 'ADM') {
+            try {
+              await setDoc(userDocRef, { role: 'ADM', updatedAt: new Date().toISOString() }, { merge: true });
+            } catch (_) {}
           }
-        } catch (queryErr) {
-          console.warn('Busca fallback de usuário por email:', queryErr);
-        }
+        } else {
+          // Look up by email in case admin registered this user earlier under a temporary doc ID
+          let existingData: UserProfile | null = null;
+          let oldDocId: string | null = null;
+          try {
+            const cleanEmail = (currentUser.email || '').trim().toLowerCase();
+            if (cleanEmail) {
+              const usersCol = collection(db, 'users');
+              const q = query(usersCol, where('email', '==', cleanEmail));
+              const snap = await getDocs(q);
+              if (!snap.empty) {
+                existingData = snap.docs[0].data() as UserProfile;
+                oldDocId = snap.docs[0].id;
+              }
+            }
+          } catch (queryErr) {
+            console.warn('Busca fallback de usuário por email:', queryErr);
+          }
 
-        // Se o usuário não foi previamente cadastrado pelo Administrador no Firestore e não é o Admin inicial do sistema
-        if (!isInitialAdmin && !existingData) {
-          await fbSignOut(auth);
-          throw new Error('Acesso não autorizado. Usuário não cadastrado pelo Administrador.');
-        }
+          // Se o usuário não foi previamente cadastrado pelo Administrador no Firestore e não é o Admin inicial do sistema
+          if (!isInitialAdmin && !existingData) {
+            await fbSignOut(auth);
+            throw new Error('Acesso não autorizado. Usuário não cadastrado pelo Administrador.');
+          }
 
-        syncedProfile = {
-          uid: currentUser.uid,
-          email: currentUser.email?.toLowerCase() || '',
-          name: existingData?.name || defaultName,
-          role: isInitialAdmin ? 'ADM' : (existingData?.role || 'PADRAO'),
-          status: existingData?.status || 'active',
-          password: existingData?.password,
-          createdAt: existingData?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+          syncedProfile = {
+            uid: currentUser.uid,
+            email: currentUser.email?.toLowerCase() || '',
+            name: existingData?.name || defaultName,
+            role: isInitialAdmin ? 'ADM' : (existingData?.role || 'PADRAO'),
+            status: existingData?.status || 'active',
+            password: existingData?.password,
+            createdAt: existingData?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
 
-        try {
-          await setDoc(userDocRef, syncedProfile, { merge: true });
-        } catch (writeErr) {
-          console.warn('Tentativa de persistência do perfil no Firestore:', writeErr);
-        }
+          try {
+            await setDoc(userDocRef, syncedProfile, { merge: true });
+          } catch (writeErr) {
+            console.warn('Tentativa de persistência do perfil no Firestore:', writeErr);
+          }
 
-        // Clean up temporary ID if it was different from currentUser.uid
-        if (oldDocId && oldDocId !== currentUser.uid) {
-          deleteDoc(doc(db, 'users', oldDocId)).catch(() => {});
+          // Clean up temporary ID if it was different from currentUser.uid
+          if (oldDocId && oldDocId !== currentUser.uid) {
+            deleteDoc(doc(db, 'users', oldDocId)).catch(() => {});
+          }
         }
+      } catch (firestoreErr: any) {
+        if (firestoreErr?.message && firestoreErr.message.includes('não cadastrado')) {
+          throw firestoreErr;
+        }
+        console.warn('Aviso ao consultar Firestore no syncUserProfile:', firestoreErr?.message || firestoreErr);
+        if (isInitialAdmin) {
+          syncedProfile = {
+            uid: currentUser.uid,
+            email: currentUser.email?.toLowerCase() || '',
+            name: defaultName,
+            role: 'ADM',
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              if (parsed && parsed.uid === currentUser.uid) {
+                syncedProfile = parsed;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      if (!syncedProfile) {
+        throw new Error('Não foi possível obter o perfil do usuário.');
       }
 
       if (syncedProfile.status === 'inactive') {

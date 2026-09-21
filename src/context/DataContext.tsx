@@ -8,13 +8,15 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
+  deleteField,
   onSnapshot,
   query,
   where,
   limit,
   orderBy,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured, missingFirebaseEnvVars } from '../lib/firebase';
+import { db, auth, isFirebaseConfigured, missingFirebaseEnvVars } from '../lib/firebase';
+import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 import { useAuth } from './AuthContext';
 import {
   Registro,
@@ -29,8 +31,11 @@ import {
   ImportMetadata,
   HistoricoEdicaoItem,
   isSystemAdminEmail,
+  FRRegistro,
+  ImportInfoFR,
+  getRegistroRegional,
 } from '../types';
-import { matchCanonicalColumn, exportarRelatorioHistoricoParaExcel } from '../utils/excel';
+import { matchCanonicalColumn, exportarRelatorioHistoricoParaExcel, cleanDC, isValidDC } from '../utils/excel';
 
 interface ImportPadraoDiff {
   novas: RegistroBloco1[];
@@ -52,10 +57,13 @@ interface ImportMassivaResult {
 
 interface DataContextType {
   registros: Registro[];
+  frRegistros: FRRegistro[];
   segmentacoes: Record<SegmentacaoKey, string[]>;
   lastImportInfo: ImportMetadata | null;
+  importInfoFR: ImportInfoFR | null;
   historicoEdicoes: HistoricoEdicaoItem[];
   loadingRegistros: boolean;
+  loadingFRs: boolean;
   loadingSegmentacoes: boolean;
   isRealtimeConnected: boolean;
   realtimeStatus: 'connected' | 'syncing' | 'reconnecting' | 'offline';
@@ -65,6 +73,10 @@ interface DataContextType {
   error: string | null;
   clearQuotaError: () => void;
   refreshRegistros: () => Promise<void>;
+  refreshFRs: () => Promise<void>;
+  migrarNomesDeCampos: (
+    onProgress?: (processados: number, total: number) => void
+  ) => Promise<{ migrados: number; jaOk: number; total: number; erro?: string }>;
   fetchHistoricoForDC: (dc: string) => Promise<HistoricoEdicaoItem[]>;
   exportarAuditoriaGeral: (limite?: number) => Promise<void>;
   arquivarELimparHistorico: (diasRetencao?: number) => Promise<{ exportados: number; removidos: number }>;
@@ -85,6 +97,11 @@ interface DataContextType {
     planilhaLinhas: Record<string, any>[],
     onProgress?: (porcentagem: number, etapa: string) => void
   ) => Promise<ImportMassivaResult>;
+  executarImportacaoFR: (
+    dados: Omit<FRRegistro, 'id'>[],
+    fileName: string,
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => Promise<{ total: number; erro?: string }>;
   popularDadosExemplo: () => Promise<void>;
 }
 
@@ -104,10 +121,54 @@ function getSafeDocId(dc: string, fallbackIdx?: number): string {
   return cleaned;
 }
 
-const LOCAL_STORAGE_REGISTROS_KEY = 'vtal_local_registros_backup';
+const LOCAL_STORAGE_REGISTROS_KEY = 'vtal_local_registros_backup_v5';
+const LOCAL_STORAGE_FR_KEY = 'vtal_local_fr_registros_backup_v5';
+const LOCAL_STORAGE_FR_META_KEY = 'vtal_local_fr_metadata_v5';
 const LOCAL_STORAGE_SEG_KEY = 'vtal_local_segmentacoes_backup';
 const LOCAL_STORAGE_META_KEY = 'vtal_local_import_metadata';
 const LOCAL_STORAGE_HISTORICO_KEY = 'vtal_local_historico_edicoes';
+
+export function normalizeRegistroData(data: any, docId: string): Registro {
+  const norm = { _id: docId, ...data } as any;
+  if (norm['TIPO (Carteira)'] === undefined && norm['TIPO (Cateira)'] !== undefined) {
+    norm['TIPO (Carteira)'] = norm['TIPO (Cateira)'];
+  }
+  if (norm['Plan. Estruturante'] === undefined && norm['Backlog/Input?'] !== undefined) {
+    norm['Plan. Estruturante'] = norm['Backlog/Input?'];
+  }
+  const regResolved = getRegistroRegional(norm);
+  if (regResolved) {
+    norm.REG = regResolved;
+  }
+  return norm as Registro;
+}
+
+function getLocalStoredFR(): FRRegistro[] {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_FR_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveLocalFR(list: FRRegistro[]) {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_FR_KEY, JSON.stringify(list));
+    }
+  } catch (e) {}
+}
+
+function getLocalStoredFRMeta(): ImportInfoFR | null {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_FR_META_KEY) : null;
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return null;
+}
 
 function deduplicateHistorico(list: HistoricoEdicaoItem[]): HistoricoEdicaoItem[] {
   if (!Array.isArray(list)) return [];
@@ -153,7 +214,9 @@ function getLocalStoredRegistros(): Registro[] {
     const raw = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_REGISTROS_KEY) : null;
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((r) => r && isValidDC(r.DC));
+      }
     }
   } catch (e) {
     // ignore
@@ -164,7 +227,8 @@ function getLocalStoredRegistros(): Registro[] {
 function saveLocalRegistros(list: Registro[]) {
   try {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_REGISTROS_KEY, JSON.stringify(list));
+      const validOnly = list.filter((r) => r && isValidDC(r.DC));
+      localStorage.setItem(LOCAL_STORAGE_REGISTROS_KEY, JSON.stringify(validOnly));
     }
   } catch (e) {
     console.warn('Erro ao salvar no cache local:', e);
@@ -243,10 +307,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAdmin, profile, user]);
 
   const [registros, setRegistros] = useState<Registro[]>([]);
+  const [frRegistros, setFrRegistros] = useState<FRRegistro[]>([]);
   const [segmentacoes, setSegmentacoes] = useState<Record<SegmentacaoKey, string[]>>(DEFAULT_SEGMENTATIONS);
   const [lastImportInfo, setLastImportInfo] = useState<ImportMetadata | null>(null);
+  const [importInfoFR, setImportInfoFR] = useState<ImportInfoFR | null>(null);
   const [historicoEdicoes, setHistoricoEdicoes] = useState<HistoricoEdicaoItem[]>([]);
   const [loadingRegistros, setLoadingRegistros] = useState<boolean>(true);
+  const [loadingFRs, setLoadingFRs] = useState<boolean>(true);
   const [loadingSegmentacoes, setLoadingSegmentacoes] = useState<boolean>(true);
   const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'syncing' | 'reconnecting' | 'offline'>('syncing');
@@ -297,7 +364,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cached = getLocalStoredRegistros();
     let hasLocalData = false;
     if (cached && cached.length > 0) {
-      setRegistros(cached);
+      setRegistros(cached.map((r, idx) => normalizeRegistroData(r, r._id || getSafeDocId(r.DC, idx))));
       setLoadingRegistros(false);
       hasLocalData = true;
     } else {
@@ -340,12 +407,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setRegistros((prev) => {
               const docMap = new Map<string, Registro>();
               for (const r of prev) {
-                const key = r._id || getSafeDocId(r.DC);
-                docMap.set(key, r);
+                if (isValidDC(r.DC)) {
+                  const key = r._id || getSafeDocId(r.DC);
+                  docMap.set(key, r);
+                }
               }
               deltaSnap.forEach((docSnap) => {
-                const docData = { _id: docSnap.id, ...docSnap.data() } as Registro;
-                docMap.set(docSnap.id, docData);
+                const docData = normalizeRegistroData(docSnap.data(), docSnap.id);
+                if (isValidDC(docData.DC)) {
+                  docMap.set(docSnap.id, docData);
+                } else {
+                  // Purge phantom/blank document from Firestore
+                  deleteDoc(doc(db, 'registros', docSnap.id)).catch(console.warn);
+                }
               });
               const nextList = Array.from(docMap.values());
               saveLocalRegistros(nextList);
@@ -358,7 +432,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!isCancelled) {
             const list: Registro[] = [];
             fullSnap.forEach((docSnap) => {
-              list.push({ _id: docSnap.id, ...docSnap.data() } as Registro);
+              const docData = normalizeRegistroData(docSnap.data(), docSnap.id);
+              if (isValidDC(docData.DC)) {
+                list.push(docData);
+              } else {
+                // Purge phantom/blank document from Firestore
+                deleteDoc(doc(db, 'registros', docSnap.id)).catch(console.warn);
+              }
             });
             if (list.length > 0) {
               setRegistros(list);
@@ -398,8 +478,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setRegistros((prev) => {
               const docMap = new Map<string, Registro>();
               for (const r of prev) {
-                const key = r._id || getSafeDocId(r.DC);
-                docMap.set(key, r);
+                if (isValidDC(r.DC)) {
+                  const key = r._id || getSafeDocId(r.DC);
+                  docMap.set(key, r);
+                }
               }
 
               for (const change of changes) {
@@ -407,8 +489,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (change.type === 'removed') {
                   docMap.delete(docId);
                 } else {
-                  const docData = { _id: docId, ...change.doc.data() } as Registro;
-                  docMap.set(docId, docData);
+                  const docData = normalizeRegistroData(change.doc.data(), docId);
+                  if (isValidDC(docData.DC)) {
+                    docMap.set(docId, docData);
+                  } else {
+                    docMap.delete(docId);
+                  }
                 }
               }
 
@@ -450,7 +536,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     docMap.set(key, r);
                   }
                   snap.forEach((docSnap) => {
-                    docMap.set(docSnap.id, { _id: docSnap.id, ...docSnap.data() } as Registro);
+                    docMap.set(docSnap.id, normalizeRegistroData(docSnap.data(), docSnap.id));
                   });
                   const nextList = Array.from(docMap.values());
                   saveLocalRegistros(nextList);
@@ -471,6 +557,100 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user]);
 
+  // 1.5 Fetch & continuous real-time sync for FRs
+  useEffect(() => {
+    if (!user) {
+      setFrRegistros([]);
+      setLoadingFRs(false);
+      return;
+    }
+
+    const cachedFR = getLocalStoredFR();
+    if (cachedFR && cachedFR.length > 0) {
+      setFrRegistros(cachedFR);
+      setLoadingFRs(false);
+    } else {
+      setLoadingFRs(true);
+    }
+
+    const cachedMeta = getLocalStoredFRMeta();
+    if (cachedMeta) {
+      setImportInfoFR(cachedMeta);
+    }
+
+    if (!isFirebaseConfigured) {
+      setLoadingFRs(false);
+      return;
+    }
+
+    const frCol = collection(db, 'fr_registros');
+    let isCancelled = false;
+
+    const unsub = onSnapshot(
+      frCol,
+      (snap) => {
+        if (isCancelled) return;
+        const list: FRRegistro[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as FRRegistro);
+        });
+        setFrRegistros(list);
+        saveLocalFR(list);
+        setLoadingFRs(false);
+      },
+      (err) => {
+        if (!isCancelled) {
+          console.warn('Erro ao sincronizar FRs em tempo real:', err?.message);
+          setLoadingFRs(false);
+        }
+      }
+    );
+
+    getDoc(doc(db, 'metadata', 'importInfoFR'))
+      .then((metaSnap) => {
+        if (!isCancelled && metaSnap.exists()) {
+          const meta = metaSnap.data() as ImportInfoFR;
+          setImportInfoFR(meta);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(meta));
+          } catch (e) {}
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isCancelled = true;
+      unsub();
+    };
+  }, [user]);
+
+  const refreshFRs = useCallback(async () => {
+    if (!isFirebaseConfigured) return;
+    try {
+      setLoadingFRs(true);
+      const snap = await getDocs(collection(db, 'fr_registros'));
+      const list: FRRegistro[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as FRRegistro);
+      });
+      setFrRegistros(list);
+      saveLocalFR(list);
+
+      const metaSnap = await getDoc(doc(db, 'metadata', 'importInfoFR'));
+      if (metaSnap.exists()) {
+        const meta = metaSnap.data() as ImportInfoFR;
+        setImportInfoFR(meta);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(meta));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('Erro ao atualizar FRs:', err);
+    } finally {
+      setLoadingFRs(false);
+    }
+  }, []);
+
   // Manual refresh fallback (optional force sync)
   const refreshRegistros = useCallback(async () => {
     if (!user) return;
@@ -483,7 +663,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const snapshot = await getDocs(regCol);
         const list: Registro[] = [];
         snapshot.forEach((docSnap) => {
-          list.push({ _id: docSnap.id, ...docSnap.data() } as Registro);
+          list.push(normalizeRegistroData(docSnap.data(), docSnap.id));
         });
         if (list.length > 0) {
           setRegistros(list);
@@ -908,16 +1088,57 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (row[canonicalKey] !== undefined && row[canonicalKey] !== null) {
       return String(row[canonicalKey]).trim();
     }
-    // Direct alias handling for Backlog/Input? / Plan. Estruturante
-    if (canonicalKey === 'Backlog/Input?') {
+    // Direct alias handling for REG
+    if (canonicalKey === 'REG') {
+      const regResolved = getRegistroRegional(row);
+      if (regResolved) return regResolved;
+    }
+    // Direct alias handling for Plan. Estruturante / Backlog/Input?
+    if (canonicalKey === 'Plan. Estruturante' || canonicalKey === 'Backlog/Input?') {
       const planVal =
         row['Plan. Estruturante'] ??
         row['Plan Estruturante'] ??
         row['Planejamento Estruturante'] ??
+        row['Backlog/Input?'] ??
         row['Backlog/Input'] ??
-        row['Backlog/Input?'];
+        row['BACKLOG/INPUT?'];
       if (planVal !== undefined && planVal !== null) {
         return String(planVal).trim();
+      }
+    }
+    // Direct alias handling for TIPO (Carteira)
+    if (canonicalKey === 'TIPO (Carteira)' || canonicalKey === 'TIPO (Cateira)') {
+      const cartVal =
+        row['TIPO (Carteira)'] ??
+        row['TIPO (Cateira)'] ??
+        row['TIPO (CARTEIRA)'] ??
+        row['Tipo (Carteira)'] ??
+        row['Carteira'] ??
+        row['CARTEIRA'];
+      if (cartVal !== undefined && cartVal !== null) {
+        return String(cartVal).trim();
+      }
+    }
+    // Direct alias handling for Tipo de DC
+    if (canonicalKey === 'Tipo de DC') {
+      const tdcVal =
+        row['Tipo de DC'] ??
+        row['Tipo DC'] ??
+        row['TIPO DE DC'] ??
+        row['TIPO DC'];
+      if (tdcVal !== undefined && tdcVal !== null) {
+        return String(tdcVal).trim();
+      }
+    }
+    // Direct alias handling for Mês Input
+    if (canonicalKey === 'Mês Input') {
+      const miVal =
+        row['Mês Input'] ??
+        row['Mes Input'] ??
+        row['MES INPUT'] ??
+        row['MÊS INPUT'];
+      if (miVal !== undefined && miVal !== null) {
+        return String(miVal).trim();
       }
     }
     // Search by key aliases in row
@@ -934,8 +1155,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const analisarImportacaoPadrao = (planilhaLinhas: Record<string, any>[]): ImportPadraoDiff => {
     const dcMapAtual = new Map<string, Registro>();
     registros.forEach((r) => {
-      if (r.DC) {
-        dcMapAtual.set(String(r.DC).trim().toUpperCase(), r);
+      const cleaned = cleanDC(r.DC);
+      if (cleaned) {
+        dcMapAtual.set(cleaned.toUpperCase(), r);
       }
     });
 
@@ -950,7 +1172,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const planDcsEncontradas = new Set<string>();
 
     planilhaLinhas.forEach((linha) => {
-      const dcVal = extractRowField(linha, 'DC');
+      const rawDc = extractRowField(linha, 'DC');
+      const dcVal = cleanDC(rawDc);
       if (!dcVal) return;
 
       const dcUpper = dcVal.toUpperCase();
@@ -959,8 +1182,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Extract only Bloco 1 fields
       const bloco1: RegistroBloco1 = {
         'DC': dcVal,
-        'REG': extractRowField(linha, 'REG'),
-        'TIPO (Cateira)': extractRowField(linha, 'TIPO (Cateira)'),
+        'REG': getRegistroRegional(linha) || extractRowField(linha, 'REG') || 'RSUL',
+        'TIPO (Carteira)': extractRowField(linha, 'TIPO (Carteira)') || extractRowField(linha, 'TIPO (Cateira)'),
+        'Tipo de DC': extractRowField(linha, 'Tipo de DC'),
         'DR': extractRowField(linha, 'DR'),
         'Seq': extractRowField(linha, 'Seq'),
         'Dc Simulação': extractRowField(linha, 'Dc Simulação'),
@@ -980,7 +1204,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': extractRowField(linha, 'Tipo de Projeto'),
         'Descricao': extractRowField(linha, 'Descricao'),
         'Status da DC (Atual)': extractRowField(linha, 'Status da DC (Atual)'),
-        'Backlog/Input?': extractRowField(linha, 'Backlog/Input?'),
+        'Plan. Estruturante': extractRowField(linha, 'Plan. Estruturante') || extractRowField(linha, 'Backlog/Input?'),
+        'Mês Input': extractRowField(linha, 'Mês Input'),
       };
 
       if (dcMapAtual.has(dcUpper)) {
@@ -1010,11 +1235,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    // Removidas: DCs que existem no DB mas NÃO vieram na nova planilha
+    // Removidas: DCs que existem no DB mas NÃO vieram na nova planilha, ou documentos sem DC válida
     const removidas: Registro[] = [];
     registros.forEach((r) => {
-      const dcUpper = String(r.DC || '').trim().toUpperCase();
-      if (dcUpper && !planDcsEncontradas.has(dcUpper)) {
+      const cleaned = cleanDC(r.DC);
+      if (cleaned) {
+        if (!planDcsEncontradas.has(cleaned.toUpperCase())) {
+          removidas.push(r);
+        }
+      } else {
+        // Documento sem DC válida (fantasma/linha em branco) é automaticamente marcado para remoção e exclusão do Firestore
         removidas.push(r);
       }
     });
@@ -1044,11 +1274,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Compute updated records map
     const updatedMap = new Map<string, Registro>();
     registros.forEach((r) => {
-      if (r.DC) updatedMap.set(String(r.DC).trim().toUpperCase(), r);
+      const cleaned = cleanDC(r.DC);
+      if (cleaned) updatedMap.set(cleaned.toUpperCase(), r);
     });
 
     diff.removidas.forEach((r) => {
-      if (r.DC) updatedMap.delete(String(r.DC).trim().toUpperCase());
+      const cleaned = cleanDC(r.DC);
+      if (cleaned) updatedMap.delete(cleaned.toUpperCase());
     });
 
     diff.novas.forEach((n, idx) => {
@@ -1351,7 +1583,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {
         'DC': 'DC-904120',
         'REG': 'SUL',
-        'TIPO (Cateira)': 'FTTH EXPANSÃO',
+        'TIPO (Carteira)': 'FTTH EXPANSÃO',
         'DR': 'PR',
         'Seq': '1',
         'Dc Simulação': 'SIM-904120',
@@ -1371,7 +1603,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': 'EXPANSÃO PON',
         'Descricao': 'IMPLANTAÇÃO REDE ÓPTICA BAIRRO BATEL - ETAPA 2',
         'Status da DC (Atual)': 'EM ANDAMENTO',
-        'Backlog/Input?': 'INPUT',
+        'Plan. Estruturante': 'INPUT',
         'Status Informe (Campo)': 'EM EXECUÇÃO',
         'Resp.Medição': 'PATRICK',
         'Pendência (Implantação)': 'OK',
@@ -1386,7 +1618,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {
         'DC': 'DC-904121',
         'REG': 'SUL',
-        'TIPO (Cateira)': 'REDE PRIMÁRIA',
+        'TIPO (Carteira)': 'REDE PRIMÁRIA',
         'DR': 'SC',
         'Seq': '2',
         'Dc Simulação': 'SIM-904121',
@@ -1406,7 +1638,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': 'ANEL ÓPTICO',
         'Descricao': 'LANÇAMENTO DE CABO 72 FO TRECHO ZONA INDUSTRIAL',
         'Status da DC (Atual)': 'PENDÊNCIA DOC',
-        'Backlog/Input?': 'BACKLOG',
+        'Plan. Estruturante': 'BACKLOG',
         'Status Informe (Campo)': 'PARALISADA',
         'Resp.Medição': 'SHEILA',
         'Pendência (Implantação)': 'FOTOS',
@@ -1421,7 +1653,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {
         'DC': 'DC-904122',
         'REG': 'SUL',
-        'TIPO (Cateira)': 'FTTH SOBRADA',
+        'TIPO (Carteira)': 'FTTH SOBRADA',
         'DR': 'RS',
         'Seq': '3',
         'Dc Simulação': 'SIM-904122',
@@ -1441,7 +1673,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': 'CONEXÃO B2B',
         'Descricao': 'ATENDIMENTO DEDICADO POLO TECNOLÓGICO',
         'Status da DC (Atual)': 'CONCLUÍDA',
-        'Backlog/Input?': 'INPUT',
+        'Plan. Estruturante': 'INPUT',
         'Status Informe (Campo)': 'CONCLUÍDO',
         'Resp.Medição': 'LEANDRO',
         'Pendência (Implantação)': 'OK',
@@ -1456,7 +1688,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {
         'DC': 'DC-904123',
         'REG': 'SUDESTE',
-        'TIPO (Cateira)': 'FTTA CONDOMÍNIO',
+        'TIPO (Carteira)': 'FTTA CONDOMÍNIO',
         'DR': 'SP',
         'Seq': '4',
         'Dc Simulação': 'SIM-904123',
@@ -1476,7 +1708,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': 'FTTA VERTICAL',
         'Descricao': 'PASSAGEM DE CABO PRUMADA EDIFÍCIO HORIZONTE',
         'Status da DC (Atual)': 'AGUARDANDO SAP',
-        'Backlog/Input?': 'BACKLOG',
+        'Plan. Estruturante': 'BACKLOG',
         'Status Informe (Campo)': 'EM EXECUÇÃO',
         'Resp.Medição': 'MARIANA',
         'Pendência (Implantação)': 'VALIDAÇÃO APP DE OBRAS',
@@ -1491,7 +1723,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {
         'DC': 'DC-904124',
         'REG': 'SUL',
-        'TIPO (Cateira)': 'INFRAESTRUTURA',
+        'TIPO (Carteira)': 'INFRAESTRUTURA',
         'DR': 'PR',
         'Seq': '5',
         'Dc Simulação': 'SIM-904124',
@@ -1511,7 +1743,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Tipo de Projeto': 'ADEQUAÇÃO DE POSTEAMENTO',
         'Descricao': 'SUBSTITUIÇÃO DE BRAÇADEIRAS E ESPALHAMENTO DE CABO',
         'Status da DC (Atual)': 'EM ANDAMENTO',
-        'Backlog/Input?': 'INPUT',
+        'Plan. Estruturante': 'INPUT',
         'Status Informe (Campo)': 'EM EXECUÇÃO',
         'Resp.Medição': 'VAGNER',
         'Pendência (Implantação)': 'DIARIO/TESTE',
@@ -1567,14 +1799,227 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 10. Migração única de nomes de campos legados (TIPO (Cateira) -> TIPO (Carteira), Backlog/Input? -> Plan. Estruturante)
+  const migrarNomesDeCampos = async (
+    onProgress?: (processados: number, total: number) => void
+  ): Promise<{ migrados: number; jaOk: number; total: number; erro?: string }> => {
+    if (!isFirebaseConfigured) {
+      return { migrados: 0, jaOk: 0, total: 0, erro: 'Firebase não está configurado.' };
+    }
+
+    try {
+      const regCol = collection(db, 'registros');
+      const snapshot = await getDocs(regCol);
+      const total = snapshot.size;
+
+      const toMigrateDocs: { docId: string; payload: Record<string, any> }[] = [];
+      let jaOkCount = 0;
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        let needsMigration = false;
+        const payload: Record<string, any> = {
+          _updatedAt: new Date().toISOString(),
+          _updatedBy: user?.email || 'Migração ADM',
+        };
+
+        if (data['TIPO (Cateira)'] !== undefined) {
+          needsMigration = true;
+          if (data['TIPO (Carteira)'] === undefined || data['TIPO (Carteira)'] === '') {
+            payload['TIPO (Carteira)'] = data['TIPO (Cateira)'];
+          }
+          payload['TIPO (Cateira)'] = deleteField();
+        }
+
+        if (data['Backlog/Input?'] !== undefined) {
+          needsMigration = true;
+          if (data['Plan. Estruturante'] === undefined || data['Plan. Estruturante'] === '') {
+            payload['Plan. Estruturante'] = data['Backlog/Input?'];
+          }
+          payload['Backlog/Input?'] = deleteField();
+        }
+
+        if (needsMigration) {
+          toMigrateDocs.push({ docId: docSnap.id, payload });
+        } else {
+          jaOkCount++;
+        }
+      });
+
+      if (toMigrateDocs.length === 0) {
+        return { migrados: 0, jaOk: jaOkCount, total };
+      }
+
+      const BATCH_SIZE = 200;
+      let processed = 0;
+      for (let i = 0; i < toMigrateDocs.length; i += BATCH_SIZE) {
+        const slice = toMigrateDocs.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const item of slice) {
+          const docRef = doc(db, 'registros', item.docId);
+          batch.set(docRef, item.payload, { merge: true });
+        }
+        await commitBatchWithTimeout(batch, 35000, `migração lote ${Math.floor(i / BATCH_SIZE) + 1}`);
+        processed += slice.length;
+        onProgress?.(processed, toMigrateDocs.length);
+      }
+
+      await refreshRegistros();
+      return {
+        migrados: toMigrateDocs.length,
+        jaOk: jaOkCount,
+        total,
+      };
+    } catch (err: any) {
+      console.error('Erro na migração de campos:', err);
+      return {
+        migrados: 0,
+        jaOk: 0,
+        total: 0,
+        erro: err.message || 'Erro inesperado ao executar migração no Firestore.',
+      };
+    }
+  };
+
+  // 11. Executar Importação de FR (Substituição Completa da Base)
+  const executarImportacaoFR = async (
+    dados: Omit<FRRegistro, 'id'>[],
+    fileName: string,
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ): Promise<{ total: number; erro?: string }> => {
+    const totalNew = dados.length;
+    onProgress?.(5, 'Consultando registros de FR existentes no banco...');
+
+    try {
+      const nowIso = new Date().toISOString();
+      const updatedBy = user?.email || auth?.currentUser?.email || 'ADM';
+
+      if (isFirebaseConfigured) {
+        const frCol = collection(db, 'fr_registros');
+        let existingDocs: any[] = [];
+        try {
+          const existingSnap = await getDocs(frCol);
+          existingDocs = existingSnap.docs;
+        } catch (fetchErr: any) {
+          console.warn('Aviso ao consultar base anterior de FR:', fetchErr?.message);
+        }
+
+        const totalToDelete = existingDocs.length;
+
+        // 1. Delete all existing FR docs in batches of 200
+        const BATCH_SIZE = 200;
+        let deleted = 0;
+        for (let i = 0; i < existingDocs.length; i += BATCH_SIZE) {
+          const slice = existingDocs.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const d of slice) {
+            batch.delete(d.ref);
+          }
+          try {
+            await commitBatchWithTimeout(batch, 30000, `exclusão de lote FR (${deleted}/${totalToDelete})`);
+          } catch (delErr: any) {
+            console.warn('Aviso exclusão lote FR Firestore:', delErr?.message);
+          }
+          deleted += slice.length;
+          const pct = Math.round((deleted / (totalToDelete + totalNew || 1)) * 45);
+          onProgress?.(pct, `Removendo base anterior: ${deleted} de ${totalToDelete}...`);
+        }
+
+        // 2. Insert new docs in batches of 200
+        let inserted = 0;
+        const createdList: FRRegistro[] = [];
+        for (let i = 0; i < dados.length; i += BATCH_SIZE) {
+          const slice = dados.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const item of slice) {
+            const newDocRef = doc(frCol);
+            const sanitized = sanitizeRecord(item);
+            batch.set(newDocRef, {
+              ...sanitized,
+              _updatedAt: nowIso,
+              _updatedBy: updatedBy,
+            });
+            createdList.push({
+              id: newDocRef.id,
+              ...item,
+              _updatedAt: nowIso,
+              _updatedBy: updatedBy,
+            });
+          }
+          try {
+            await commitBatchWithTimeout(batch, 35000, `gravação de lote FR (${inserted}/${totalNew})`);
+          } catch (insErr: any) {
+            console.warn('Aviso gravação lote FR Firestore:', insErr?.message);
+          }
+          inserted += slice.length;
+          const pct = 45 + Math.round((inserted / totalNew) * 50);
+          onProgress?.(pct, `Gravando novos registros de FR: ${inserted} de ${totalNew}...`);
+        }
+
+        // 3. Save import metadata
+        const metaInfo: ImportInfoFR = {
+          fileName,
+          importedAt: nowIso,
+          importedBy: updatedBy,
+          totalLinhas: totalNew,
+        };
+        try {
+          await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
+        } catch (metaErr: any) {
+          console.warn('Aviso ao salvar metadados de FR:', metaErr?.message);
+        }
+
+        setFrRegistros(createdList);
+        saveLocalFR(createdList);
+        setImportInfoFR(metaInfo);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(metaInfo));
+        } catch (e) {}
+      } else {
+        // Offline / local only fallback
+        const localList: FRRegistro[] = dados.map((item, idx) => ({
+          id: `fr_local_${idx}_${Date.now()}`,
+          ...item,
+          _updatedAt: nowIso,
+          _updatedBy: updatedBy,
+        }));
+        const metaInfo: ImportInfoFR = {
+          fileName,
+          importedAt: nowIso,
+          importedBy: updatedBy,
+          totalLinhas: totalNew,
+        };
+        setFrRegistros(localList);
+        saveLocalFR(localList);
+        setImportInfoFR(metaInfo);
+      }
+
+      onProgress?.(100, 'Importação de FR concluída com sucesso!');
+      return { total: totalNew };
+    } catch (err: any) {
+      console.error('Erro na importação de FR:', err);
+      const msg = err?.message || 'Falha ao processar substituição de FR no Firestore.';
+      if (msg.includes('Missing or insufficient permissions') || msg.includes('permission-denied')) {
+        return {
+          total: 0,
+          erro: 'Permissão insuficiente no Firebase para gravar registros de FR. Confirme se está autenticado com o perfil de Administrador.',
+        };
+      }
+      return { total: 0, erro: msg };
+    }
+  };
+
   return (
     <DataContext.Provider
       value={{
         registros,
+        frRegistros,
         segmentacoes,
         lastImportInfo,
+        importInfoFR,
         historicoEdicoes,
         loadingRegistros,
+        loadingFRs,
         loadingSegmentacoes,
         isRealtimeConnected,
         realtimeStatus,
@@ -1584,6 +2029,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error,
         clearQuotaError,
         refreshRegistros,
+        refreshFRs,
+        migrarNomesDeCampos,
         fetchHistoricoForDC,
         exportarAuditoriaGeral,
         arquivarELimparHistorico,
@@ -1598,6 +2045,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         analisarImportacaoPadrao,
         executarImportacaoPadrao,
         executarImportacaoMassiva,
+        executarImportacaoFR,
         popularDadosExemplo,
       }}
     >

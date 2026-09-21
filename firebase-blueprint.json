@@ -6,7 +6,8 @@
       "properties": {
         "DC": { "type": "string", "description": "Identificador único da DC" },
         "REG": { "type": "string" },
-        "TIPO (Cateira)": { "type": "string" },
+        "TIPO (Carteira)": { "type": "string" },
+        "Tipo de DC": { "type": "string" },
         "DR": { "type": "string" },
         "Seq": { "type": "string" },
         "Dc Simulação": { "type": "string" },
@@ -23,7 +24,8 @@
         "Tipo de Projeto": { "type": "string" },
         "Descricao": { "type": "string" },
         "Status da DC (Atual)": { "type": "string" },
-        "Backlog/Input?": { "type": "string" },
+        "Plan. Estruturante": { "type": "string" },
+        "Mês Input": { "type": "string" },
         "Status Informe (Campo)": { "type": "string" },
         "Resp.Medição": { "type": "string" },
         "Pendência (Implantação)": { "type": "string" },
@@ -94,6 +96,27 @@
         "dataHora": { "type": "string" },
         "totalRegistros": { "type": "number" },
         "tipo": { "type": "string" }
+      }
+    },
+    "fr_registros": {
+      "title": "Registros de Faturamento (FR's)",
+      "description": "Registros de faturamento gerados para acompanhamento e controle.",
+      "properties": {
+        "UF": { "type": "string" },
+        "DC-M": { "type": "string" },
+        "REG": { "type": "string" },
+        "Mês": { "type": "string" },
+        "CENTRO": { "type": "string" },
+        "LOCALIDADE DE PRESTAÇÃO": { "type": "string" },
+        "DATA DA SOLICITAÇÃO": { "type": "string" },
+        "DC MIGRADA/OPERAÇÃO": { "type": "string" },
+        "Nº MEDIÇÃO": { "type": "string" },
+        "Nº PEDIDO": { "type": "string" },
+        "ITEM DO PEDIDO": { "type": "string" },
+        "VALOR FR": { "type": "number" },
+        "FR": { "type": "string" },
+        "_updatedAt": { "type": "string" },
+        "_updatedBy": { "type": "string" }
       }
     }
   }

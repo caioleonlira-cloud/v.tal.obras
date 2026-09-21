@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   firebaseConfig,
   isFirebaseConfigured,
@@ -21,6 +22,16 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ isOpen
   const [jsonInput, setJsonInput] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
 
   const handleForceReconnect = async () => {
     setIsReconnecting(true);
@@ -101,9 +112,12 @@ VITE_FIREBASE_APP_ID=${form.appId || '1:1234567890:web:abcdef123456'}`;
     setTimeout(() => setCopied(false), 2500);
   };
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+  return createPortal(
+    <div
+      style={{ zIndex: 2000 }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+    >
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="px-6 py-4 bg-[#002855] text-white flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -360,6 +374,7 @@ VITE_FIREBASE_APP_ID=${form.appId || '1:1234567890:web:abcdef123456'}`;
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

@@ -1,7 +1,8 @@
 export interface RegistroBloco1 {
   'DC': string;
   'REG': string;
-  'TIPO (Cateira)': string;
+  'TIPO (Carteira)': string;
+  'Tipo de DC'?: string;
   'DR': string;
   'Seq': string;
   'Dc Simulação': string;
@@ -21,7 +22,8 @@ export interface RegistroBloco1 {
   'Tipo de Projeto': string;
   'Descricao': string;
   'Status da DC (Atual)': string;
-  'Backlog/Input?': string;
+  'Plan. Estruturante': string;
+  'Mês Input'?: string;
 }
 
 export interface RegistroBloco2 {
@@ -99,7 +101,8 @@ export interface Segmentacao {
 export const BLOCO_1_KEYS: (keyof RegistroBloco1)[] = [
   'DC',
   'REG',
-  'TIPO (Cateira)',
+  'TIPO (Carteira)',
+  'Tipo de DC',
   'DR',
   'Seq',
   'Dc Simulação',
@@ -119,7 +122,8 @@ export const BLOCO_1_KEYS: (keyof RegistroBloco1)[] = [
   'Tipo de Projeto',
   'Descricao',
   'Status da DC (Atual)',
-  'Backlog/Input?',
+  'Plan. Estruturante',
+  'Mês Input',
 ];
 
 export const BLOCO_2_KEYS: (keyof RegistroBloco2)[] = [
@@ -263,9 +267,9 @@ export function isSystemAdminEmail(email?: string | null): boolean {
 export function getRegistroCarteira(r: Partial<Registro> | any): string {
   if (!r) return '';
   return (
+    r['TIPO (Carteira)'] ||
     r['TIPO (Cateira)'] ||
     r['TIPO (CARTEIRA)'] ||
-    r['TIPO (Carteira)'] ||
     r['Tipo (Carteira)'] ||
     r['CARTEIRA'] ||
     r['Carteira'] ||
@@ -273,11 +277,210 @@ export function getRegistroCarteira(r: Partial<Registro> | any): string {
   ).trim();
 }
 
+export function getRegistroPlanEstruturante(r: Partial<Registro> | any): string {
+  if (!r) return '';
+  return (
+    r['Plan. Estruturante'] ||
+    r['Backlog/Input?'] ||
+    r['Backlog/Input'] ||
+    r['Plan Estruturante'] ||
+    ''
+  ).trim();
+}
+
+export function getRegistroTipoDC(r: Partial<Registro> | any): string {
+  if (!r) return '';
+  return (r['Tipo de DC'] || r['Tipo DC'] || '').trim();
+}
+
+export function getRegistroMesInput(r: Partial<Registro> | any): string {
+  if (!r) return '';
+  return (r['Mês Input'] || r['Mes Input'] || '').trim();
+}
+
+export function getRegistroRegional(r: Partial<Registro> | any): string {
+  if (!r) return '';
+
+  // 1. Direct field REG and known aliases
+  const rawReg = (
+    r.REG ??
+    r.Regional ??
+    r.REGIONAL ??
+    r.Reg ??
+    r.reg ??
+    r.Regiao ??
+    r.REGIAO ??
+    r['REGIONAL / UF'] ??
+    r['REGIONAL/UF'] ??
+    r['REG/UF'] ??
+    r['Regional UF'] ??
+    ''
+  )
+    .toString()
+    .trim()
+    .toUpperCase();
+
+  if (
+    rawReg &&
+    rawReg !== 'SEM REGIONAL' &&
+    rawReg !== '-' &&
+    rawReg !== '—' &&
+    rawReg !== 'N/D' &&
+    rawReg !== 'N/A' &&
+    rawReg !== 'UNDEFINED' &&
+    rawReg !== 'NULL'
+  ) {
+    if (rawReg === 'RSUL' || rawReg === 'SUL' || rawReg.includes('RSUL')) return 'RSUL';
+    if (
+      rawReg === 'RMG' ||
+      rawReg === 'MG' ||
+      rawReg.includes('RMG') ||
+      rawReg === 'MINAS' ||
+      rawReg === 'MINAS GERAIS'
+    )
+      return 'RMG';
+    if (
+      rawReg === 'RCO' ||
+      rawReg === 'CO' ||
+      rawReg.includes('RCO') ||
+      rawReg === 'CENTRO OESTE' ||
+      rawReg === 'CENTRO-OESTE'
+    )
+      return 'RCO';
+    if (rawReg === 'RNE' || rawReg === 'NE' || rawReg.includes('RNE')) return 'RNE';
+    if (rawReg.startsWith('R') && rawReg.length <= 5) return rawReg;
+    return rawReg;
+  }
+
+  // 2. Check DR (Diretoria Regional)
+  const rawDr = (
+    r.DR ??
+    r['Diretoria Regional'] ??
+    r['DIR REGIONAL'] ??
+    r['Diretoria'] ??
+    ''
+  )
+    .toString()
+    .trim()
+    .toUpperCase();
+
+  if (rawDr) {
+    if (['RSUL', 'SUL', 'PR', 'SC', 'RS'].includes(rawDr) || rawDr.includes('SUL')) return 'RSUL';
+    if (['RMG', 'MG', 'MINAS', 'MINAS GERAIS'].includes(rawDr) || rawDr.includes('MINAS')) return 'RMG';
+    if (['RCO', 'CO', 'GO', 'DF', 'MT', 'MS', 'CENTRO OESTE', 'CENTRO-OESTE'].includes(rawDr) || rawDr.includes('CENTRO')) return 'RCO';
+    if (['RNE', 'NE', 'BA', 'PE', 'CE'].includes(rawDr) || rawDr.includes('NORDESTE')) return 'RNE';
+    if (rawDr.startsWith('R') && rawDr.length <= 5) return rawDr;
+  }
+
+  // 3. Check UF (Estado)
+  const rawUf = (r.UF ?? '').toString().trim().toUpperCase();
+  if (rawUf) {
+    if (['PR', 'SC', 'RS'].includes(rawUf)) return 'RSUL';
+    if (['MG'].includes(rawUf)) return 'RMG';
+    if (['GO', 'DF', 'MT', 'MS', 'TO', 'RO', 'AC', 'PA', 'AM', 'AP', 'RR'].includes(rawUf)) return 'RCO';
+    if (['BA', 'PE', 'CE', 'RN', 'PB', 'AL', 'SE', 'PI', 'MA'].includes(rawUf)) return 'RNE';
+    if (['RJ', 'ES'].includes(rawUf)) return 'RJ/ES';
+    if (['SP'].includes(rawUf)) return 'SP';
+  }
+
+  // 4. Check Localidade / Município / Descrição
+  const loc = (r.Localidade ?? r.Descricao ?? '').toString().toUpperCase();
+  if (loc) {
+    if (
+      loc.includes('BELO HORIZONTE') ||
+      loc.includes('CONTAGEM') ||
+      loc.includes('UBERLANDIA') ||
+      loc.includes('JUIZ DE FORA') ||
+      loc.includes('BETIM') ||
+      loc.includes('MONTES CLAROS') ||
+      loc.includes('UBERABA')
+    ) {
+      return 'RMG';
+    }
+    if (
+      loc.includes('CURITIBA') ||
+      loc.includes('LONDRINA') ||
+      loc.includes('MARINGA') ||
+      loc.includes('PORTO ALEGRE') ||
+      loc.includes('FLORIANOPOLIS') ||
+      loc.includes('JOINVILLE') ||
+      loc.includes('CAXIAS DO SUL') ||
+      loc.includes('BLUMENAU') ||
+      loc.includes('CASCAVEL') ||
+      loc.includes('FOZ DO IGUACU')
+    ) {
+      return 'RSUL';
+    }
+    if (
+      loc.includes('GOIANIA') ||
+      loc.includes('BRASILIA') ||
+      loc.includes('CUIABA') ||
+      loc.includes('CAMPO GRANDE') ||
+      loc.includes('ANAPOLIS') ||
+      loc.includes('PALMAS') ||
+      loc.includes('PORTO VELHO') ||
+      loc.includes('RIO BRANCO')
+    ) {
+      return 'RCO';
+    }
+  }
+
+  // 5. Check DC identifier or simulation prefix
+  const dcStr = `${r.DC || ''} ${r['Dc Simulação'] || ''}`.toUpperCase();
+  if (dcStr) {
+    if (dcStr.includes('PR') || dcStr.includes('RS') || dcStr.includes('SC') || dcStr.includes('SUL')) return 'RSUL';
+    if (dcStr.includes('MG') || dcStr.includes('MINAS')) return 'RMG';
+    if (dcStr.includes('GO') || dcStr.includes('DF') || dcStr.includes('MT') || dcStr.includes('MS') || dcStr.includes('RCO')) return 'RCO';
+  }
+
+  return '';
+}
+
+/**
+ * Normaliza o valor do campo Responsável.
+ * Valores vazios, nulos, traços, "Não Atribuído", "SEM RESPONSÁVEL", etc. são convertidos para "(EM BRANCO)".
+ */
+export function normalizeResponsavel(resp?: string | null): string {
+  if (!resp) return '(EM BRANCO)';
+  const trimmed = resp.trim();
+  const upper = trimmed.toUpperCase();
+  if (
+    !trimmed ||
+    trimmed === '-' ||
+    trimmed === '—' ||
+    upper === 'NÃO ATRIBUÍDO' ||
+    upper === 'NAO ATRIBUIDO' ||
+    upper === 'NÃO ATRIBUIDO' ||
+    upper === 'NAO ATRIBUÍDO' ||
+    upper === 'SEM RESPONSÁVEL' ||
+    upper === 'SEM RESPONSAVEL' ||
+    upper === 'N/D' ||
+    upper === 'N/A' ||
+    upper === '(EM BRANCO)' ||
+    upper === 'EM BRANCO'
+  ) {
+    return '(EM BRANCO)';
+  }
+  return trimmed;
+}
+
+/**
+ * Ordena responsáveis em ordem alfabética (pt-BR), mantendo "(EM BRANCO)" sempre na última posição.
+ */
+export function sortResponsaveis(a: string, b: string): number {
+  const isBlankA = a === '(EM BRANCO)';
+  const isBlankB = b === '(EM BRANCO)';
+  if (isBlankA && !isBlankB) return 1;
+  if (!isBlankA && isBlankB) return -1;
+  return a.localeCompare(b, 'pt-BR');
+}
+
 export interface RegistrosFilterPayload {
   searchDC?: string;
   regional?: string[];
   uf?: string[];
   carteira?: string[];
+  tipoDC?: string[];
   aging?: string[];
   statusAtual?: string[];
   statusInforme?: string[];
@@ -286,6 +489,7 @@ export interface RegistrosFilterPayload {
   tipoProjeto?: string[];
   statusMedParcial?: string[];
   statusMedFinal?: string[];
+  mesInput?: string[];
   backlogInput?: string[];
   onlyWithParcial?: boolean;
   onlyWithFinal?: boolean;
@@ -295,4 +499,55 @@ export interface RegistrosFilterPayload {
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
 }
+
+export interface FRRegistro {
+  id: string;
+  UF: string;
+  'DC-M': string;
+  REG: string;
+  Mês: string;
+  CENTRO: string;
+  'LOCALIDADE DE PRESTAÇÃO': string;
+  'DATA DA SOLICITAÇÃO': string;
+  'DC MIGRADA/OPERAÇÃO': string;
+  'Nº MEDIÇÃO': string;
+  'Nº PEDIDO': string;
+  'ITEM DO PEDIDO': string;
+  'VALOR FR': string | number;
+  FR: string;
+  _updatedAt?: string;
+  _updatedBy?: string;
+}
+
+export const FR_COLUMNS: (keyof Omit<FRRegistro, 'id' | '_updatedAt' | '_updatedBy'>)[] = [
+  'UF',
+  'DC-M',
+  'REG',
+  'Mês',
+  'CENTRO',
+  'LOCALIDADE DE PRESTAÇÃO',
+  'DATA DA SOLICITAÇÃO',
+  'DC MIGRADA/OPERAÇÃO',
+  'Nº MEDIÇÃO',
+  'Nº PEDIDO',
+  'ITEM DO PEDIDO',
+  'VALOR FR',
+  'FR',
+];
+
+export interface ImportInfoFR {
+  fileName: string;
+  importedAt: string;
+  importedBy: string;
+  totalLinhas: number;
+}
+
+export type NavTabType =
+  | 'dashboard'
+  | 'registros'
+  | 'fr'
+  | 'importacao'
+  | 'segmentacoes'
+  | 'usuarios';
+
 

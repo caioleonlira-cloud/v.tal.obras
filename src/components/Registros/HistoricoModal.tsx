@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { HistoricoEdicaoItem } from '../../types';
 import { History, X, Clock, User, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { exportarRelatorioHistoricoParaExcel } from '../../utils/excel';
@@ -20,6 +21,16 @@ export const HistoricoModal: React.FC<HistoricoModalProps> = ({
   const { fetchHistoricoForDC } = useData();
   const [items, setItems] = useState<HistoricoEdicaoItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     let isMounted = true;
@@ -62,8 +73,11 @@ export const HistoricoModal: React.FC<HistoricoModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+  return createPortal(
+    <div
+      style={{ zIndex: 2000 }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+    >
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="bg-[#002855] px-5 py-4 text-white flex items-center justify-between shrink-0">
@@ -100,6 +114,7 @@ export const HistoricoModal: React.FC<HistoricoModalProps> = ({
             )}
 
             <button
+              type="button"
               onClick={onClose}
               className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
             >
@@ -198,6 +213,7 @@ export const HistoricoModal: React.FC<HistoricoModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

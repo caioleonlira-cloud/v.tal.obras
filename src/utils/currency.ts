@@ -82,6 +82,8 @@ export function formatBRL(v: number): string {
   return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+export const formatCurrency = formatBRL;
+
 export function formatDecimalBR(v: number): string {
   return (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

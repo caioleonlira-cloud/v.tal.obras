@@ -1,5 +1,68 @@
 @import "tailwindcss";
 
+:root {
+  /* ==========================================================================
+     Variáveis CSS Globais de Tipografia e Dimensões
+     Permitem ajustar os tamanhos de fonte e alturas centralizadamente.
+     ========================================================================== */
+
+  /* Variáveis base solicitadas */
+  --fs-title: 16px;
+  --fs-subtitle: 12px;
+  --fs-label: 12px;
+  --fs-input: 13px;
+  --fs-table-header: 11px;
+  --fs-table: 12px;
+  --fs-table-badge: 10px;
+
+  /* --- MODAL DE EDIÇÃO DA DC --- */
+  --fs-modal-title: 17px;         /* Título do modal (DC: 1215...) */
+  --fs-modal-subtitle: 12px;      /* Subtítulo/descrição */
+  --fs-modal-badge: 11px;         /* Badges do cabeçalho */
+  --fs-modal-block-title: 14px;   /* Título dos blocos (Bloco 2 / Bloco 1) */
+  --fs-modal-caption: 11px;       /* Texto '(Colunas W a AF)' e chips */
+  --fs-modal-label: var(--fs-label); /* Labels dos campos */
+  --fs-modal-input: var(--fs-input); /* Valores de inputs, selects e textarea */
+  --fs-modal-btn: 12.5px;         /* Botões do rodapé e 'Copiar Todos os Dados' */
+  --fs-modal-footer: 12px;        /* Texto 'Última atualização' */
+  --modal-input-height: 32px;     /* Altura reduzida dos inputs/selects */
+
+  /* --- DASHBOARD (Painéis e Tabelas) --- */
+  --fs-dash-panel-title: var(--fs-title);       /* Título do painel */
+  --fs-dash-panel-subtitle: var(--fs-subtitle); /* Subtítulo */
+  --fs-dash-table-header: var(--fs-table-header); /* Cabeçalho da tabela */
+  --fs-dash-table-cell: var(--fs-table);        /* Nomes e valores em R$ */
+  --fs-dash-table-badge: var(--fs-table-badge); /* Badges de regional (TELEMONT, RCO) */
+  --fs-dash-card-title: 12.5px;                 /* Título do card de regional e 'Ver todas as obras' */
+  --dash-table-row-py: 5px;                     /* Padding vertical das linhas (~5-6px) */
+}
+
+/* Classes utilitárias auxiliares mapeadas às variáveis */
+.fs-modal-title { font-size: var(--fs-modal-title); }
+.fs-modal-subtitle { font-size: var(--fs-modal-subtitle); }
+.fs-modal-badge { font-size: var(--fs-modal-badge); }
+.fs-modal-block-title { font-size: var(--fs-modal-block-title); }
+.fs-modal-caption { font-size: var(--fs-modal-caption); }
+.fs-modal-label { font-size: var(--fs-modal-label); }
+.fs-modal-input { font-size: var(--fs-modal-input); }
+.fs-modal-btn { font-size: var(--fs-modal-btn); }
+.fs-modal-footer { font-size: var(--fs-modal-footer); }
+.modal-input-field {
+  height: var(--modal-input-height) !important;
+  font-size: var(--fs-modal-input) !important;
+}
+
+.fs-dash-panel-title { font-size: var(--fs-dash-panel-title); }
+.fs-dash-panel-subtitle { font-size: var(--fs-dash-panel-subtitle); }
+.fs-dash-card-title { font-size: var(--fs-dash-card-title); }
+.fs-dash-table-header { font-size: var(--fs-dash-table-header); }
+.fs-dash-table-cell { font-size: var(--fs-dash-table-cell); }
+.fs-dash-table-badge { font-size: var(--fs-dash-table-badge); }
+.dash-table-row-py {
+  padding-top: var(--dash-table-row-py) !important;
+  padding-bottom: var(--dash-table-row-py) !important;
+}
+
 @layer base {
   /* Custom scrollbar */
   ::-webkit-scrollbar {
@@ -21,3 +84,4 @@
 body {
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+

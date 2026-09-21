@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import {
@@ -7,15 +8,24 @@ import {
   BLOCO_2_KEYS,
   ALL_COLUMNS,
   RegistrosFilterPayload,
+  getRegistroCarteira,
+  getRegistroPlanEstruturante,
+  getRegistroTipoDC,
+  getRegistroMesInput,
+  getRegistroRegional,
+  normalizeResponsavel,
+  sortResponsaveis,
 } from '../../types';
 import {
   exportarRegistrosParaExcel,
   exportarRelatorioHistoricoParaExcel,
+  isValidDC,
 } from '../../utils/excel';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
 import { RegistroEditModal } from './RegistroEditModal';
 import { HistoricoModal } from './HistoricoModal';
 import { MultiSelectFilter } from './MultiSelectFilter';
+import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import {
   Search,
   Download,
@@ -41,6 +51,8 @@ import {
   Archive,
   Trash2,
   AlertTriangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAutoExportADM } from '../../hooks/useAutoExportADM';
 
@@ -82,6 +94,16 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [isExportingAudit, setIsExportingAudit] = useState(false);
   const [isManageAuditOpen, setIsManageAuditOpen] = useState(false);
 
+  // Lock body scroll when audit management modal is open
+  useEffect(() => {
+    if (!isManageAuditOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isManageAuditOpen]);
+
   // 1. Search by DC and Descricao
   const [searchDC, setSearchDC] = useState('');
 
@@ -89,6 +111,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [filterRegional, setFilterRegional] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterCarteira, setFilterCarteira] = useState<string[]>([]);
+  const [filterTipoDC, setFilterTipoDC] = useState<string[]>([]);
   const [filterAging, setFilterAging] = useState<string[]>([]);
   const [filterStatusAtual, setFilterStatusAtual] = useState<string[]>([]);
   const [filterStatusInforme, setFilterStatusInforme] = useState<string[]>([]);
@@ -97,6 +120,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>([]);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>([]);
   const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>([]);
+  const [filterMesInput, setFilterMesInput] = useState<string[]>([]);
   const [filterRespMedicao, setFilterRespMedicao] = useState<string[]>([]);
 
   // Interactive filters triggered by Dashboard clicks
@@ -177,6 +201,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         setFilterCarteira([]);
       }
 
+      // 4.1 Tipo de DC
+      if (initialFilters.tipoDC !== undefined) {
+        setFilterTipoDC(initialFilters.tipoDC);
+      } else {
+        setFilterTipoDC([]);
+      }
+
       // 5. Aging
       if (initialFilters.aging !== undefined) {
         setFilterAging(initialFilters.aging);
@@ -226,11 +257,18 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         setFilterStatusMedFinal([]);
       }
 
-      // 12. Backlog / Input
+      // 12. Plan. Estruturante (Backlog / Input)
       if (initialFilters.backlogInput !== undefined) {
         setFilterBacklogInput(initialFilters.backlogInput);
       } else {
         setFilterBacklogInput([]);
+      }
+
+      // 12.1 Mês Input
+      if (initialFilters.mesInput !== undefined) {
+        setFilterMesInput(initialFilters.mesInput);
+      } else {
+        setFilterMesInput([]);
       }
 
       // 13. Resp. Medição (Ponto 3)
@@ -288,6 +326,11 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
 
   // Helper to test if an item matches search and all other filters (correlated filters)
   const matchesFilterSubset = (item: Registro, excludeKey?: string) => {
+    // 0. Strict check: An item MUST have a valid alphanumeric DC to be displayed or considered a valid obra
+    if (!item || !isValidDC(item.DC)) {
+      return false;
+    }
+
     // 1. Search in DC or Descricao
     if (searchDC.trim()) {
       const term = searchDC.toLowerCase().trim();
@@ -299,7 +342,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     }
 
     if (excludeKey !== 'REG' && filterRegional.length > 0) {
-      if (!item.REG || !filterRegional.includes(item.REG.trim().toUpperCase())) return false;
+      const regVal = (getRegistroRegional(item) || item.REG || 'RSUL').trim().toUpperCase();
+      if (!filterRegional.includes(regVal)) return false;
     }
     if (excludeKey !== 'UF' && filterUF.length > 0) {
       if (!item.UF || !filterUF.includes(item.UF.trim().toUpperCase())) return false;
@@ -307,6 +351,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     if (excludeKey !== 'CARTEIRA' && filterCarteira.length > 0) {
       const cartVal = getRegistroCarteira(item);
       if (!cartVal || !filterCarteira.includes(cartVal)) return false;
+    }
+    if (excludeKey !== 'TIPO_DC' && filterTipoDC.length > 0) {
+      const tdcVal = getRegistroTipoDC(item);
+      if (!tdcVal || !filterTipoDC.includes(tdcVal)) return false;
     }
     if (excludeKey !== 'AGING' && filterAging.length > 0) {
       if (!item.AGING || !filterAging.includes(item.AGING.trim())) return false;
@@ -326,12 +374,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         return false;
     }
     if (excludeKey !== 'RESPONSAVEL' && filterResponsavel.length > 0) {
-      const resp = (item.Responsavel || '').trim();
+      const respNorm = normalizeResponsavel(item.Responsavel);
       const match = filterResponsavel.some((fr) => {
-        if (fr === 'Não Atribuído' || fr === 'NÃO ATRIBUÍDO') {
-          return !resp || resp === '-' || resp === 'Não Atribuído' || resp === 'NÃO ATRIBUÍDO';
+        const frNorm = normalizeResponsavel(fr);
+        if (frNorm === '(EM BRANCO)') {
+          return respNorm === '(EM BRANCO)';
         }
-        return resp.toLowerCase() === fr.toLowerCase();
+        return respNorm.toLowerCase() === fr.toLowerCase();
       });
       if (!match) return false;
     }
@@ -349,8 +398,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       if (!val || !filterStatusMedFinal.includes(val)) return false;
     }
     if (excludeKey !== 'BACKLOG_INPUT' && filterBacklogInput.length > 0) {
-      const val = (item['Backlog/Input?'] || '').trim();
+      const val = getRegistroPlanEstruturante(item);
       if (!val || !filterBacklogInput.includes(val)) return false;
+    }
+    if (excludeKey !== 'MES_INPUT' && filterMesInput.length > 0) {
+      const val = getRegistroMesInput(item);
+      if (!val || !filterMesInput.includes(val)) return false;
     }
     // Ponto 3: Novo filtro Resp. Medição
     if (excludeKey !== 'RESP_MEDICAO' && filterRespMedicao.length > 0) {
@@ -412,12 +465,18 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     statusMedFinalCounts,
     backlogInputOptions,
     backlogInputCounts,
+    tipoDCOptions,
+    tipoDCCounts,
+    mesInputOptions,
+    mesInputCounts,
     respMedicaoOptions,
     respMedicaoCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
     const cartCounts: Record<string, number> = {};
+    const tipoDcCounts: Record<string, number> = {};
+    const mesInpCounts: Record<string, number> = {};
     const agCounts: Record<string, number> = {};
     const stAtualCounts: Record<string, number> = {};
     const stInfCounts: Record<string, number> = {};
@@ -430,12 +489,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
 
     registros.forEach((r) => {
       // 1. REGIONAL
-      if (r.REG) {
-        const val = r.REG.trim().toUpperCase();
+      const regVal = (getRegistroRegional(r) || r.REG || 'RSUL').trim().toUpperCase();
+      if (regVal && regVal !== 'SEM REGIONAL') {
         if (matchesFilterSubset(r, 'REG')) {
-          regCounts[val] = (regCounts[val] || 0) + 1;
-        } else if (filterRegional.includes(val) && !regCounts[val]) {
-          regCounts[val] = 0;
+          regCounts[regVal] = (regCounts[regVal] || 0) + 1;
+        } else if (filterRegional.includes(regVal) && !regCounts[regVal]) {
+          regCounts[regVal] = 0;
         }
       }
 
@@ -490,12 +549,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       }
 
       // 7. Responsável
-      if (r.Responsavel) {
-        const val = r.Responsavel.trim();
+      const respVal = normalizeResponsavel(r.Responsavel);
+      if (respVal) {
         if (matchesFilterSubset(r, 'RESPONSAVEL')) {
-          respCounts[val] = (respCounts[val] || 0) + 1;
-        } else if (filterResponsavel.includes(val) && !respCounts[val]) {
-          respCounts[val] = 0;
+          respCounts[respVal] = (respCounts[respVal] || 0) + 1;
+        } else if (filterResponsavel.includes(respVal) && !respCounts[respVal]) {
+          respCounts[respVal] = 0;
         }
       }
 
@@ -529,13 +588,33 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         }
       }
 
-      // 11. Backlog/Input?
-      if (r['Backlog/Input?']) {
-        const val = r['Backlog/Input?'].trim();
+      // 10.1 Tipo de DC
+      const tdc = getRegistroTipoDC(r);
+      if (tdc) {
+        if (matchesFilterSubset(r, 'TIPO_DC')) {
+          tipoDcCounts[tdc] = (tipoDcCounts[tdc] || 0) + 1;
+        } else if (filterTipoDC.includes(tdc) && !tipoDcCounts[tdc]) {
+          tipoDcCounts[tdc] = 0;
+        }
+      }
+
+      // 10.2 Mês Input
+      const mi = getRegistroMesInput(r);
+      if (mi) {
+        if (matchesFilterSubset(r, 'MES_INPUT')) {
+          mesInpCounts[mi] = (mesInpCounts[mi] || 0) + 1;
+        } else if (filterMesInput.includes(mi) && !mesInpCounts[mi]) {
+          mesInpCounts[mi] = 0;
+        }
+      }
+
+      // 11. Plan. Estruturante (Backlog/Input?)
+      const pe = getRegistroPlanEstruturante(r);
+      if (pe) {
         if (matchesFilterSubset(r, 'BACKLOG_INPUT')) {
-          backlogInpCounts[val] = (backlogInpCounts[val] || 0) + 1;
-        } else if (filterBacklogInput.includes(val) && !backlogInpCounts[val]) {
-          backlogInpCounts[val] = 0;
+          backlogInpCounts[pe] = (backlogInpCounts[pe] || 0) + 1;
+        } else if (filterBacklogInput.includes(pe) && !backlogInpCounts[pe]) {
+          backlogInpCounts[pe] = 0;
         }
       }
 
@@ -584,7 +663,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       statusAtualCounts: stAtualCounts,
       statusInformeOptions: Object.keys(stInfCounts).sort(),
       statusInformeCounts: stInfCounts,
-      responsavelOptions: Object.keys(respCounts).sort(),
+      responsavelOptions: Object.keys(respCounts).sort(sortResponsaveis),
       responsavelCounts: respCounts,
       tipoProjetoOptions: Object.keys(projCounts).sort(),
       tipoProjetoCounts: projCounts,
@@ -594,6 +673,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       statusMedFinalCounts: stMedFinCounts,
       backlogInputOptions: Object.keys(backlogInpCounts).sort(),
       backlogInputCounts: backlogInpCounts,
+      tipoDCOptions: Object.keys(tipoDcCounts).sort(),
+      tipoDCCounts: tipoDcCounts,
+      mesInputOptions: Object.keys(mesInpCounts).sort(),
+      mesInputCounts: mesInpCounts,
       respMedicaoOptions: Object.keys(respMedCounts).sort(),
       respMedicaoCounts: respMedCounts,
     };
@@ -604,6 +687,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterRegional,
     filterUF,
     filterCarteira,
+    filterTipoDC,
     filterAging,
     filterStatusAtual,
     filterStatusInforme,
@@ -612,6 +696,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterMesInput,
     filterRespMedicao,
   ]);
 
@@ -624,6 +709,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterRegional,
     filterUF,
     filterCarteira,
+    filterTipoDC,
     filterAging,
     filterStatusAtual,
     filterStatusInforme,
@@ -632,6 +718,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterMesInput,
     filterRespMedicao,
     filterOnlyWithParcial,
     filterOnlyWithFinal,
@@ -639,6 +726,11 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterOnlyWithFaturado,
     filterOnlyWithSaldo,
   ]);
+
+  // Total of valid base records (excluding any ghost or empty lines)
+  const totalObrasBase = useMemo(() => {
+    return registros.filter((r) => r && isValidDC(r.DC)).length;
+  }, [registros]);
 
   // Calculate Summary Totals from filtered rows
   const { totalOrcamento, totalParcial, totalFinal, totalMedidoTotal, totalFaturado, totalSaldo } = useMemo(() => {
@@ -674,9 +766,18 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     list.sort((a, b) => {
       let valA = '';
       let valB = '';
-      if (sortColumn === 'TIPO (Cateira)' || sortColumn === 'TIPO (CARTEIRA)') {
+      if (sortColumn === 'TIPO (Cateira)' || sortColumn === 'TIPO (Carteira)' || sortColumn === 'TIPO (CARTEIRA)') {
         valA = getRegistroCarteira(a).toLowerCase();
         valB = getRegistroCarteira(b).toLowerCase();
+      } else if (sortColumn === 'Plan. Estruturante' || sortColumn === 'Backlog/Input?' || sortColumn === 'Backlog/Input') {
+        valA = getRegistroPlanEstruturante(a).toLowerCase();
+        valB = getRegistroPlanEstruturante(b).toLowerCase();
+      } else if (sortColumn === 'Tipo de DC') {
+        valA = getRegistroTipoDC(a).toLowerCase();
+        valB = getRegistroTipoDC(b).toLowerCase();
+      } else if (sortColumn === 'Mês Input') {
+        valA = getRegistroMesInput(a).toLowerCase();
+        valB = getRegistroMesInput(b).toLowerCase();
       } else {
         valA = ((a as any)[sortColumn] || '').toString().toLowerCase();
         valB = ((b as any)[sortColumn] || '').toString().toLowerCase();
@@ -735,6 +836,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     setFilterRegional([]);
     setFilterUF([]);
     setFilterCarteira([]);
+    setFilterTipoDC([]);
     setFilterAging([]);
     setFilterStatusAtual([]);
     setFilterStatusInforme([]);
@@ -743,6 +845,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
     setFilterBacklogInput([]);
+    setFilterMesInput([]);
     setFilterRespMedicao([]);
     setFilterOnlyWithParcial(false);
     setFilterOnlyWithFinal(false);
@@ -760,6 +863,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterRegional.length +
     filterUF.length +
     filterCarteira.length +
+    filterTipoDC.length +
     filterAging.length +
     filterStatusAtual.length +
     filterStatusInforme.length +
@@ -768,6 +872,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     filterStatusMedParcial.length +
     filterStatusMedFinal.length +
     filterBacklogInput.length +
+    filterMesInput.length +
     filterRespMedicao.length +
     (filterOnlyWithParcial ? 1 : 0) +
     (filterOnlyWithFinal ? 1 : 0) +
@@ -840,6 +945,172 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   // 2. Team Editable Columns (All Bloco 2)
   const equipeEditableColumns = BLOCO_2_KEYS;
 
+  // Persistência local da visibilidade de colunas (chave por usuário logado)
+  const userIdentifier = user?.uid || user?.email || profile?.uid || profile?.email || 'default';
+
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(`vtal_registros_hidden_cols_${userIdentifier}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((k) => typeof k === 'string' && k !== 'DC');
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return [];
+  });
+
+  // Sincroniza se o usuário logado mudar
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`vtal_registros_hidden_cols_${userIdentifier}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setHiddenColumns(parsed.filter((k) => typeof k === 'string' && k !== 'DC'));
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }, [userIdentifier]);
+
+  const updateHiddenColumns = useCallback(
+    (newHidden: string[]) => {
+      setHiddenColumns(newHidden);
+      try {
+        localStorage.setItem(
+          `vtal_registros_hidden_cols_${userIdentifier}`,
+          JSON.stringify(newHidden)
+        );
+      } catch {
+        // ignore
+      }
+    },
+    [userIdentifier]
+  );
+
+  const hiddenColumnsSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
+
+  // Colunas visíveis em cada grupo
+  const visibleBaseColumns = useMemo(
+    () => baseMatrizColumns.filter((colKey) => !hiddenColumnsSet.has(colKey)),
+    [baseMatrizColumns, hiddenColumnsSet]
+  );
+
+  const visibleEquipeColumns = useMemo(
+    () => equipeEditableColumns.filter((colKey) => !hiddenColumnsSet.has(colKey)),
+    [equipeEditableColumns, hiddenColumnsSet]
+  );
+
+  // Status dos grupos
+  const isBaseGroupHidden = useMemo(
+    () => baseMatrizColumns.length > 0 && baseMatrizColumns.every((c) => hiddenColumnsSet.has(c)),
+    [baseMatrizColumns, hiddenColumnsSet]
+  );
+
+  const isEquipeGroupHidden = useMemo(
+    () => equipeEditableColumns.length > 0 && equipeEditableColumns.every((c) => hiddenColumnsSet.has(c)),
+    [equipeEditableColumns, hiddenColumnsSet]
+  );
+
+  const baseHiddenCount = useMemo(
+    () => baseMatrizColumns.filter((c) => hiddenColumnsSet.has(c)).length,
+    [baseMatrizColumns, hiddenColumnsSet]
+  );
+
+  const equipeHiddenCount = useMemo(
+    () => equipeEditableColumns.filter((c) => hiddenColumnsSet.has(c)).length,
+    [equipeEditableColumns, hiddenColumnsSet]
+  );
+
+  // Alternar coluna individual
+  const handleToggleColumn = useCallback(
+    (colKey: string) => {
+      setHiddenColumns((prev) => {
+        const updated = prev.includes(colKey)
+          ? prev.filter((k) => k !== colKey)
+          : [...prev, colKey];
+        try {
+          localStorage.setItem(
+            `vtal_registros_hidden_cols_${userIdentifier}`,
+            JSON.stringify(updated)
+          );
+        } catch {
+          // ignore
+        }
+        return updated;
+      });
+    },
+    [userIdentifier]
+  );
+
+  const baseColsSet = useMemo(() => new Set<string>(baseMatrizColumns), [baseMatrizColumns]);
+  const equipeColsSet = useMemo(() => new Set<string>(equipeEditableColumns), [equipeEditableColumns]);
+
+  // Alternar grupo Base: Leitura
+  const handleToggleBaseGroup = useCallback(() => {
+    setHiddenColumns((prev) => {
+      const allBaseHidden = baseMatrizColumns.every((c) => prev.includes(c));
+      let updated: string[];
+      if (allBaseHidden) {
+        // Mostrar todas da base
+        updated = prev.filter((c) => !baseColsSet.has(c));
+      } else {
+        // Ocultar todas da base
+        const nonBase = prev.filter((c) => !baseColsSet.has(c));
+        updated = [...nonBase, ...baseMatrizColumns];
+      }
+      try {
+        localStorage.setItem(
+          `vtal_registros_hidden_cols_${userIdentifier}`,
+          JSON.stringify(updated)
+        );
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  }, [baseMatrizColumns, baseColsSet, userIdentifier]);
+
+  // Alternar grupo Equipe: Edição
+  const handleToggleEquipeGroup = useCallback(() => {
+    setHiddenColumns((prev) => {
+      const allEquipeHidden = equipeEditableColumns.every((c) => prev.includes(c));
+      let updated: string[];
+      if (allEquipeHidden) {
+        // Mostrar todas de equipe
+        updated = prev.filter((c) => !equipeColsSet.has(c));
+      } else {
+        // Ocultar todas de equipe
+        const nonEquipe = prev.filter((c) => !equipeColsSet.has(c));
+        updated = [...nonEquipe, ...equipeEditableColumns];
+      }
+      try {
+        localStorage.setItem(
+          `vtal_registros_hidden_cols_${userIdentifier}`,
+          JSON.stringify(updated)
+        );
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  }, [equipeEditableColumns, equipeColsSet, userIdentifier]);
+
+  // Atalho: Mostrar todas
+  const handleShowAllColumns = useCallback(() => {
+    updateHiddenColumns([]);
+  }, [updateHiddenColumns]);
+
+  // Atalho: Só edição (oculta base, mostra edição)
+  const handleShowOnlyEdicao = useCallback(() => {
+    updateHiddenColumns([...baseMatrizColumns]);
+  }, [baseMatrizColumns, updateHiddenColumns]);
+
   // Scroll table container back to top when page changes
   useEffect(() => {
     if (tableContainerRef.current) {
@@ -909,7 +1180,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </th>
 
         {/* --- GROUP 1: ALL IMPORTED BASE MATRIZ COLUMNS (Sticky Top, Read-only) --- */}
-        {baseMatrizColumns.map((colKey) => {
+        {visibleBaseColumns.map((colKey) => {
           const isSorted = sortColumn === colKey;
           return (
             <th
@@ -930,9 +1201,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             >
               <div className="flex items-center justify-between space-x-1.5">
                 <span className="truncate text-slate-100">
-                  {colKey === 'TIPO (Cateira)'
-                    ? 'TIPO (CARTEIRA)'
-                    : colKey === 'Backlog/Input?'
+                  {(colKey as string) === 'TIPO (Cateira)' || colKey === 'TIPO (Carteira)'
+                    ? 'TIPO (Carteira)'
+                    : (colKey as string) === 'Backlog/Input?' || colKey === 'Plan. Estruturante'
                     ? 'Plan. Estruturante'
                     : colKey}
                 </span>
@@ -951,7 +1222,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         })}
 
         {/* --- GROUP 2: ALL TEAM EDITABLE COLUMNS (Sticky Top, Centered) --- */}
-        {equipeEditableColumns.map((colKey) => {
+        {visibleEquipeColumns.map((colKey) => {
           const isSorted = sortColumn === colKey;
           return (
             <th
@@ -1004,17 +1275,19 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
       )}
 
-      {/* 1. Header de Resumo & Ações (Linha Única Compacta: Resumo + Matriz + Auditoria + Exportar + Toggle Filtros) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-white border border-slate-200/90 rounded-xl text-xs text-slate-600 shadow-2xs">
+      {/* Controles, Filtros e Indicadores em fluxo normal (rolam junto com a página) */}
+      <div className="space-y-2 relative">
+        {/* 1. Header de Resumo & Ações (Linha Única Compacta: Resumo + Matriz + Auditoria + Exportar + Toggle Filtros) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-white border border-slate-200/90 rounded-xl text-xs text-slate-600 shadow-2xs">
         {/* Esquerda: Total de Obras + Matriz + Sync */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center space-x-1.5 font-medium">
             <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse shrink-0" />
             <span>
-              {registros.length > 0 ? (
+              {totalObrasBase > 0 ? (
                 <>
                   <strong className="text-slate-900 font-bold">
-                    {registros.length.toLocaleString('pt-BR')}
+                    {totalObrasBase.toLocaleString('pt-BR')}
                   </strong>{' '}
                   obras registradas
                 </>
@@ -1172,18 +1445,18 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Painel Retrátil de Busca e Filtros (Responsivo e Sem Scrollbar Interna) */}
+      {/* 2. Painel Retrátil de Busca e Filtros (Linha Única em Telas Desktop) */}
       {isFiltersExpanded && (
-        <div className="bg-white p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
+        <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 xl:grid-cols-12 2xl:grid-cols-12 gap-1.5 items-end">
             {/* Campo de Busca por DC ou Descrição */}
-            <div className="w-full">
+            <div className="w-full min-w-0">
               <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
                 Buscar DC/Descrição
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                  <Search className="h-3.5 w-3.5" />
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
+                  <Search className="h-3 w-3" />
                 </div>
                 <input
                   id="input-search-dc"
@@ -1194,7 +1467,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                     setCurrentPage(1);
                   }}
                   placeholder="Buscar..."
-                  className="block w-full pl-8 pr-6 py-1 bg-slate-50/70 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] transition-all shadow-2xs h-[28px]"
+                  className="block w-full pl-6 pr-5 py-1 bg-slate-50/70 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] transition-all shadow-2xs h-[28px]"
                 />
                 {searchDC && (
                   <button
@@ -1202,7 +1475,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                       setSearchDC('');
                       setCurrentPage(1);
                     }}
-                    className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                    className="absolute inset-y-0 right-0 pr-1.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -1210,7 +1483,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               </div>
             </div>
 
-            {/* 1. Regional -> Coluna REG */}
+            {/* 1. Regional */}
             <MultiSelectFilter
               label="Regional"
               columnRefName="REG"
@@ -1224,7 +1497,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todas"
             />
 
-            {/* 2. UF -> Coluna UF */}
+            {/* 2. UF */}
             <MultiSelectFilter
               label="UF"
               columnRefName="UF"
@@ -1238,10 +1511,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todas"
             />
 
-            {/* 3. Carteira -> Coluna TIPO (CARTEIRA) */}
+            {/* 3. TIPO (Carteira) */}
             <MultiSelectFilter
-              label="Carteira"
-              columnRefName="TIPO (CARTEIRA)"
+              label="TIPO (Carteira)"
+              columnRefName="TIPO (Carteira)"
               options={carteiraOptions}
               selected={filterCarteira}
               onChange={(sel) => {
@@ -1252,77 +1525,21 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todas"
             />
 
-            {/* 4. Status da DC (Atual) -> Coluna Status da DC (Atual) */}
+            {/* 4. Tipo de DC */}
             <MultiSelectFilter
-              label="Status DC"
-              columnRefName="Atual"
-              options={statusAtualOptions}
-              selected={filterStatusAtual}
+              label="Tipo de DC"
+              columnRefName="Tipo de DC"
+              options={tipoDCOptions}
+              selected={filterTipoDC}
               onChange={(sel) => {
-                setFilterStatusAtual(sel);
+                setFilterTipoDC(sel);
                 setCurrentPage(1);
               }}
-              optionCounts={statusAtualCounts}
+              optionCounts={tipoDCCounts}
               placeholder="Todos"
             />
 
-            {/* 6. Status Informe (Campo) -> Coluna Status Informe (Campo) */}
-            <MultiSelectFilter
-              label="Status Informe"
-              columnRefName="Campo"
-              options={statusInformeOptions}
-              selected={filterStatusInforme}
-              onChange={(sel) => {
-                setFilterStatusInforme(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={statusInformeCounts}
-              placeholder="Todos"
-            />
-
-            {/* 7. Responsável -> Coluna Responsavel */}
-            <MultiSelectFilter
-              label="Responsável"
-              columnRefName="Área"
-              options={responsavelOptions}
-              selected={filterResponsavel}
-              onChange={(sel) => {
-                setFilterResponsavel(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={responsavelCounts}
-              placeholder="Todos"
-            />
-
-            {/* 8. Tipo de Projeto -> Coluna Tipo de Projeto */}
-            <MultiSelectFilter
-              label="Tipo Projeto"
-              columnRefName="Projeto"
-              options={tipoProjetoOptions}
-              selected={filterTipoProjeto}
-              onChange={(sel) => {
-                setFilterTipoProjeto(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={tipoProjetoCounts}
-              placeholder="Todos"
-            />
-
-            {/* 9. Status Med. Final (Ponto 5) */}
-            <MultiSelectFilter
-              label="Status Med. Final"
-              columnRefName="Final"
-              options={statusMedFinalOptions}
-              selected={filterStatusMedFinal}
-              onChange={(sel) => {
-                setFilterStatusMedFinal(sel);
-                setCurrentPage(1);
-              }}
-              optionCounts={statusMedFinalCounts}
-              placeholder="Todos"
-            />
-
-            {/* 11. Plan. Estruturante (Antigo Backlog/Input?) */}
+            {/* 5. Plan. Estruturante */}
             <MultiSelectFilter
               label="Plan. Estruturante"
               columnRefName="Plan. Estruturante"
@@ -1334,10 +1551,67 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               }}
               optionCounts={backlogInputCounts}
               placeholder="Todos"
+            />
+
+            {/* 6. Mês Input */}
+            <MultiSelectFilter
+              label="Mês Input"
+              columnRefName="Mês Input"
+              options={mesInputOptions}
+              selected={filterMesInput}
+              onChange={(sel) => {
+                setFilterMesInput(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={mesInputCounts}
+              placeholder="Todos"
+            />
+
+            {/* 7. Status Atual */}
+            <MultiSelectFilter
+              label="Status Atual"
+              columnRefName="Atual"
+              options={statusAtualOptions}
+              selected={filterStatusAtual}
+              onChange={(sel) => {
+                setFilterStatusAtual(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={statusAtualCounts}
+              placeholder="Todos"
+            />
+
+            {/* 8. Status Informe */}
+            <MultiSelectFilter
+              label="Status Informe"
+              columnRefName="Campo"
+              options={statusInformeOptions}
+              selected={filterStatusInforme}
+              onChange={(sel) => {
+                setFilterStatusInforme(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={statusInformeCounts}
+              placeholder="Todos"
               align="right"
             />
 
-            {/* 11. Resp. Medição (Ponto 3) */}
+            {/* 9. Responsável */}
+            <MultiSelectFilter
+              label="Responsável"
+              columnRefName="Área"
+              options={responsavelOptions}
+              selected={filterResponsavel}
+              onChange={(sel) => {
+                setFilterResponsavel(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={responsavelCounts}
+              placeholder="Todos"
+              align="right"
+            />
+
+            {/* 10. Resp. Medição */}
             <MultiSelectFilter
               label="Resp. Medição"
               columnRefName="Resp.Medição"
@@ -1351,64 +1625,52 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               placeholder="Todos"
               align="right"
             />
+
+            {/* 11. Status Med. Final */}
+            <MultiSelectFilter
+              label="Status Med. Final"
+              columnRefName="Final"
+              options={statusMedFinalOptions}
+              selected={filterStatusMedFinal}
+              onChange={(sel) => {
+                setFilterStatusMedFinal(sel);
+                setCurrentPage(1);
+              }}
+              optionCounts={statusMedFinalCounts}
+              placeholder="Todos"
+              align="right"
+            />
           </div>
         </div>
       )}
 
       {/* 3. Linha Única de Indicadores & Legendas (Accordion / Retrátil) */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-1.5 bg-slate-50/90 border border-slate-200/80 rounded-xl text-[11px] text-slate-600 shadow-2xs">
-        {/* Esquerda: Exibindo X obras + KPIs em formato horizontal */}
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-          <span className="font-semibold text-slate-800">
+      <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-1.5 px-3 py-1.5 bg-slate-50/90 border border-slate-200/80 rounded-xl text-[11px] text-slate-600 shadow-2xs">
+        {/* Esquerda: Exibindo X obras + Orçamento, Faturado e Saldo */}
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-x-2.5 gap-y-1 min-w-0">
+          <span className="font-semibold text-slate-800 whitespace-nowrap">
             Exibindo <strong className="text-[#002855] font-extrabold">{filteredRegistros.length.toLocaleString('pt-BR')}</strong> obras
           </span>
 
-          {isIndicatorsExpanded ? (
+          {isIndicatorsExpanded && (
             <>
-              <span className="text-slate-300">•</span>
-              <span>
+              <span className="text-slate-300 select-none">•</span>
+              <span className="whitespace-nowrap">
                 Orçamento: <strong className="text-slate-900 font-bold">{totalOrcamento}</strong>
               </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                Med. Parcial: <strong className="text-emerald-700 font-bold">{totalParcial}</strong>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                Med. Final: <strong className="text-emerald-700 font-bold">{totalFinal}</strong>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                Total Medido: <strong className="text-cyan-800 font-extrabold">{totalMedidoTotal}</strong>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
+              <span className="text-slate-300 select-none">•</span>
+              <span className="whitespace-nowrap">
                 Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
               </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                Saldo: <strong className="text-indigo-700 font-bold">{totalSaldo}</strong>
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-slate-300">•</span>
-              <span>
-                Total Medido: <strong className="text-cyan-800 font-extrabold">{totalMedidoTotal}</strong>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
+              <span className="text-slate-300 select-none">•</span>
+              <span className="whitespace-nowrap">
                 Saldo: <strong className="text-indigo-700 font-bold">{totalSaldo}</strong>
               </span>
             </>
           )}
 
           {filterOnlyWithParcial && (
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300 whitespace-nowrap">
               <span>Parcial &gt; R$ 0</span>
               <button
                 type="button"
@@ -1421,7 +1683,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             </span>
           )}
           {filterOnlyWithFinal && (
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300 whitespace-nowrap">
               <span>Final &gt; R$ 0</span>
               <button
                 type="button"
@@ -1434,7 +1696,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             </span>
           )}
           {filterOnlyWithMedido && (
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300">
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-[10px] font-bold border border-emerald-300 whitespace-nowrap">
               <span>Total Medido &gt; R$ 0</span>
               <button
                 type="button"
@@ -1447,7 +1709,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             </span>
           )}
           {filterOnlyWithFaturado && (
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold border border-blue-300">
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold border border-blue-300 whitespace-nowrap">
               <span>Faturado &gt; R$ 0</span>
               <button
                 type="button"
@@ -1460,7 +1722,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             </span>
           )}
           {filterOnlyWithSaldo && (
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-bold border border-indigo-300">
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 text-[10px] font-bold border border-indigo-300 whitespace-nowrap">
               <span>Saldo &gt; R$ 0</span>
               <button
                 type="button"
@@ -1477,7 +1739,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             <button
               type="button"
               onClick={clearAllFilters}
-              className="ml-1 inline-flex items-center space-x-1 px-1.5 py-0.2 rounded bg-red-50 text-red-700 hover:bg-red-100 text-[10px] font-bold transition-colors cursor-pointer border border-red-200"
+              className="ml-1 inline-flex items-center space-x-1 px-1.5 py-0.2 rounded bg-red-50 text-red-700 hover:bg-red-100 text-[10px] font-bold transition-colors cursor-pointer border border-red-200 whitespace-nowrap"
               title="Limpar todos os filtros aplicados"
             >
               <X className="w-2.5 h-2.5" />
@@ -1486,17 +1748,69 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           )}
         </div>
 
-        {/* Direita: Tags de Legenda + DC Congelado + Toggle Indicadores */}
-        <div className="flex items-center space-x-2 shrink-0 text-[10px]">
-          <div className="inline-flex items-center space-x-1 px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+        {/* Direita: Tags de Legenda (Botões de Alternar) + Colunas + DC Congelado + Toggle Indicadores */}
+        <div className="flex items-center space-x-1.5 shrink-0 text-[10px] ml-auto">
+          {/* 1. Botão/Chip Base: Leitura */}
+          <button
+            type="button"
+            onClick={handleToggleBaseGroup}
+            className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded font-semibold transition-all cursor-pointer border ${
+              isBaseGroupHidden
+                ? 'bg-slate-100 border-slate-300 text-slate-400 opacity-80 hover:bg-slate-200'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+            }`}
+            title="Clique para ocultar/mostrar colunas de leitura"
+          >
+            {isBaseGroupHidden ? (
+              <EyeOff className="w-3 h-3 text-slate-400 shrink-0" />
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+            )}
             <span>Base: Leitura</span>
-          </div>
+            {isBaseGroupHidden ? (
+              <span className="text-[9px] text-slate-400 font-normal">(oculto)</span>
+            ) : baseHiddenCount > 0 ? (
+              <span className="text-[9px] px-1 rounded bg-emerald-200/80 text-emerald-900 font-bold">
+                {baseHiddenCount} ocultas
+              </span>
+            ) : null}
+          </button>
 
-          <div className="inline-flex items-center space-x-1 px-1.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-800 rounded font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+          {/* 2. Botão/Chip Equipe: Edição */}
+          <button
+            type="button"
+            onClick={handleToggleEquipeGroup}
+            className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded font-semibold transition-all cursor-pointer border ${
+              isEquipeGroupHidden
+                ? 'bg-slate-100 border-slate-300 text-slate-400 opacity-80 hover:bg-slate-200'
+                : 'bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100'
+            }`}
+            title="Clique para ocultar/mostrar colunas de edição"
+          >
+            {isEquipeGroupHidden ? (
+              <EyeOff className="w-3 h-3 text-slate-400 shrink-0" />
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+            )}
             <span>Equipe: Edição</span>
-          </div>
+            {isEquipeGroupHidden ? (
+              <span className="text-[9px] text-slate-400 font-normal">(oculto)</span>
+            ) : equipeHiddenCount > 0 ? (
+              <span className="text-[9px] px-1 rounded bg-blue-200/80 text-blue-900 font-bold">
+                {equipeHiddenCount} ocultas
+              </span>
+            ) : null}
+          </button>
+
+          {/* 3. Botão Dropdown "Colunas" */}
+          <ColumnVisibilityDropdown
+            baseColumns={baseMatrizColumns}
+            equipeColumns={equipeEditableColumns}
+            hiddenColumns={hiddenColumns}
+            onToggleColumn={handleToggleColumn}
+            onShowAll={handleShowAllColumns}
+            onShowOnlyEdicao={handleShowOnlyEdicao}
+          />
 
           <button
             type="button"
@@ -1530,6 +1844,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
           </button>
         </div>
       </div>
+      </div>
 
       {/* Main Table Container */}
       <div className="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden relative">
@@ -1553,7 +1868,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               {paginatedRegistros.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={ALL_COLUMNS.length + 1}
+                    colSpan={visibleBaseColumns.length + visibleEquipeColumns.length + 2}
                     className="py-14 text-center text-slate-500 bg-slate-50/50"
                   >
                     <Database className="w-10 h-10 mx-auto text-slate-300 mb-2" />
@@ -1638,8 +1953,17 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                     </td>
 
                     {/* 1. ALL BASE MATRIZ (IMPORTED) VALUES - Read-only (Non-clickable) */}
-                    {baseMatrizColumns.map((colKey) => {
-                      const val = colKey === 'TIPO (Cateira)' ? getRegistroCarteira(item) : (item as any)[colKey];
+                    {visibleBaseColumns.map((colKey) => {
+                      const val =
+                        (colKey as string) === 'TIPO (Cateira)' || colKey === 'TIPO (Carteira)'
+                          ? getRegistroCarteira(item)
+                          : (colKey as string) === 'Backlog/Input?' || colKey === 'Plan. Estruturante'
+                          ? getRegistroPlanEstruturante(item)
+                          : colKey === 'Tipo de DC'
+                          ? getRegistroTipoDC(item)
+                          : colKey === 'Mês Input'
+                          ? getRegistroMesInput(item)
+                          : (item as any)[colKey];
 
                       // Status da DC (Atual) - Clean neutral rendering
                       if (colKey === 'Status da DC (Atual)') {
@@ -1656,12 +1980,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
 
                       // Regional & UF
                       if (colKey === 'REG' || colKey === 'UF') {
+                        const cellVal = colKey === 'REG' ? (getRegistroRegional(item) || val || 'RSUL') : val;
                         return (
                           <td
                             key={colKey}
                             className="py-2 px-3 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                           >
-                            {val || <span className="text-slate-300">—</span>}
+                            {cellVal || <span className="text-slate-300">—</span>}
                           </td>
                         );
                       }
@@ -1735,7 +2060,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                     })}
 
                     {/* 2. ALL TEAM EDITABLE VALUES - Clickable, Centered, Highlights on Hover */}
-                    {equipeEditableColumns.map((colKey) => {
+                    {visibleEquipeColumns.map((colKey) => {
                       const val = (item as any)[colKey];
 
                       // Status Informe (Campo) Badge
@@ -1938,159 +2263,162 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       )}
 
       {/* Modal: Gerenciamento e Limpeza do Histórico de Auditoria */}
-      {isManageAuditOpen && (
-        <div
-          id="modal-manage-audit"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Header */}
-            <div className="bg-[#002855] text-white px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-                  <History className="w-4 h-4 text-cyan-400" />
+      {isManageAuditOpen &&
+        createPortal(
+          <div
+            id="modal-manage-audit"
+            style={{ zIndex: 2000 }}
+            className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+          >
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="bg-[#002855] text-white px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                    <History className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">Limpar / Arquivar Histórico de Auditoria</h3>
+                    <p className="text-xs text-cyan-200">Exportação de backup e limpeza de logs de edição</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold">Limpar / Arquivar Histórico de Auditoria</h3>
-                  <p className="text-xs text-cyan-200">Exportação de backup e limpeza de logs de edição</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !isExportingAudit && setIsManageAuditOpen(false)}
-                disabled={isExportingAudit}
-                className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-5 space-y-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-start space-x-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-slate-900">Segurança de Dados:</p>
-                  <p className="mt-0.5 text-slate-600 leading-relaxed">
-                    Antes de qualquer exclusão, o sistema <strong>sempre faz o download automático de uma planilha Excel de backup</strong> com todos os registros afetados.
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => !isExportingAudit && setIsManageAuditOpen(false)}
+                  disabled={isExportingAudit}
+                  className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* Opção 1: Limpeza Total */}
-              <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-50/70 transition-colors">
-                <div className="space-y-1">
-                  <span className="text-xs font-black text-rose-900 uppercase tracking-wider block">
-                    Opção 1: Limpar TODO o Histórico (Reset Completo)
-                  </span>
-                  <p className="text-xs text-rose-800 leading-relaxed">
-                    Baixa uma planilha Excel com <strong>todas as edições registradas</strong> e em seguida apaga 100% dos dados (do Firestore e do cache local).
-                  </p>
-                  <p className="text-[11px] font-semibold text-rose-900">
-                    ✓ Após esta limpeza, clicar em "Auditoria" gerará um Excel zerado (apenas os cabeçalhos das colunas).
-                  </p>
+              {/* Content */}
+              <div className="p-5 space-y-4">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-start space-x-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-slate-900">Segurança de Dados:</p>
+                    <p className="mt-0.5 text-slate-600 leading-relaxed">
+                      Antes de qualquer exclusão, o sistema <strong>sempre faz o download automático de uma planilha Excel de backup</strong> com todos os registros afetados.
+                    </p>
+                  </div>
                 </div>
-                <div className="mt-3.5 pt-3 border-t border-rose-200/80 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={isExportingAudit}
-                    onClick={async () => {
-                      if (
-                        window.confirm(
-                          'Atenção: Deseja realmente LIMPAR TODO O HISTÓRICO de edições?\n\nO sistema fará o download de uma planilha Excel de backup com todas as alterações e depois apagará todo o histórico do banco de dados.\n\nO relatório de auditoria ficará zerado.'
-                        )
-                      ) {
-                        try {
-                          setIsExportingAudit(true);
-                          const res = await arquivarELimparHistorico(0);
-                          if (res.removidos > 0) {
-                            alert(
-                              `Histórico zerado com sucesso!\n\n${res.removidos} registro(s) de edições foram salvos na planilha de backup baixada e removidos do sistema.\n\nAgora o histórico de auditoria está totalmente limpo.`
-                            );
-                          } else {
-                            alert('O histórico de edições já estava vazio. Nenhuma exclusão necessária.');
+
+                {/* Opção 1: Limpeza Total */}
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40 hover:bg-rose-50/70 transition-colors">
+                  <div className="space-y-1">
+                    <span className="text-xs font-black text-rose-900 uppercase tracking-wider block">
+                      Opção 1: Limpar TODO o Histórico (Reset Completo)
+                    </span>
+                    <p className="text-xs text-rose-800 leading-relaxed">
+                      Baixa uma planilha Excel com <strong>todas as edições registradas</strong> e em seguida apaga 100% dos dados (do Firestore e do cache local).
+                    </p>
+                    <p className="text-[11px] font-semibold text-rose-900">
+                      ✓ Após esta limpeza, clicar em "Auditoria" gerará um Excel zerado (apenas os cabeçalhos das colunas).
+                    </p>
+                  </div>
+                  <div className="mt-3.5 pt-3 border-t border-rose-200/80 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={isExportingAudit}
+                      onClick={async () => {
+                        if (
+                          window.confirm(
+                            'Atenção: Deseja realmente LIMPAR TODO O HISTÓRICO de edições?\n\nO sistema fará o download de uma planilha Excel de backup com todas as alterações e depois apagará todo o histórico do banco de dados.\n\nO relatório de auditoria ficará zerado.'
+                          )
+                        ) {
+                          try {
+                            setIsExportingAudit(true);
+                            const res = await arquivarELimparHistorico(0);
+                            if (res.removidos > 0) {
+                              alert(
+                                `Histórico zerado com sucesso!\n\n${res.removidos} registro(s) de edições foram salvos na planilha de backup baixada e removidos do sistema.\n\nAgora o histórico de auditoria está totalmente limpo.`
+                              );
+                            } else {
+                              alert('O histórico de edições já estava vazio. Nenhuma exclusão necessária.');
+                            }
+                            setIsManageAuditOpen(false);
+                          } catch (err: any) {
+                            alert('Erro ao limpar histórico: ' + (err?.message || err));
+                          } finally {
+                            setIsExportingAudit(false);
                           }
-                          setIsManageAuditOpen(false);
-                        } catch (err: any) {
-                          alert('Erro ao limpar histórico: ' + (err?.message || err));
-                        } finally {
-                          setIsExportingAudit(false);
                         }
-                      }
-                    }}
-                    className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {isExportingAudit ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-3.5 h-3.5" />
-                    )}
-                    <span>{isExportingAudit ? 'Processando...' : 'Limpar Todo o Histórico'}</span>
-                  </button>
+                      }}
+                      className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isExportingAudit ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isExportingAudit ? 'Processando...' : 'Limpar Todo o Histórico'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {/* Opção 2: Arquivar > 90 dias */}
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                <div className="space-y-1">
-                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
-                    Opção 2: Arquivar apenas anteriores a 90 dias
-                  </span>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Baixa um backup em Excel apenas das edições com mais de 3 meses e as remove do Firestore para liberar espaço, preservando as edições recentes dos últimos 90 dias.
-                  </p>
-                </div>
-                <div className="mt-3 pt-3 border-t border-slate-200 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={isExportingAudit}
-                    onClick={async () => {
-                      if (
-                        window.confirm(
-                          'Deseja exportar e arquivar o histórico de auditoria com mais de 90 dias?\n\nIsso baixará uma planilha Excel de backup e liberará espaço no Firestore mantendo as alterações recentes.'
-                        )
-                      ) {
-                        try {
-                          setIsExportingAudit(true);
-                          const res = await arquivarELimparHistorico(90);
-                          if (res.removidos > 0) {
-                            alert(
-                              `Histórico arquivado com sucesso!\n\n${res.removidos} registro(s) com mais de 90 dias foram exportados para o backup e liberados do Firestore.`
-                            );
-                          } else {
-                            alert('Nenhum registro com mais de 90 dias encontrado para arquivar.');
+                {/* Opção 2: Arquivar > 90 dias */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                  <div className="space-y-1">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider block">
+                      Opção 2: Arquivar apenas anteriores a 90 dias
+                    </span>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Baixa um backup em Excel apenas das edições com mais de 3 meses e as remove do Firestore para liberar espaço, preservando as edições recentes dos últimos 90 dias.
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={isExportingAudit}
+                      onClick={async () => {
+                        if (
+                          window.confirm(
+                            'Deseja exportar e arquivar o histórico de auditoria com mais de 90 dias?\n\nIsso baixará uma planilha Excel de backup e liberará espaço no Firestore mantendo as alterações recentes.'
+                          )
+                        ) {
+                          try {
+                            setIsExportingAudit(true);
+                            const res = await arquivarELimparHistorico(90);
+                            if (res.removidos > 0) {
+                              alert(
+                                `Histórico arquivado com sucesso!\n\n${res.removidos} registro(s) com mais de 90 dias foram exportados para o backup e liberados do Firestore.`
+                              );
+                            } else {
+                              alert('Nenhum registro com mais de 90 dias encontrado para arquivar.');
+                            }
+                            setIsManageAuditOpen(false);
+                          } catch (err: any) {
+                            alert('Erro ao arquivar histórico: ' + (err?.message || err));
+                          } finally {
+                            setIsExportingAudit(false);
                           }
-                          setIsManageAuditOpen(false);
-                        } catch (err: any) {
-                          alert('Erro ao arquivar histórico: ' + (err?.message || err));
-                        } finally {
-                          setIsExportingAudit(false);
                         }
-                      }
-                    }}
-                    className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Archive className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Arquivar &gt;90d</span>
-                  </button>
+                      }}
+                      className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Archive className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Arquivar &gt;90d</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Footer */}
-            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setIsManageAuditOpen(false)}
-                disabled={isExportingAudit}
-                className="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-              >
-                Fechar
-              </button>
+              {/* Footer */}
+              <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsManageAuditOpen(false)}
+                  disabled={isExportingAudit}
+                  className="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

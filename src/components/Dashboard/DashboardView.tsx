@@ -2,7 +2,20 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
-import { getRegistroCarteira } from '../../types';
+import { parseMesAnoSortKey } from '../../utils/monthUtils';
+import { isValidDC } from '../../utils/excel';
+import { FRsGeradasTable } from './FRsGeradasTable';
+import { ObrasInputVolumeTable } from './ObrasInputVolumeTable';
+import {
+  getRegistroCarteira,
+  getRegistroPlanEstruturante,
+  getRegistroTipoDC,
+  getRegistroMesInput,
+  getRegistroRegional,
+  RegistrosFilterPayload,
+  normalizeResponsavel,
+  sortResponsaveis,
+} from '../../types';
 import {
   Layers,
   CheckCircle2,
@@ -20,10 +33,14 @@ import {
   PieChart as PieIcon,
   BarChart3,
   Calendar,
+  CalendarDays,
   Filter,
   ExternalLink,
+  FolderTree,
+  Tag,
+  Layers3,
+  FileSpreadsheet,
 } from 'lucide-react';
-import { RegistrosFilterPayload } from '../../types';
 
 export interface DashboardViewProps {
   onNavigateToRegistros?: (filters: RegistrosFilterPayload) => void;
@@ -36,6 +53,7 @@ interface SavedDashboardFilters {
   filterRegional?: string[];
   filterUF?: string[];
   filterCarteira?: string[];
+  filterTipoDC?: string[];
   filterAging?: string[];
   filterStatusAtual?: string[];
   filterStatusInforme?: string[];
@@ -44,6 +62,7 @@ interface SavedDashboardFilters {
   filterStatusMedParcial?: string[];
   filterStatusMedFinal?: string[];
   filterBacklogInput?: string[];
+  filterMesInput?: string[];
   filterRespMedicao?: string[];
 }
 
@@ -120,6 +139,26 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
     ? 'TELEMONT (Consolidado - Todas as Regionais)'
     : `Regional ${group.regional}`;
 
+  const thStyle: React.CSSProperties = {
+    fontSize: 'var(--fs-dash-table-header)',
+    paddingTop: 'var(--dash-table-row-py)',
+    paddingBottom: 'var(--dash-table-row-py)',
+  };
+
+  const tdStyle: React.CSSProperties = {
+    fontSize: 'var(--fs-dash-table-cell)',
+    paddingTop: 'var(--dash-table-row-py)',
+    paddingBottom: 'var(--dash-table-row-py)',
+  };
+
+  const badgeStyle: React.CSSProperties = {
+    fontSize: 'var(--fs-dash-table-badge)',
+  };
+
+  const cardTitleStyle: React.CSSProperties = {
+    fontSize: 'var(--fs-dash-card-title)',
+  };
+
   return (
     <div
       className={`rounded-xl border ${
@@ -127,15 +166,24 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
       } bg-white overflow-hidden shadow-2xs transition-all`}
     >
       {/* Block Header */}
-      <div className="bg-slate-50/90 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
-        <div className="flex items-center space-x-2.5">
-          <span className="px-2.5 py-0.5 rounded-md bg-[#002855] text-white text-xs font-black tracking-wide shadow-2xs">
+      <div className="bg-slate-50/90 border-b border-slate-200 px-2.5 py-1 flex items-center justify-between">
+        <div className="flex items-center space-x-1.5">
+          <span
+            style={badgeStyle}
+            className="px-1 py-0.2 rounded bg-[#002855] text-white font-black tracking-wide shadow-2xs"
+          >
             {group.regional}
           </span>
-          <span className="text-xs font-bold text-slate-800">
+          <span
+            style={cardTitleStyle}
+            className="font-bold text-slate-800"
+          >
             {groupLabel}
           </span>
-          <span className="text-[11px] text-slate-500 font-medium">
+          <span
+            style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+            className="text-slate-500 font-medium"
+          >
             ({group.items.length} {group.items.length === 1 ? 'responsável' : 'responsáveis'})
           </span>
         </div>
@@ -146,38 +194,39 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
               regional: targetGroupRegional,
             })
           }
-          className="inline-flex items-center space-x-1 text-[11px] font-bold text-[#002855] hover:text-blue-700 hover:underline cursor-pointer transition-colors"
+          style={cardTitleStyle}
+          className="inline-flex items-center space-x-1 font-bold text-[#002855] hover:text-blue-700 hover:underline cursor-pointer transition-colors"
           title={isTelemontTable ? 'Ver todas as obras na aba Registros' : `Ver todas as obras da Regional ${group.regional} na aba Registros`}
         >
           <span>Ver todas as obras ({group.subtotal.count})</span>
-          <ExternalLink className="w-3 h-3 ml-0.5" />
+          <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
         </button>
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto max-w-full">
-        <table className="w-full text-left text-xs border-collapse font-sans">
+        <table className="w-full text-left border-collapse font-sans">
           <thead>
-            <tr className="bg-slate-50/90 text-slate-600 uppercase text-[11px] font-bold tracking-wider select-none border-b border-slate-200 whitespace-nowrap">
-              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 w-[120px] whitespace-nowrap">
+            <tr className="bg-slate-50/90 text-slate-600 uppercase font-bold tracking-wider select-none border-b border-slate-200 whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-left font-semibold border-r border-slate-200 w-[100px] whitespace-nowrap">
                 Regional
               </th>
-              <th className="py-2.5 px-4 text-left font-semibold border-r border-slate-200 min-w-[160px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-left font-semibold border-r border-slate-200 min-w-[140px] whitespace-nowrap">
                 Responsável
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 w-[100px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-center font-semibold border-r border-slate-200 w-[80px] whitespace-nowrap">
                 DC's
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-center font-semibold border-r border-slate-200 min-w-[130px] w-[130px] whitespace-nowrap">
                 Orçamento
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[185px] w-[185px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-center font-semibold border-r border-slate-200 min-w-[160px] w-[160px] whitespace-nowrap">
                 Valor Total Medido R$
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold border-r border-slate-200 min-w-[150px] w-[150px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-center font-semibold border-r border-slate-200 min-w-[130px] w-[130px] whitespace-nowrap">
                 Valor Faturado
               </th>
-              <th className="py-2.5 px-4 text-center font-semibold min-w-[140px] w-[140px] whitespace-nowrap">
+              <th style={thStyle} className="px-2.5 text-center font-semibold min-w-[120px] w-[120px] whitespace-nowrap">
                 Saldo
               </th>
             </tr>
@@ -185,44 +234,67 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
           <tbody className="divide-y divide-slate-200/80 text-slate-700">
             {group.items.map((row, idx) => {
               const totalMedidoLinha = row.parcial + row.final;
+              const isBlank = row.responsavel === '(EM BRANCO)';
               const isZebra = idx % 2 === 1;
+              const respFilter = isBlank ? ['(EM BRANCO)'] : [row.responsavel];
+              const respLabel = isBlank ? '(EM BRANCO)' : row.responsavel;
 
               return (
                 <tr
                   key={`${row.regional}_${row.responsavel}_${idx}`}
                   className={`transition-colors ${
-                    isZebra ? 'bg-[#FAFAFA]' : 'bg-white'
+                    isBlank
+                      ? 'bg-[#E0A526]/10 border-l-4 border-l-[#E0A526] font-semibold'
+                      : isZebra
+                      ? 'bg-[#FAFAFA]'
+                      : 'bg-white'
                   } hover:bg-blue-50/40`}
                 >
                   {/* Regional */}
-                  <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200">
+                  <td style={tdStyle} className="px-2.5 font-bold text-slate-900 whitespace-nowrap border-b border-r border-slate-200/80 text-left">
+                    <span
+                      style={badgeStyle}
+                      className="px-1 py-0.2 rounded bg-slate-100 text-slate-800 font-extrabold border border-slate-200"
+                    >
                       {row.regional}
                     </span>
                   </td>
 
                   {/* Responsável */}
-                  <td className="py-2.5 px-4 border-b border-r border-slate-200/80">
+                  <td style={tdStyle} className="px-2.5 border-b border-r border-slate-200/80">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900 truncate">
-                        {row.responsavel}
-                      </span>
+                      {isBlank ? (
+                        <span
+                          style={badgeStyle}
+                          className="inline-flex items-center gap-1 px-1 py-0.2 rounded bg-[#E0A526]/20 border border-[#E0A526]/40 text-[#855800] font-black italic"
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5 text-[#E0A526]" />
+                          (EM BRANCO)
+                        </span>
+                      ) : (
+                        <span
+                          style={{ fontSize: 'var(--fs-dash-table-cell)' }}
+                          className="font-bold text-slate-900 truncate"
+                        >
+                          {row.responsavel}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() =>
                           onNavigateToRegistros?.({
                             regional: getRowRegional(row.regional),
-                            responsavel: [row.responsavel],
+                            responsavel: respFilter,
                           })
                         }
-                        className="opacity-0 group-hover:opacity-100 text-[#002855] hover:text-blue-700 p-0.5 rounded transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 text-[#002855] hover:text-blue-700 p-0.5 rounded transition-opacity cursor-pointer"
                         title={
                           isTelemontTable
-                            ? `Filtrar ${row.responsavel} na aba Registros`
-                            : `Filtrar ${row.responsavel} (${row.regional}) na aba Registros`
+                            ? `Filtrar ${respLabel} na aba Registros`
+                            : `Filtrar ${respLabel} (${row.regional}) na aba Registros`
                         }
                       >
-                        <ExternalLink className="w-3 h-3" />
+                        <ExternalLink className="w-2.5 h-2.5" />
                       </button>
                     </div>
                   </td>
@@ -232,19 +304,20 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     onClick={() =>
                       onNavigateToRegistros?.({
                         regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
+                        responsavel: respFilter,
                         sortBy: 'DC',
                         sortDirection: 'asc',
                       })
                     }
-                    className="py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
+                    style={tdStyle}
+                    className="px-2.5 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
                     title={
                       isTelemontTable
-                        ? `Clique para ver as ${row.count} obras de ${row.responsavel} na aba Registros`
-                        : `Clique para ver as ${row.count} obras de ${row.responsavel} (${row.regional}) na aba Registros`
+                        ? `Clique para ver as ${row.count} obras de ${respLabel} na aba Registros`
+                        : `Clique para ver as ${row.count} obras de ${respLabel} (${row.regional}) na aba Registros`
                     }
                   >
-                    <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                    <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                       {row.count.toLocaleString('pt-BR')}
                     </span>
                   </td>
@@ -254,19 +327,20 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     onClick={() =>
                       onNavigateToRegistros?.({
                         regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
+                        responsavel: respFilter,
                         sortBy: 'Orçamento',
                         sortDirection: 'desc',
                       })
                     }
-                    className="py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
+                    style={tdStyle}
+                    className="px-2.5 text-center tabular-nums border-b border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
                     title={
                       isTelemontTable
-                        ? `Clique para ver as obras de ${row.responsavel} ordenadas por orçamento`
-                        : `Clique para ver as obras de ${row.responsavel} (${row.regional}) ordenadas por orçamento`
+                        ? `Clique para ver as obras de ${respLabel} ordenadas por orçamento`
+                        : `Clique para ver as obras de ${respLabel} (${row.regional}) ordenadas por orçamento`
                     }
                   >
-                    <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                    <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                       {formatBRL(row.orcamento)}
                     </span>
                   </td>
@@ -276,13 +350,14 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     onClick={() =>
                       onNavigateToRegistros?.({
                         regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
+                        responsavel: respFilter,
                         onlyWithMedido: totalMedidoLinha > 0,
                         sortBy: 'Valor Final R$',
                         sortDirection: 'desc',
                       })
                     }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
+                    style={tdStyle}
+                    className={`px-2.5 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
                       totalMedidoLinha > 0
                         ? 'cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900'
                         : 'text-slate-400 font-normal'
@@ -290,12 +365,12 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     title={
                       totalMedidoLinha > 0
                         ? isTelemontTable
-                          ? `Clique para ver as obras medidas de ${row.responsavel} na aba Registros`
-                          : `Clique para ver as obras medidas de ${row.responsavel} (${row.regional}) na aba Registros`
+                          ? `Clique para ver as obras medidas de ${respLabel} na aba Registros`
+                          : `Clique para ver as obras medidas de ${respLabel} (${row.regional}) na aba Registros`
                         : undefined
                     }
                   >
-                    <span className={`inline-block py-0.5 px-2 rounded font-black ${totalMedidoLinha > 0 ? 'group-hover:underline' : ''}`}>
+                    <span className={`inline-block py-0.2 px-1 rounded font-black ${totalMedidoLinha > 0 ? 'group-hover:underline' : ''}`}>
                       {formatBRL(totalMedidoLinha)}
                     </span>
                   </td>
@@ -305,13 +380,14 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     onClick={() =>
                       onNavigateToRegistros?.({
                         regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
+                        responsavel: respFilter,
                         onlyWithFaturado: (row.faturado || 0) > 0,
                         sortBy: 'Valor Faturado',
                         sortDirection: 'desc',
                       })
                     }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
+                    style={tdStyle}
+                    className={`px-2.5 text-center tabular-nums border-b border-r border-slate-200/80 transition-colors group ${
                       (row.faturado || 0) > 0
                         ? 'cursor-pointer hover:bg-blue-100/70 font-bold text-slate-900'
                         : 'text-slate-400 font-normal'
@@ -319,12 +395,12 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     title={
                       (row.faturado || 0) > 0
                         ? isTelemontTable
-                          ? `Clique para ver as obras faturadas de ${row.responsavel} na aba Registros`
-                          : `Clique para ver as obras faturadas de ${row.responsavel} (${row.regional}) na aba Registros`
+                          ? `Clique para ver as obras faturadas de ${respLabel} na aba Registros`
+                          : `Clique para ver as obras faturadas de ${respLabel} (${row.regional}) na aba Registros`
                         : undefined
                     }
                   >
-                    <span className={`inline-block py-0.5 px-2 rounded ${(row.faturado || 0) > 0 ? 'group-hover:underline' : ''}`}>
+                    <span className={`inline-block py-0.2 px-1 rounded ${(row.faturado || 0) > 0 ? 'group-hover:underline' : ''}`}>
                       {formatBRL(row.faturado || 0)}
                     </span>
                   </td>
@@ -334,13 +410,14 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     onClick={() =>
                       onNavigateToRegistros?.({
                         regional: getRowRegional(row.regional),
-                        responsavel: [row.responsavel],
+                        responsavel: respFilter,
                         onlyWithSaldo: (row.saldo || 0) > 0,
                         sortBy: 'Saldo',
                         sortDirection: 'desc',
                       })
                     }
-                    className={`py-2.5 px-4 text-center tabular-nums border-b border-slate-200/80 transition-colors group ${
+                    style={tdStyle}
+                    className={`px-2.5 text-center tabular-nums border-b border-slate-200/80 transition-colors group ${
                       (row.saldo || 0) > 0
                         ? 'cursor-pointer hover:bg-indigo-100/70 font-bold text-slate-900'
                         : 'text-slate-400 font-normal'
@@ -348,12 +425,12 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     title={
                       (row.saldo || 0) > 0
                         ? isTelemontTable
-                          ? `Clique para ver as obras com saldo de ${row.responsavel} na aba Registros`
-                          : `Clique para ver as obras com saldo de ${row.responsavel} (${row.regional}) na aba Registros`
+                          ? `Clique para ver as obras com saldo de ${respLabel} na aba Registros`
+                          : `Clique para ver as obras com saldo de ${respLabel} (${row.regional}) na aba Registros`
                         : undefined
                     }
                   >
-                    <span className={`inline-block py-0.5 px-2 rounded ${(row.saldo || 0) > 0 ? 'group-hover:underline' : ''}`}>
+                    <span className={`inline-block py-0.2 px-1 rounded ${(row.saldo || 0) > 0 ? 'group-hover:underline' : ''}`}>
                       {formatBRL(row.saldo || 0)}
                     </span>
                   </td>
@@ -367,7 +444,12 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
             <tr className="bg-slate-100/90 font-bold text-slate-900 border-t-2 border-slate-300">
               <td
                 colSpan={2}
-                className="py-2.5 px-4 text-left border-r border-slate-200/80 uppercase text-[11px] font-black tracking-wider text-[#002855]"
+                style={{
+                  fontSize: 'var(--fs-dash-table-header)',
+                  paddingTop: 'var(--dash-table-row-py)',
+                  paddingBottom: 'var(--dash-table-row-py)',
+                }}
+                className="px-2.5 text-left border-r border-slate-200/80 uppercase font-black tracking-wider text-[#002855]"
               >
                 Subtotal {isTelemontTable ? 'TELEMONT' : group.regional}
               </td>
@@ -379,14 +461,15 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'asc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
+                style={tdStyle}
+                className="px-2.5 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-slate-900 font-black transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver todas as obras na aba Registros'
                     : `Clique para ver todas as obras da ${group.regional} na aba Registros`
                 }
               >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                   {group.subtotal.count.toLocaleString('pt-BR')}
                 </span>
               </td>
@@ -398,14 +481,15 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'desc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
+                style={tdStyle}
+                className="px-2.5 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 text-[#002855] font-black transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver as obras orçadas na aba Registros'
                     : `Clique para ver as obras orçadas da ${group.regional} na aba Registros`
                 }
               >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.orcamento)}
                 </span>
               </td>
@@ -418,14 +502,15 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'desc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
+                style={tdStyle}
+                className="px-2.5 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-emerald-200/70 font-black text-emerald-900 transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver as obras medidas na aba Registros'
                     : `Clique para ver as obras medidas da ${group.regional} na aba Registros`
                 }
               >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.totalMedido)}
                 </span>
               </td>
@@ -438,14 +523,15 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'desc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 font-black text-blue-900 transition-colors group"
+                style={tdStyle}
+                className="px-2.5 text-center tabular-nums border-r border-slate-200/80 cursor-pointer hover:bg-blue-100/70 font-black text-blue-900 transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver as obras faturadas na aba Registros'
                     : `Clique para ver as obras faturadas da ${group.regional} na aba Registros`
                 }
               >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.faturado || 0)}
                 </span>
               </td>
@@ -458,14 +544,15 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
                     sortDirection: 'desc',
                   })
                 }
-                className="py-2.5 px-4 text-center tabular-nums cursor-pointer hover:bg-indigo-100/70 font-black text-indigo-900 transition-colors group"
+                style={tdStyle}
+                className="px-2.5 text-center tabular-nums cursor-pointer hover:bg-indigo-100/70 font-black text-indigo-900 transition-colors group"
                 title={
                   isTelemontTable
                     ? 'Clique para ver as obras com saldo na aba Registros'
                     : `Clique para ver as obras com saldo da ${group.regional} na aba Registros`
                 }
               >
-                <span className="inline-block py-0.5 px-2 rounded group-hover:underline font-black">
+                <span className="inline-block py-0.2 px-1 rounded group-hover:underline font-black">
                   {formatBRL(group.subtotal.saldo || 0)}
                 </span>
               </td>
@@ -477,18 +564,82 @@ const MedicaoGroupTable: React.FC<MedicaoGroupTableProps> = ({
   );
 };
 
+export interface DistributionStatItem {
+  name: string;
+  count: number;
+  orcamento: number;
+  parcial: number;
+  final: number;
+  medido: number;
+  faturado: number;
+  saldo: number;
+}
+
+const MONTH_NAMES_MAP: Record<string, number> = {
+  JAN: 1,
+  JANEIRO: 1,
+  FEV: 2,
+  FEVEREIRO: 2,
+  MAR: 3,
+  MARÇO: 3,
+  MARCO: 3,
+  ABR: 4,
+  ABRIL: 4,
+  MAI: 5,
+  MAIO: 5,
+  JUN: 6,
+  JUNHO: 6,
+  JUL: 7,
+  JULHO: 7,
+  AGO: 8,
+  AGOSTO: 8,
+  SET: 9,
+  SETEMBRO: 9,
+  OUT: 10,
+  OUTUBRO: 10,
+  NOV: 11,
+  NOVEMBRO: 11,
+  DEZ: 12,
+  DEZEMBRO: 12,
+};
+
+const getMonthSortScore = (str: string): number => {
+  if (!str) return 999999;
+  const upper = str.toUpperCase().trim();
+  const slash = upper.match(/(\d{1,2})[\/\-](\d{2,4})/);
+  if (slash) {
+    const m = parseInt(slash[1], 10);
+    let y = parseInt(slash[2], 10);
+    if (y < 100) y += 2000;
+    return y * 100 + m;
+  }
+  for (const [mName, mNum] of Object.entries(MONTH_NAMES_MAP)) {
+    if (upper.includes(mName)) {
+      const yearMatch = upper.match(/\b(20\d{2}|\d{2})\b/);
+      let y = 2024;
+      if (yearMatch) {
+        y = parseInt(yearMatch[1], 10);
+        if (y < 100) y += 2000;
+      }
+      return y * 100 + mNum;
+    }
+  }
+  return 999999;
+};
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegistros }) => {
-  const { registros, lastImportInfo, loadingRegistros } = useData();
+  const { registros, frRegistros, lastImportInfo, loadingRegistros } = useData();
 
   const initialSavedFilters = useMemo(() => loadSavedDashboardFilters(), []);
 
   // 1. Search by DC
   const [searchDC, setSearchDC] = useState(initialSavedFilters.searchDC || '');
 
-  // 2. Filters (10 Multi-Selects aligned with RegistrosView)
+  // 2. Filters (12 Multi-Selects aligned with RegistrosView)
   const [filterRegional, setFilterRegional] = useState<string[]>(initialSavedFilters.filterRegional || []);
   const [filterUF, setFilterUF] = useState<string[]>(initialSavedFilters.filterUF || []);
   const [filterCarteira, setFilterCarteira] = useState<string[]>(initialSavedFilters.filterCarteira || []);
+  const [filterTipoDC, setFilterTipoDC] = useState<string[]>(initialSavedFilters.filterTipoDC || []);
   const [filterAging, setFilterAging] = useState<string[]>(initialSavedFilters.filterAging || []);
   const [filterStatusAtual, setFilterStatusAtual] = useState<string[]>(initialSavedFilters.filterStatusAtual || []);
   const [filterStatusInforme, setFilterStatusInforme] = useState<string[]>(initialSavedFilters.filterStatusInforme || []);
@@ -497,6 +648,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
   const [filterStatusMedParcial, setFilterStatusMedParcial] = useState<string[]>(initialSavedFilters.filterStatusMedParcial || []);
   const [filterStatusMedFinal, setFilterStatusMedFinal] = useState<string[]>(initialSavedFilters.filterStatusMedFinal || []);
   const [filterBacklogInput, setFilterBacklogInput] = useState<string[]>(initialSavedFilters.filterBacklogInput || []);
+  const [filterMesInput, setFilterMesInput] = useState<string[]>(initialSavedFilters.filterMesInput || []);
   const [filterRespMedicao, setFilterRespMedicao] = useState<string[]>(initialSavedFilters.filterRespMedicao || []);
 
   // Persist dashboard filter state across page reloads/sessions
@@ -507,6 +659,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         filterRegional,
         filterUF,
         filterCarteira,
+        filterTipoDC,
         filterAging,
         filterStatusAtual,
         filterStatusInforme,
@@ -515,6 +668,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         filterStatusMedParcial,
         filterStatusMedFinal,
         filterBacklogInput,
+        filterMesInput,
         filterRespMedicao,
       };
       sessionStorage.setItem(DASHBOARD_STORAGE_KEY, JSON.stringify(stateToSave));
@@ -526,6 +680,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterRegional,
     filterUF,
     filterCarteira,
+    filterTipoDC,
     filterAging,
     filterStatusAtual,
     filterStatusInforme,
@@ -534,11 +689,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterMesInput,
     filterRespMedicao,
   ]);
 
-  // Accordion for status details
-  const [isStatusExpanded, setIsStatusExpanded] = useState(false);
   // Filter panel collapse on smaller screens
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
 
@@ -553,6 +707,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if (filterRegional.length > 0) payload.regional = [...filterRegional];
     if (filterUF.length > 0) payload.uf = [...filterUF];
     if (filterCarteira.length > 0) payload.carteira = [...filterCarteira];
+    if (filterTipoDC.length > 0) payload.tipoDC = [...filterTipoDC];
     if (filterAging.length > 0) payload.aging = [...filterAging];
     if (filterStatusAtual.length > 0) payload.statusAtual = [...filterStatusAtual];
     if (filterStatusInforme.length > 0) payload.statusInforme = [...filterStatusInforme];
@@ -561,6 +716,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if (filterStatusMedParcial.length > 0) payload.statusMedParcial = [...filterStatusMedParcial];
     if (filterStatusMedFinal.length > 0) payload.statusMedFinal = [...filterStatusMedFinal];
     if (filterBacklogInput.length > 0) payload.backlogInput = [...filterBacklogInput];
+    if (filterMesInput.length > 0) payload.mesInput = [...filterMesInput];
     if (filterRespMedicao.length > 0) payload.respMedicao = [...filterRespMedicao];
 
     // 2. Override/add drilldown specifics
@@ -584,6 +740,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if ('respMedicao' in extraFilters) payload.respMedicao = extraFilters.respMedicao;
     if ('uf' in extraFilters) payload.uf = extraFilters.uf;
     if ('carteira' in extraFilters) payload.carteira = extraFilters.carteira;
+    if ('tipoDC' in extraFilters) payload.tipoDC = extraFilters.tipoDC;
     if ('aging' in extraFilters) payload.aging = extraFilters.aging;
     if ('statusAtual' in extraFilters) payload.statusAtual = extraFilters.statusAtual;
     if ('statusInforme' in extraFilters) payload.statusInforme = extraFilters.statusInforme;
@@ -591,6 +748,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if ('statusMedParcial' in extraFilters) payload.statusMedParcial = extraFilters.statusMedParcial;
     if ('statusMedFinal' in extraFilters) payload.statusMedFinal = extraFilters.statusMedFinal;
     if ('backlogInput' in extraFilters) payload.backlogInput = extraFilters.backlogInput;
+    if ('mesInput' in extraFilters) payload.mesInput = extraFilters.mesInput;
 
     if (extraFilters.onlyWithParcial !== undefined) payload.onlyWithParcial = extraFilters.onlyWithParcial;
     if (extraFilters.onlyWithFinal !== undefined) payload.onlyWithFinal = extraFilters.onlyWithFinal;
@@ -620,6 +778,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       | 'REG'
       | 'UF'
       | 'CARTEIRA'
+      | 'TIPO_DC'
       | 'AGING'
       | 'STATUS_ATUAL'
       | 'STATUS_INFORME'
@@ -628,8 +787,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       | 'STATUS_MED_PARCIAL'
       | 'STATUS_MED_FINAL'
       | 'BACKLOG_INPUT'
+      | 'MES_INPUT'
       | 'RESP_MEDICAO'
   ) => {
+    if (!item || !isValidDC(item.DC)) {
+      return false;
+    }
+
     if (searchDC.trim()) {
       const q = searchDC.trim().toLowerCase();
       const dcMatch = (item.DC || '').toLowerCase().includes(q);
@@ -640,7 +804,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     }
 
     if (excludeKey !== 'REG' && filterRegional.length > 0) {
-      if (!item.REG || !filterRegional.includes(item.REG.trim().toUpperCase())) return false;
+      const regVal = (getRegistroRegional(item) || item.REG || 'RSUL').trim().toUpperCase();
+      if (!filterRegional.includes(regVal)) return false;
     }
     if (excludeKey !== 'UF' && filterUF.length > 0) {
       if (!item.UF || !filterUF.includes(item.UF.trim().toUpperCase())) return false;
@@ -648,6 +813,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     if (excludeKey !== 'CARTEIRA' && filterCarteira.length > 0) {
       const cartVal = getRegistroCarteira(item);
       if (!filterCarteira.includes(cartVal)) return false;
+    }
+    if (excludeKey !== 'TIPO_DC' && filterTipoDC.length > 0) {
+      const tdcVal = getRegistroTipoDC(item);
+      if (!tdcVal || !filterTipoDC.includes(tdcVal)) return false;
     }
     if (excludeKey !== 'AGING' && filterAging.length > 0) {
       if (!item.AGING || !filterAging.includes(item.AGING.trim())) return false;
@@ -661,12 +830,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         return false;
     }
     if (excludeKey !== 'RESPONSAVEL' && filterResponsavel.length > 0) {
-      const resp = (item.Responsavel || '').trim();
+      const respNorm = normalizeResponsavel(item.Responsavel);
       const match = filterResponsavel.some((fr) => {
-        if (fr === 'Não Atribuído' || fr === 'NÃO ATRIBUÍDO') {
-          return !resp || resp === '-' || resp === 'Não Atribuído' || resp === 'NÃO ATRIBUÍDO';
+        const frNorm = normalizeResponsavel(fr);
+        if (frNorm === '(EM BRANCO)') {
+          return respNorm === '(EM BRANCO)';
         }
-        return resp.toLowerCase() === fr.toLowerCase();
+        return respNorm.toLowerCase() === fr.toLowerCase();
       });
       if (!match) return false;
     }
@@ -682,8 +852,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (!val || !filterStatusMedFinal.includes(val)) return false;
     }
     if (excludeKey !== 'BACKLOG_INPUT' && filterBacklogInput.length > 0) {
-      const val = (item['Backlog/Input?'] || '').trim();
+      const val = getRegistroPlanEstruturante(item);
       if (!val || !filterBacklogInput.includes(val)) return false;
+    }
+    if (excludeKey !== 'MES_INPUT' && filterMesInput.length > 0) {
+      const val = getRegistroMesInput(item);
+      if (!val || !filterMesInput.includes(val)) return false;
     }
     if (excludeKey !== 'RESP_MEDICAO' && filterRespMedicao.length > 0) {
       const val = (item['Resp.Medição'] || (item as any)['Resp. Medição'] || '').trim();
@@ -700,6 +874,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     ufCounts,
     carteiraOptions,
     carteiraCounts,
+    tipoDCOptions,
+    tipoDCCounts,
     agingOptions,
     agingCounts,
     statusAtualOptions,
@@ -716,12 +892,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     statusMedFinalCounts,
     backlogInputOptions,
     backlogInputCounts,
+    mesInputOptions,
+    mesInputCounts,
     respMedicaoOptions,
     respMedicaoCounts,
   } = useMemo(() => {
     const regCounts: Record<string, number> = {};
     const uCounts: Record<string, number> = {};
     const cartCounts: Record<string, number> = {};
+    const tdcCounts: Record<string, number> = {};
     const agCounts: Record<string, number> = {};
     const stAtualCounts: Record<string, number> = {};
     const stInfCounts: Record<string, number> = {};
@@ -730,13 +909,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     const stMedParcCounts: Record<string, number> = {};
     const stMedFinCounts: Record<string, number> = {};
     const backlogInpCounts: Record<string, number> = {};
+    const mesInpCounts: Record<string, number> = {};
     const respMedCounts: Record<string, number> = {};
 
     registros.forEach((r) => {
-      if (r.REG) {
-        const val = r.REG.trim().toUpperCase();
-        if (matchesFilterSubset(r, 'REG')) regCounts[val] = (regCounts[val] || 0) + 1;
-        else if (filterRegional.includes(val) && !regCounts[val]) regCounts[val] = 0;
+      if (!r || !isValidDC(r.DC)) return;
+      const regVal = (getRegistroRegional(r) || r.REG || 'RSUL').trim().toUpperCase();
+      if (regVal && regVal !== 'SEM REGIONAL') {
+        if (matchesFilterSubset(r, 'REG')) regCounts[regVal] = (regCounts[regVal] || 0) + 1;
+        else if (filterRegional.includes(regVal) && !regCounts[regVal]) regCounts[regVal] = 0;
       }
       if (r.UF) {
         const val = r.UF.trim().toUpperCase();
@@ -747,6 +928,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (cartVal) {
         if (matchesFilterSubset(r, 'CARTEIRA')) cartCounts[cartVal] = (cartCounts[cartVal] || 0) + 1;
         else if (filterCarteira.includes(cartVal) && !cartCounts[cartVal]) cartCounts[cartVal] = 0;
+      }
+      const tdcVal = getRegistroTipoDC(r);
+      if (tdcVal) {
+        if (matchesFilterSubset(r, 'TIPO_DC')) tdcCounts[tdcVal] = (tdcCounts[tdcVal] || 0) + 1;
+        else if (filterTipoDC.includes(tdcVal) && !tdcCounts[tdcVal]) tdcCounts[tdcVal] = 0;
       }
       if (r.AGING) {
         const val = r.AGING.trim();
@@ -763,10 +949,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         if (matchesFilterSubset(r, 'STATUS_INFORME')) stInfCounts[val] = (stInfCounts[val] || 0) + 1;
         else if (filterStatusInforme.includes(val) && !stInfCounts[val]) stInfCounts[val] = 0;
       }
-      if (r.Responsavel) {
-        const val = r.Responsavel.trim();
-        if (matchesFilterSubset(r, 'RESPONSAVEL')) respCounts[val] = (respCounts[val] || 0) + 1;
-        else if (filterResponsavel.includes(val) && !respCounts[val]) respCounts[val] = 0;
+      const respVal = normalizeResponsavel(r.Responsavel);
+      if (respVal) {
+        if (matchesFilterSubset(r, 'RESPONSAVEL')) respCounts[respVal] = (respCounts[respVal] || 0) + 1;
+        else if (filterResponsavel.includes(respVal) && !respCounts[respVal]) respCounts[respVal] = 0;
       }
       if (r['Tipo de Projeto']) {
         const val = r['Tipo de Projeto'].trim();
@@ -783,10 +969,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         if (matchesFilterSubset(r, 'STATUS_MED_FINAL')) stMedFinCounts[val] = (stMedFinCounts[val] || 0) + 1;
         else if (filterStatusMedFinal.includes(val) && !stMedFinCounts[val]) stMedFinCounts[val] = 0;
       }
-      if (r['Backlog/Input?']) {
-        const val = r['Backlog/Input?'].trim();
-        if (matchesFilterSubset(r, 'BACKLOG_INPUT')) backlogInpCounts[val] = (backlogInpCounts[val] || 0) + 1;
-        else if (filterBacklogInput.includes(val) && !backlogInpCounts[val]) backlogInpCounts[val] = 0;
+      const peVal = getRegistroPlanEstruturante(r);
+      if (peVal) {
+        if (matchesFilterSubset(r, 'BACKLOG_INPUT')) backlogInpCounts[peVal] = (backlogInpCounts[peVal] || 0) + 1;
+        else if (filterBacklogInput.includes(peVal) && !backlogInpCounts[peVal]) backlogInpCounts[peVal] = 0;
+      }
+      const miVal = getRegistroMesInput(r);
+      if (miVal) {
+        if (matchesFilterSubset(r, 'MES_INPUT')) mesInpCounts[miVal] = (mesInpCounts[miVal] || 0) + 1;
+        else if (filterMesInput.includes(miVal) && !mesInpCounts[miVal]) mesInpCounts[miVal] = 0;
       }
       const rmVal = (r['Resp.Medição'] || (r as any)['Resp. Medição'] || '').trim();
       if (rmVal) {
@@ -811,13 +1002,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       ufCounts: uCounts,
       carteiraOptions: Object.keys(cartCounts).sort(),
       carteiraCounts: cartCounts,
+      tipoDCOptions: Object.keys(tdcCounts).sort(),
+      tipoDCCounts: tdcCounts,
       agingOptions: sortNumericOrAlpha(Object.keys(agCounts)),
       agingCounts: agCounts,
       statusAtualOptions: Object.keys(stAtualCounts).sort(),
       statusAtualCounts: stAtualCounts,
       statusInformeOptions: Object.keys(stInfCounts).sort(),
       statusInformeCounts: stInfCounts,
-      responsavelOptions: Object.keys(respCounts).sort(),
+      responsavelOptions: Object.keys(respCounts).sort(sortResponsaveis),
       responsavelCounts: respCounts,
       tipoProjetoOptions: Object.keys(projCounts).sort(),
       tipoProjetoCounts: projCounts,
@@ -827,6 +1020,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       statusMedFinalCounts: stMedFinCounts,
       backlogInputOptions: Object.keys(backlogInpCounts).sort(),
       backlogInputCounts: backlogInpCounts,
+      mesInputOptions: Object.keys(mesInpCounts).sort((a, b) => parseMesAnoSortKey(a) - parseMesAnoSortKey(b)),
+      mesInputCounts: mesInpCounts,
       respMedicaoOptions: Object.keys(respMedCounts).sort(),
       respMedicaoCounts: respMedCounts,
     };
@@ -836,6 +1031,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterRegional,
     filterUF,
     filterCarteira,
+    filterTipoDC,
     filterAging,
     filterStatusAtual,
     filterStatusInforme,
@@ -844,18 +1040,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterMesInput,
     filterRespMedicao,
   ]);
 
   // Filtered dataset
   const filteredRegistros = useMemo(() => {
-    return registros.filter((item) => matchesFilterSubset(item));
+    return registros.filter((item) => isValidDC(item.DC) && matchesFilterSubset(item));
   }, [
     registros,
     searchDC,
     filterRegional,
     filterUF,
     filterCarteira,
+    filterTipoDC,
     filterAging,
     filterStatusAtual,
     filterStatusInforme,
@@ -864,30 +1062,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     filterStatusMedParcial,
     filterStatusMedFinal,
     filterBacklogInput,
+    filterMesInput,
     filterRespMedicao,
   ]);
 
-  // Active filters count
+  const totalValidosBase = useMemo(() => {
+    return registros.filter((r) => r && isValidDC(r.DC)).length;
+  }, [registros]);
+
+  // Active filters count (filtros exibidos na tela)
   const activeFiltersCount =
     (searchDC ? 1 : 0) +
     filterRegional.length +
     filterUF.length +
     filterCarteira.length +
-    filterAging.length +
+    filterTipoDC.length +
     filterStatusAtual.length +
     filterStatusInforme.length +
     filterResponsavel.length +
-    filterTipoProjeto.length +
-    filterStatusMedParcial.length +
-    filterStatusMedFinal.length +
-    filterBacklogInput.length +
-    filterRespMedicao.length;
+    filterRespMedicao.length +
+    filterMesInput.length +
+    filterBacklogInput.length;
 
   const handleClearFilters = () => {
     setSearchDC('');
     setFilterRegional([]);
     setFilterUF([]);
     setFilterCarteira([]);
+    setFilterTipoDC([]);
     setFilterAging([]);
     setFilterStatusAtual([]);
     setFilterStatusInforme([]);
@@ -896,6 +1098,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     setFilterStatusMedParcial([]);
     setFilterStatusMedFinal([]);
     setFilterBacklogInput([]);
+    setFilterMesInput([]);
     setFilterRespMedicao([]);
     try {
       sessionStorage.removeItem(DASHBOARD_STORAGE_KEY);
@@ -924,6 +1127,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     regionalGroups,
     telemontGroup,
     ufStats,
+    carteiraStats,
+    tipoDCStats,
+    planEstruturanteStats,
+    mesInputStats,
     macroStatusStats,
     rawStatusStats,
   } = useMemo(() => {
@@ -962,6 +1169,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     > = {};
 
     const rawStatusMap: Record<string, { count: number; orcamento: number; medido: number }> = {};
+    const cartMap: Record<string, DistributionStatItem> = {};
+    const tdcMap: Record<string, DistributionStatItem> = {};
+    const planEstrMap: Record<string, DistributionStatItem> = {};
+    const mesMap: Record<string, DistributionStatItem> = {};
     const regRespComboMap: Record<
       string,
       {
@@ -989,6 +1200,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       fin += f;
       fatTotal += fat;
       sldTotal += sld;
+
+      // Carteira Grouping [TIPO (Carteira)]
+      const cart = getRegistroCarteira(r) || 'NÃO INFORMADO';
+      if (!cartMap[cart]) {
+        cartMap[cart] = { name: cart, count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, faturado: 0, saldo: 0 };
+      }
+      cartMap[cart].count++;
+      cartMap[cart].orcamento += o;
+      cartMap[cart].parcial += p;
+      cartMap[cart].final += f;
+      cartMap[cart].medido += m;
+      cartMap[cart].faturado += fat;
+      cartMap[cart].saldo += sld;
+
+      // Tipo de DC Grouping
+      const tdc = getRegistroTipoDC(r) || 'NÃO INFORMADO';
+      if (!tdcMap[tdc]) {
+        tdcMap[tdc] = { name: tdc, count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, faturado: 0, saldo: 0 };
+      }
+      tdcMap[tdc].count++;
+      tdcMap[tdc].orcamento += o;
+      tdcMap[tdc].parcial += p;
+      tdcMap[tdc].final += f;
+      tdcMap[tdc].medido += m;
+      tdcMap[tdc].faturado += fat;
+      tdcMap[tdc].saldo += sld;
+
+      // Plan. Estruturante Grouping
+      const pe = getRegistroPlanEstruturante(r) || 'NÃO INFORMADO';
+      if (!planEstrMap[pe]) {
+        planEstrMap[pe] = { name: pe, count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, faturado: 0, saldo: 0 };
+      }
+      planEstrMap[pe].count++;
+      planEstrMap[pe].orcamento += o;
+      planEstrMap[pe].parcial += p;
+      planEstrMap[pe].final += f;
+      planEstrMap[pe].medido += m;
+      planEstrMap[pe].faturado += fat;
+      planEstrMap[pe].saldo += sld;
+
+      // Mês Input Grouping
+      const mes = getRegistroMesInput(r) || 'NÃO INFORMADO';
+      if (!mesMap[mes]) {
+        mesMap[mes] = { name: mes, count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, faturado: 0, saldo: 0 };
+      }
+      mesMap[mes].count++;
+      mesMap[mes].orcamento += o;
+      mesMap[mes].parcial += p;
+      mesMap[mes].final += f;
+      mesMap[mes].medido += m;
+      mesMap[mes].faturado += fat;
+      mesMap[mes].saldo += sld;
 
       // Status classification into 4 macro categories
       const stInf = (r['Status Informe (Campo)'] || 'NÃO INFORMADO').trim().toUpperCase();
@@ -1034,7 +1297,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       rawStatusMap[stInf].medido += m;
 
       // Regional Grouping
-      const reg = (r.REG || 'SEM REGIONAL').trim().toUpperCase();
+      const reg = (getRegistroRegional(r) || r.REG || 'RSUL').trim().toUpperCase();
       if (!regMap[reg]) {
         regMap[reg] = { count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, concluidas: 0 };
       }
@@ -1046,14 +1309,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (isConcl) regMap[reg].concluidas++;
 
       // Responsável Grouping (Normalized: Implantação, Projeto, etc.)
-      let respRaw = (r.Responsavel || 'NÃO ATRIBUÍDO').trim();
+      let respRaw = (r.Responsavel || '').trim();
       let respNorm = respRaw.toUpperCase();
       if (respNorm.includes('IMPLANT')) {
         respNorm = 'IMPLANTAÇÃO';
       } else if (respNorm.includes('PROJETO')) {
         respNorm = 'PROJETO';
-      } else if (respNorm.includes('NÃO') || respNorm === '' || respNorm === '-' || respNorm.includes('SEM')) {
-        respNorm = 'NÃO ATRIBUÍDO';
+      } else if (respNorm.includes('NÃO') || respNorm === '' || respNorm === '-' || respNorm.includes('SEM') || respNorm.includes('BRANCO')) {
+        respNorm = '(EM BRANCO)';
       }
 
       if (!respMap[respNorm]) {
@@ -1078,7 +1341,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (isConcl) respMap[respNorm].concluidas++;
 
       // Regional x Responsável Breakdown for Ponto 1
-      const respCategory = (r.Responsavel || 'Não Atribuído').trim();
+      const respCategory = normalizeResponsavel(r.Responsavel);
       const comboKey = `${reg}___${respCategory}`;
       if (!regRespComboMap[comboKey]) {
         regRespComboMap[comboKey] = {
@@ -1136,6 +1399,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       .map(([key, data]) => ({ uf: key, ...data }))
       .sort((a, b) => b.count - a.count);
 
+    // Distribution Stats
+    const carteiraStats = Object.values(cartMap).sort((a, b) => b.count - a.count);
+    const tipoDCStats = Object.values(tdcMap).sort((a, b) => b.count - a.count);
+    const planEstruturanteStats = Object.values(planEstrMap).sort((a, b) => b.count - a.count);
+    const mesInputStats = Object.values(mesMap).sort((a, b) => {
+      const scoreA = getMonthSortScore(a.name);
+      const scoreB = getMonthSortScore(b.name);
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return b.count - a.count;
+    });
+
     // Macro status items
     const totalCount = filteredRegistros.length || 1;
     const macroStatusStats = [
@@ -1190,7 +1464,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (a.regional !== b.regional) {
         return a.regional.localeCompare(b.regional);
       }
-      return b.orcamento - a.orcamento;
+      return sortResponsaveis(a.responsavel, b.responsavel);
     });
 
     // Group regionalRespStats by regional for distinct blocks/cards with subtotal
@@ -1250,7 +1524,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     > = {};
 
     filteredRegistros.forEach((r) => {
-      const respCategory = (r.Responsavel || 'Não Atribuído').trim();
+      const respCategory = normalizeResponsavel(r.Responsavel);
       const o = parseCurrencyValue(r['Orçamento'] || r.Orçamento);
       const p = parseCurrencyValue(r['Valor Parcial R$']);
       const f = parseCurrencyValue(r['Valor Final R$']);
@@ -1277,7 +1551,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       telemontItemsMap[respCategory].saldo += sld;
     });
 
-    const telemontItems = Object.values(telemontItemsMap).sort((a, b) => b.orcamento - a.orcamento);
+    const telemontItems = Object.values(telemontItemsMap).sort((a, b) =>
+      sortResponsaveis(a.responsavel, b.responsavel)
+    );
 
     const telemontSubtotal = telemontItems.reduce(
       (acc, cur) => {
@@ -1318,6 +1594,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       regionalGroups,
       telemontGroup,
       ufStats,
+      carteiraStats,
+      tipoDCStats,
+      planEstruturanteStats,
+      mesInputStats,
       macroStatusStats,
       rawStatusStats,
     };
@@ -1329,10 +1609,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     (filterRegional.length === 0 || filterRegional.length >= 3) &&
     telemontGroup.items.length > 0;
 
+
   return (
-    <div className="space-y-6 font-sans pb-10 bg-[#F8FAFC] min-w-0 max-w-full">
-      {/* 1. Painel de Filtros (Consistente com a aba Registros, em fluxo normal sem conflito com menu superior) */}
-      <div className="bg-white border border-slate-200 shadow-xs py-3 px-4 rounded-xl transition-all">
+    <div className="space-y-3.5 font-sans pb-10 bg-[#F8FAFC] min-w-0 max-w-full">
+      {/* 1. Painel de Filtros (fluxo normal, rola junto com a página) */}
+      <div className="bg-white border border-slate-200 shadow-xs py-2.5 px-3.5 rounded-xl transition-all relative">
         <div className="flex flex-col gap-2">
           {/* Row 1: Quick status indicator & Search & Clear */}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1342,7 +1623,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                 {totalDcs.toLocaleString('pt-BR')}
               </span>
               <span className="text-slate-500 font-medium">
-                obras filtradas {registros.length > 0 && `(de ${registros.length.toLocaleString('pt-BR')} totais)`}
+                obras filtradas {totalValidosBase > 0 && `(de ${totalValidosBase.toLocaleString('pt-BR')} totais)`}
               </span>
               {lastImportInfo && (
                 <span className="hidden md:inline-flex items-center space-x-1 px-2 py-0.5 bg-slate-100 rounded-md text-[11px] text-slate-600 border border-slate-200 ml-2">
@@ -1356,7 +1637,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
               {activeFiltersCount > 0 && (
                 <button
                   onClick={handleClearFilters}
-                  className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-all flex items-center space-x-1 cursor-pointer"
+                  className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-all flex items-center space-x-1 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                   <span>Limpar {activeFiltersCount} filtro(s)</span>
@@ -1365,7 +1646,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
 
               <button
                 onClick={() => setIsFiltersOpen((prev) => !prev)}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer transition-colors"
+                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer transition-colors"
               >
                 <Filter className="w-3 h-3 text-slate-500" />
                 <span>Filtros</span>
@@ -1377,15 +1658,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           {/* Row 2: Collapsible Filters (Responsivo e Sem Scrollbar Interna) */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-11 gap-2 items-end">
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 xl:grid-cols-11 2xl:grid-cols-11 gap-1.5 items-end">
                 {/* Search DC */}
-                <div className="w-full">
+                <div className="w-full min-w-0">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
                     Buscar DC
                   </label>
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                      <Search className="h-3.5 w-3.5" />
+                    <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
+                      <Search className="h-3 w-3" />
                     </div>
                     <input
                       id="search-dc-dashboard"
@@ -1393,12 +1674,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                       placeholder="Buscar..."
                       value={searchDC}
                       onChange={(e) => setSearchDC(e.target.value)}
-                      className="block w-full pl-8 pr-6 py-1 bg-slate-50 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] h-[28px]"
+                      className="block w-full pl-6 pr-5 py-1 bg-slate-50 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] h-[28px]"
                     />
                     {searchDC && (
                       <button
                         onClick={() => setSearchDC('')}
-                        className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="absolute inset-y-0 right-0 pr-1.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -1428,9 +1709,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todas"
                 />
 
-                {/* 3. Carteira */}
+                {/* 3. TIPO (Carteira) */}
                 <MultiSelectFilter
-                  label="Carteira"
+                  label="TIPO (Carteira)"
                   columnRefName="TIPO"
                   options={carteiraOptions}
                   selected={filterCarteira}
@@ -1439,7 +1720,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todas"
                 />
 
-                {/* 4. Status DC */}
+                {/* 4. Tipo de DC */}
+                <MultiSelectFilter
+                  label="Tipo de DC"
+                  columnRefName="Tipo DC"
+                  options={tipoDCOptions}
+                  selected={filterTipoDC}
+                  onChange={setFilterTipoDC}
+                  optionCounts={tipoDCCounts}
+                  placeholder="Todos"
+                />
+
+                {/* 5. Status DC */}
                 <MultiSelectFilter
                   label="Status DC"
                   columnRefName="Atual"
@@ -1472,29 +1764,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todos"
                 />
 
-                {/* 8. Tipo Projeto */}
+                {/* 8. Resp. Medição */}
                 <MultiSelectFilter
-                  label="Tipo Projeto"
-                  columnRefName="Projeto"
-                  options={tipoProjetoOptions}
-                  selected={filterTipoProjeto}
-                  onChange={setFilterTipoProjeto}
-                  optionCounts={tipoProjetoCounts}
+                  label="Resp. Medição"
+                  columnRefName="Medição"
+                  options={respMedicaoOptions}
+                  selected={filterRespMedicao}
+                  onChange={setFilterRespMedicao}
+                  optionCounts={respMedicaoCounts}
                   placeholder="Todos"
                 />
 
-                {/* 9. Status Med. Final (Ponto 5) */}
+                {/* 9. Mês Input */}
                 <MultiSelectFilter
-                  label="Status Med. Final"
-                  columnRefName="Final"
-                  options={statusMedFinalOptions}
-                  selected={filterStatusMedFinal}
-                  onChange={setFilterStatusMedFinal}
-                  optionCounts={statusMedFinalCounts}
+                  label="Mês Input"
+                  columnRefName="Mês"
+                  options={mesInputOptions}
+                  selected={filterMesInput}
+                  onChange={setFilterMesInput}
+                  optionCounts={mesInputCounts}
                   placeholder="Todos"
                 />
 
-                {/* 10. Plan. Estruturante (Antigo Backlog/Input?) */}
+                {/* 10. Plan. Estruturante */}
                 <MultiSelectFilter
                   label="Plan. Estruturante"
                   columnRefName="Tipo"
@@ -1505,18 +1797,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                   placeholder="Todos"
                   align="right"
                 />
-
-                {/* 11. Resp. Medição */}
-                <MultiSelectFilter
-                  label="Resp. Medição"
-                  columnRefName="Medição"
-                  options={respMedicaoOptions}
-                  selected={filterRespMedicao}
-                  onChange={setFilterRespMedicao}
-                  optionCounts={respMedicaoCounts}
-                  placeholder="Todos"
-                  align="right"
-                />
               </div>
             </div>
           )}
@@ -1524,35 +1804,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       </div>
 
       {/* 2. KPI TOP ROW: 4 Clean, Balanced Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-0.5">
         {/* Card 1: Total de DCs */}
         <div
           onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
+          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
           title="Clique para ver todos os registros filtrados na aba Registros"
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
                 Total de DCs
               </span>
-              <span className="text-3xl font-black text-slate-900 mt-1 block">
+              <span className="text-2xl font-black text-slate-900 mt-0.5 block">
                 {totalDcs.toLocaleString('pt-BR')}
               </span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0 group-hover:bg-blue-50 transition-colors">
-              <Layers className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0 group-hover:bg-blue-50 transition-colors">
+              <Layers className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
             {regionalStats.slice(0, 3).map((reg) => (
-              <span key={reg.regional} className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded font-semibold text-slate-700">
+              <span key={reg.regional} className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded font-semibold text-slate-700 text-[10px]">
                 {reg.regional}: {reg.count}
               </span>
             ))}
             {regionalStats.length > 3 && (
-              <span className="text-slate-400">+{regionalStats.length - 3} reg.</span>
+              <span className="text-slate-400 text-[10px]">+{regionalStats.length - 3} reg.</span>
             )}
           </div>
         </div>
@@ -1560,24 +1840,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         {/* Card 2: Orçamento Total */}
         <div
           onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
+          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
           title="Clique para ver registros ordenados por orçamento na aba Registros"
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
                 Orçamento Total
               </span>
-              <span className="text-2xl font-black text-slate-900 mt-1 block truncate" title={formatBRL(totalOrcamento)}>
+              <span className="text-xl font-black text-slate-900 mt-0.5 block truncate" title={formatBRL(totalOrcamento)}>
                 {formatBRL(totalOrcamento)}
               </span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#002855] flex items-center justify-center font-bold shrink-0">
-              <DollarSign className="w-5 h-5 text-[#002855]" />
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#002855] flex items-center justify-center font-bold shrink-0">
+              <DollarSign className="w-4 h-4 text-[#002855]" />
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
             <span>Faturado: <strong className="text-blue-700 font-bold">{formatBRL(totalFaturado)}</strong></span>
             <span>Saldo: <strong className="text-indigo-700 font-bold">{formatBRL(totalSaldo)}</strong></span>
           </div>
@@ -1592,24 +1872,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
               sortDirection: 'desc',
             })
           }
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm cursor-pointer transition-all group"
+          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm cursor-pointer transition-all group"
           title="Clique para ver todos os registros com medição na aba Registros"
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider block">
+              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
                 Valor Medido Total
               </span>
-              <span className="text-2xl font-black text-emerald-700 mt-1 block truncate" title={formatBRL(totalMedido)}>
+              <span className="text-xl font-black text-emerald-700 mt-0.5 block truncate" title={formatBRL(totalMedido)}>
                 {formatBRL(totalMedido)}
               </span>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
               {pctMedido}%
             </span>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
             <span>Parcial: <strong className="text-slate-700 font-semibold">{formatBRL(totalParcial)}</strong></span>
             <span>Final: <strong className="text-emerald-700 font-bold">{formatBRL(totalFinal)}</strong></span>
           </div>
@@ -1618,34 +1898,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         {/* Card 4: % de DCs Concluídas */}
         <div
           onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all group"
+          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all group"
           title="Clique para ver obras filtradas na aba Registros"
         >
           <div className="flex items-start justify-between">
             <div>
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                 Conclusão de Obras
               </span>
-              <div className="flex items-baseline space-x-2 mt-1">
-                <span className="text-3xl font-black text-slate-900">
+              <div className="flex items-baseline space-x-2 mt-0.5">
+                <span className="text-2xl font-black text-slate-900">
                   {totalDcs > 0 ? ((concluidasCount / totalDcs) * 100).toFixed(1) : '0.0'}%
                 </span>
-                <span className="text-xs text-slate-400 font-medium">concluídas</span>
+                <span className="text-[11px] text-slate-400 font-medium">concluídas</span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
+              <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
-            <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+          <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1">
+            <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div
                 className="h-full rounded-full bg-emerald-500 transition-all duration-500"
                 style={{ width: `${totalDcs > 0 ? Math.min(100, (concluidasCount / totalDcs) * 100) : 0}%` }}
               />
             </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
               <span>{concluidasCount.toLocaleString('pt-BR')} de {totalDcs.toLocaleString('pt-BR')} DCs</span>
               <span className="text-slate-400">{emExecucaoCount} em execução</span>
             </div>
@@ -1654,25 +1934,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       </div>
 
       {/* 3. CENTRAL HERO BLOCK: Medição x Orçamento por Regional e Responsável (Ponto 1 & Ajustes Visuais/Interatividade) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="p-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100">
+      <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="px-3.5 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
           <div>
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center space-x-2">
-              <BarChart3 className="w-5 h-5 text-[#002855]" />
+            <h3
+              style={{ fontSize: 'var(--fs-dash-panel-title)' }}
+              className="font-extrabold text-slate-900 flex items-center space-x-1.5"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-[#002855]" />
               <span>Medição vs. Orçamento por Regional e Responsável</span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p
+              style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+              className="text-slate-500 mt-0.5"
+            >
               Acompanhamento financeiro detalhado por Regional e Responsável com valores orçados, parciais, finais e total medido acumulado.
             </p>
           </div>
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-50/80 border border-blue-200/80 rounded-lg text-xs text-[#002855] font-semibold self-start sm:self-auto shadow-2xs">
-            <ExternalLink className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <div className="inline-flex items-center space-x-1 px-1.5 py-0.5 bg-blue-50/80 border border-blue-200/80 rounded-md text-[10.5px] text-[#002855] font-semibold self-start sm:self-auto shadow-2xs">
+            <ExternalLink className="w-3 h-3 text-blue-600 shrink-0" />
             <span>Clique nos valores ou quantidades para ver os registros detalhados</span>
           </div>
         </div>
 
         {/* Regional Groups List */}
-        <div className="p-6 space-y-6">
+        <div className="p-2.5 sm:p-3 space-y-2.5">
           {regionalGroups.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-xs bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
               Nenhum registro encontrado para os filtros atuais.
@@ -1706,25 +1992,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
           {!showTelemontTable && regionalGroups.length > 1 && (
             <div className="rounded-xl border-2 border-slate-300 bg-slate-100/90 shadow-xs overflow-hidden">
               <div className="overflow-x-auto max-w-full">
-                <table className="w-full text-xs border-collapse font-sans">
+                <table className="w-full border-collapse font-sans">
                   <thead>
-                    <tr className="bg-slate-200/80 text-slate-700 uppercase text-[11px] font-black tracking-wider select-none border-b border-slate-300 whitespace-nowrap">
-                      <th colSpan={2} className="py-3 px-4 text-left font-black border-r border-slate-300 whitespace-nowrap">
+                    <tr className="bg-slate-200/80 text-slate-700 uppercase font-black tracking-wider select-none border-b border-slate-300 whitespace-nowrap">
+                      <th
+                        colSpan={2}
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-left font-black border-r border-slate-300 whitespace-nowrap"
+                      >
                         Total Geral Consolidado ({regionalGroups.length} Regionais)
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 w-[100px] whitespace-nowrap">
+                      <th
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center font-black border-r border-slate-300 w-[80px] whitespace-nowrap"
+                      >
                         DC's
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
+                      <th
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center font-black border-r border-slate-300 min-w-[130px] w-[130px] whitespace-nowrap"
+                      >
                         Orçamento
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[185px] w-[185px] whitespace-nowrap">
+                      <th
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center font-black border-r border-slate-300 min-w-[160px] w-[160px] whitespace-nowrap"
+                      >
                         Valor Total Medido R$
                       </th>
-                      <th className="py-3 px-4 text-center font-black border-r border-slate-300 min-w-[150px] w-[150px] whitespace-nowrap">
+                      <th
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center font-black border-r border-slate-300 min-w-[130px] w-[130px] whitespace-nowrap"
+                      >
                         Valor Faturado
                       </th>
-                      <th className="py-3 px-4 text-center font-black min-w-[140px] w-[140px] whitespace-nowrap">
+                      <th
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center font-black min-w-[120px] w-[120px] whitespace-nowrap"
+                      >
                         Saldo
                       </th>
                     </tr>
@@ -1733,25 +2062,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                     <tr className="bg-white font-bold text-slate-900 whitespace-nowrap">
                       <td
                         colSpan={2}
-                        className="py-3 px-4 text-left border-r border-slate-300 uppercase text-[11px] font-black tracking-wider text-[#002855] whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-left border-r border-slate-300 uppercase font-black tracking-wider text-[#002855] whitespace-nowrap"
                       >
                         Soma das Regionais Filtradas
                       </td>
                       <td
                         onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-slate-900 font-black transition-colors group whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-cell)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-slate-900 font-black transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras filtradas na aba Registros"
                       >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                        <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                           {totalDcs.toLocaleString('pt-BR')}
                         </span>
                       </td>
                       <td
                         onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-[#002855] font-black transition-colors group whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-cell)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 text-[#002855] font-black transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras ordenadas por orçamento"
                       >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                        <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                           {formatBRL(totalOrcamento)}
                         </span>
                       </td>
@@ -1763,10 +2107,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-200/80 font-black text-emerald-900 transition-colors group whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-cell)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-emerald-200/80 font-black text-emerald-900 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras com medições (parcial ou final) na aba Registros"
                       >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                        <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                           {formatBRL(totalParcial + totalFinal)}
                         </span>
                       </td>
@@ -1778,10 +2127,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 font-black text-blue-800 transition-colors group whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-cell)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center tabular-nums border-r border-slate-300 cursor-pointer hover:bg-blue-100/80 font-black text-blue-800 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras faturadas na aba Registros"
                       >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                        <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                           {formatBRL(totalFaturado)}
                         </span>
                       </td>
@@ -1793,10 +2147,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                             sortDirection: 'desc',
                           })
                         }
-                        className="py-3 px-4 text-center tabular-nums cursor-pointer hover:bg-indigo-100/80 font-black text-indigo-900 transition-colors group whitespace-nowrap"
+                        style={{
+                          fontSize: 'var(--fs-dash-table-cell)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-2.5 text-center tabular-nums cursor-pointer hover:bg-indigo-100/80 font-black text-indigo-900 transition-colors group whitespace-nowrap"
                         title="Clique para ver todas as obras com saldo a faturar na aba Registros"
                       >
-                        <span className="inline-block py-0.5 px-2 rounded group-hover:underline">
+                        <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
                           {formatBRL(totalSaldo)}
                         </span>
                       </td>
@@ -1809,211 +2168,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
         </div>
       </div>
 
-      {/* 4. DUAL COLUMN: Responsável (Donut) & Status Operacional (Macro) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Bloco 4: Distribuição por Responsável (Donut + Legend) */}
-        <div className="lg:col-span-6 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center space-x-2">
-              <UserCheck className="w-5 h-5 text-[#002855]" />
-              <h3 className="text-sm font-extrabold text-slate-900">
-                Distribuição por Responsável
-              </h3>
-            </div>
-            <span className="text-xs font-semibold text-slate-400">
-              {responsavelStats.length} Áreas
-            </span>
-          </div>
+      {/* 4. TABELA OBRAS INPUT (VOLUME) - Largura Completa (Sem barra de rolagem horizontal) */}
+      <ObrasInputVolumeTable
+        registros={filteredRegistros}
+        onNavigate={(filters) => handleNavigateWithDashboardFilters(filters)}
+      />
 
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            {/* SVG Donut Chart */}
-            <div className="relative w-40 h-40 shrink-0 flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                {/* Background Ring */}
-                <path
-                  className="text-slate-100"
-                  strokeWidth="3.8"
-                  stroke="currentColor"
-                  fill="none"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-
-                {(() => {
-                  let accumulatedPct = 0;
-                  const colors = ['#002855', '#2563EB', '#0D9488', '#94A3B8', '#64748B'];
-                  const total = totalDcs || 1;
-
-                  return responsavelStats.slice(0, 5).map((item, idx) => {
-                    const pct = (item.count / total) * 100;
-                    const strokeDasharray = `${pct} ${100 - pct}`;
-                    const strokeDashoffset = -accumulatedPct;
-                    accumulatedPct += pct;
-
-                    return (
-                      <circle
-                        key={item.responsavel}
-                        r="15.9155"
-                        cx="18"
-                        cy="18"
-                        fill="transparent"
-                        stroke={colors[idx % colors.length]}
-                        strokeWidth="3.8"
-                        strokeDasharray={strokeDasharray}
-                        strokeDashoffset={strokeDashoffset}
-                        className="transition-all duration-500 hover:opacity-80 cursor-pointer"
-                      />
-                    );
-                  });
-                })()}
-              </svg>
-
-              {/* Donut Center Counter */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">
-                  DCs
-                </span>
-                <span className="text-xl font-black text-slate-900 mt-0.5">
-                  {totalDcs.toLocaleString('pt-BR')}
-                </span>
-              </div>
-            </div>
-
-            {/* Structured Legend: Responsável com Orçado e Total Medido */}
-            <div className="flex-1 space-y-3 w-full">
-              {responsavelStats.slice(0, 5).map((item, idx) => {
-                const dotColors = ['bg-[#002855]', 'bg-blue-600', 'bg-teal-600', 'bg-amber-600', 'bg-slate-400'];
-
-                return (
-                  <div
-                    key={item.responsavel}
-                    className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-1.5 transition-colors hover:bg-slate-100/70"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center space-x-2 truncate max-w-[65%]">
-                        <span className={`w-2.5 h-2.5 rounded-full ${dotColors[idx % dotColors.length]} shrink-0`} />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleNavigateWithDashboardFilters({
-                              responsavel: item.rawNames && item.rawNames.length > 0 ? item.rawNames : [item.responsavel],
-                              sortBy: 'Orçamento',
-                              sortDirection: 'desc',
-                            })
-                          }
-                          className="font-bold text-slate-800 hover:text-[#002855] hover:underline cursor-pointer truncate text-left transition-colors"
-                          title={`Ver registros de ${item.responsavel} na aba Registros`}
-                        >
-                          {item.responsavel}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleNavigateWithDashboardFilters({
-                            responsavel: item.rawNames && item.rawNames.length > 0 ? item.rawNames : [item.responsavel],
-                            sortBy: 'DC',
-                            sortDirection: 'asc',
-                          })
-                        }
-                        className="text-right shrink-0 font-extrabold text-slate-900 hover:text-[#002855] hover:underline cursor-pointer transition-colors"
-                        title={`Ver as ${item.count} DC's de ${item.responsavel} na aba Registros`}
-                      >
-                        {item.count.toLocaleString('pt-BR')} DCs
-                      </button>
-                    </div>
-
-                    <div className="pl-4.5 space-y-0.5 text-[11px]">
-                      <div className="flex items-center justify-between text-slate-600">
-                        <span className="text-slate-500 font-medium">Orçado:</span>
-                        <span className="font-semibold text-slate-800 tabular-nums">
-                          {formatBRL(item.orcamento)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-emerald-800">
-                        <span className="text-slate-500 font-medium">Total Medido:</span>
-                        <span className="font-extrabold text-emerald-700 tabular-nums">
-                          {formatBRL(item.medido)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Bloco 5: Status Operacional (Macro Agrupado) */}
-        <div className="lg:col-span-6 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-sm font-extrabold text-slate-900">
-                Status Operacional Macro
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsStatusExpanded((prev) => !prev)}
-              className="text-xs font-bold text-[#002855] hover:text-[#001e40] flex items-center space-x-1 cursor-pointer"
-            >
-              <span>{isStatusExpanded ? 'Recolher' : 'Ver todos os 24 status'}</span>
-              {isStatusExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          {/* 4 Macro Bars */}
-          <div className="space-y-3.5">
-            {macroStatusStats.map((st) => (
-              <div key={st.id} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${st.bgClass}`} />
-                    <span className="font-bold text-slate-800">{st.label}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-extrabold text-slate-900">{st.count} DCs</span>
-                    <span className="text-slate-400 text-[11px] ml-1.5">({st.pct}%)</span>
-                  </div>
-                </div>
-
-                <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${st.bgClass} transition-all duration-500`}
-                    style={{ width: `${Math.min(100, parseFloat(st.pct))}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Detailed Breakdown (Accordion) */}
-          {isStatusExpanded && (
-            <div className="pt-3 border-t border-slate-100 space-y-2 max-h-[220px] overflow-y-auto pr-1 animate-in fade-in duration-150">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Detalhamento dos status individuais de campo:
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {rawStatusStats.map((item) => (
-                  <div
-                    key={item.status}
-                    onClick={() => handleNavigateWithDashboardFilters({ statusInforme: [item.status] })}
-                    className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between cursor-pointer hover:bg-blue-50/80 hover:border-blue-300 transition-colors group"
-                    title={`Filtrar status "${item.status}" na aba Registros`}
-                  >
-                    <span className="font-medium text-slate-700 truncate max-w-[70%] group-hover:text-blue-900" title={item.status}>
-                      {item.status}
-                    </span>
-                    <span className="font-bold text-slate-900 shrink-0 group-hover:text-blue-900 group-hover:underline">
-                      {item.count} DCs
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {/* 5. QUADRO FR's GERADAS (Fixo, não afetado pelos filtros) */}
+      <FRsGeradasTable frRegistros={frRegistros} />
     </div>
   );
 };

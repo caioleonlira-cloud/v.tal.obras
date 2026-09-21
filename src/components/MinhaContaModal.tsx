@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { KeyRound, X, Check, AlertCircle, Lock, Eye, EyeOff } from 'lucide-react';
 
@@ -18,6 +19,16 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -54,8 +65,11 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+  return createPortal(
+    <div
+      style={{ zIndex: 2000 }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
         {/* Modal Header */}
         <div className="bg-[#002855] text-white px-6 py-4 flex items-center justify-between">
@@ -64,8 +78,9 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
             <h3 className="font-bold text-sm">Minha Conta — Alterar Senha</h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            className="text-slate-300 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -185,14 +200,14 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-[#002855] hover:bg-[#001e40] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center space-x-1.5"
+              className="px-4 py-2 bg-[#002855] hover:bg-[#001e40] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
             >
               {loading ? (
                 <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -206,6 +221,7 @@ export const MinhaContaModal: React.FC<MinhaContaModalProps> = ({ isOpen, onClos
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

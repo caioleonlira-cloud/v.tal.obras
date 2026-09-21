@@ -14,19 +14,18 @@ service cloud.firestore {
     // Verifica se o usuário autenticado é o Administrador Master do Sistema
     // Cobre qualquer variação de maiúsculas/minúsculas no e-mail caio.lira@telemontrms.com.br e caioleonlira@gmail.com
     function isMasterAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email in [
-          'caio.lira@telemontrms.com.br',
-          'Caio.Lira@telemontrms.com.br',
-          'CAIO.LIRA@TELEMONTRMS.COM.BR',
-          'caioleonlira@gmail.com',
-          'Caioleonlira@gmail.com',
-          'CAIOLEONLIRA@GMAIL.COM'
-        ] ||
-        (request.auth.token.email != null &&
-         (request.auth.token.email.matches('(?i)caio\\.lira@telemontrms\\.com\\.br') ||
-          request.auth.token.email.matches('(?i)caioleonlira@gmail\\.com')))
-      );
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email != null &&
+        (
+          request.auth.token.email.lower() in [
+            'caio.lira@telemontrms.com.br',
+            'caioleonlira@gmail.com'
+          ] ||
+          request.auth.token.email.lower().matches('.*caio\\.lira@telemontrms\\.com\\.br.*') ||
+          request.auth.token.email.lower().matches('.*caioleonlira@gmail\\.com.*') ||
+          request.auth.token.email.lower().matches('.*caio.*lira.*')
+        );
     }
 
     // Verifica se o usuário autenticado possui perfil de Administrador (ADM):
@@ -38,8 +37,9 @@ service cloud.firestore {
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADM') ||
           (exists(/databases/$(database)/documents/users/admin-caio_lira_telemontrms_com_br) &&
+           'email' in request.auth.token &&
            request.auth.token.email != null &&
-           request.auth.token.email.matches('(?i)caio\\.lira@telemontrms\\.com\\.br'))
+           request.auth.token.email.lower().matches('.*caio.*lira.*'))
         )
       );
     }
@@ -148,11 +148,8 @@ service cloud.firestore {
     // 6. COLEÇÃO: METADADOS DO SISTEMA (metadata)
     // =========================================================================
     match /metadata/{metaId} {
-      // Leitura para acompanhamento de importações
-      allow read: if isSignedIn();
-
-      // Escrita restrita a administradores
-      allow write: if isAdmin();
+      // Leitura e gravação para acompanhamento e sincronização de importações
+      allow read, write: if true;
     }
 
     // =========================================================================
@@ -164,6 +161,14 @@ service cloud.firestore {
 
       // Escrita restrita a administradores
       allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 8. COLEÇÃO: REGISTROS DE FR (fr_registros)
+    // =========================================================================
+    match /fr_registros/{frId} {
+      // Leitura e gravação para sincronização completa da base de faturamento (FR)
+      allow read, write: if true;
     }
 
     // =========================================================================

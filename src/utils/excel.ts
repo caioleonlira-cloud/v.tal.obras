@@ -7,8 +7,47 @@ import {
   RegistroBloco1,
   RegistroBloco2,
   HistoricoEdicaoItem,
+  FRRegistro,
+  FR_COLUMNS,
+  getRegistroCarteira,
+  getRegistroPlanEstruturante,
+  getRegistroRegional,
 } from '../types';
-import { parseCurrencyValue, formatDecimalBR } from './currency';
+import { parseCurrencyValue, formatDecimalBR, formatBRL, formatCurrency } from './currency';
+export { parseCurrencyValue, formatDecimalBR, formatBRL, formatCurrency };
+
+/**
+ * Normalizes and validates a DC identifier.
+ * Strips zero-width characters, non-breaking spaces, control chars, and surrounding whitespace.
+ * Must contain at least one alphanumeric character (a-z, 0-9) to prevent empty rows, dashes, or ghost records.
+ */
+export function cleanDC(raw: any): string {
+  if (raw === undefined || raw === null) return '';
+  const str = String(raw)
+    .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+    .trim();
+  if (!str) return '';
+  if (
+    str === '-' ||
+    str === '—' ||
+    str === '–' ||
+    str.toLowerCase() === 'null' ||
+    str.toLowerCase() === 'undefined' ||
+    str.toLowerCase() === 'n/a' ||
+    str.toLowerCase() === 'none'
+  ) {
+    return '';
+  }
+  // Must contain at least one alphanumeric character
+  if (!/[a-zA-Z0-9]/.test(str)) {
+    return '';
+  }
+  return str;
+}
+
+export function isValidDC(raw: any): boolean {
+  return cleanDC(raw).length > 0;
+}
 
 /**
  * Matches a raw Excel header to our official system column names
@@ -57,14 +96,42 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
   }
 
   // 2. Base Matriz Columns (Bloco 1)
-  if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
+  if (
+    clean === 'REG' ||
+    clean === 'REGIONAL' ||
+    clean === 'REGIAO' ||
+    clean === 'REG.' ||
+    clean === 'REGIAO.' ||
+    clean === 'REG UF' ||
+    clean === 'REGIONAL UF' ||
+    clean === 'REG/UF' ||
+    clean === 'REGIONAL/UF' ||
+    clean === 'REGIONAL / UF' ||
+    clean === 'REG / UF' ||
+    clean.startsWith('REGIONAL') ||
+    clean.startsWith('REGIAO')
+  ) {
+    if (!clean.includes('DIRETORIA') && !clean.includes('DIR')) {
+      return 'REG';
+    }
+  }
   
+  if (
+    clean === 'TIPO DE DC' ||
+    clean === 'TIPO DC' ||
+    clean === 'TIPODC' ||
+    clean === 'TIPO_DE_DC' ||
+    clean === 'TIPO_DC'
+  ) {
+    return 'Tipo de DC';
+  }
+
   if (
     clean.includes('CARTEIRA') ||
     clean.includes('CATEIRA') ||
     (clean.startsWith('TIPO') && (clean.includes('CART') || clean.includes('CATE')))
   ) {
-    return 'TIPO (Cateira)';
+    return 'TIPO (Carteira)';
   }
 
   if (clean === 'DR' || clean === 'DIRETORIA REGIONAL' || clean === 'DIR REGIONAL') return 'DR';
@@ -172,6 +239,20 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
     return 'Status da DC (Atual)';
   }
 
+  // Mês Input (PONTO 2)
+  if (
+    clean === 'MES INPUT' ||
+    clean === 'MÊS INPUT' ||
+    clean === 'MES_INPUT' ||
+    clean === 'MÊS_INPUT' ||
+    clean === 'MESINPUT' ||
+    clean === 'MÊSINPUT' ||
+    (clean.includes('MES') && clean.includes('INPUT')) ||
+    (clean.includes('MÊS') && clean.includes('INPUT'))
+  ) {
+    return 'Mês Input';
+  }
+
   // Plan. Estruturante / Backlog/Input? (Base Matriz Header Mapping)
   if (
     clean === 'BACKLOG INPUT' ||
@@ -179,12 +260,13 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
     clean === 'BACKLOG/INPUT' ||
     clean === 'BACKLOG/INPUT?' ||
     clean === 'PLAN ESTRUTURANTE' ||
+    clean === 'PLAN. ESTRUTURANTE' ||
     clean === 'PLANEJAMENTO ESTRUTURANTE' ||
     clean.includes('ESTRUTURANTE') ||
     clean.includes('BACKLOG') ||
-    clean.includes('INPUT')
+    clean === 'INPUT'
   ) {
-    return 'Backlog/Input?';
+    return 'Plan. Estruturante';
   }
 
   // 3. Bloco 2 Tracking Columns (Colunas Equipe)
@@ -554,10 +636,14 @@ export async function readExcelFile(file: File): Promise<{
           }
         });
 
-        // Check if this row has a valid DC and some data
-        const dcValue = cleanRow['DC'] ? String(cleanRow['DC']).trim() : '';
+        // Check if this row has a valid DC and some real data
+        const dcValue = cleanDC(cleanRow['DC']);
         if (hasAnyValue && dcValue) {
           cleanRow['DC'] = dcValue;
+          const regResolved = getRegistroRegional(cleanRow);
+          if (regResolved) {
+            cleanRow['REG'] = regResolved;
+          }
           cleanedData.push(cleanRow);
         }
       }
@@ -586,21 +672,22 @@ export async function readExcelFile(file: File): Promise<{
  * Downloads standard Base Matriz (Bloco 1) Template
  */
 export function downloadModeloImportacaoPadrao() {
-  const headers = BLOCO_1_KEYS.map((k) => (k === 'Backlog/Input?' ? 'Plan. Estruturante' : k));
+  const headers = [...BLOCO_1_KEYS];
   const sampleRow1: Record<string, string> = {
     'DC': 'DC-100201',
-    'REG': 'SUL',
-    'TIPO (Cateira)': 'FTTH EXPANSÃO',
+    'REG': 'RSUL',
+    'TIPO (Carteira)': 'FTTH EXPANSÃO',
+    'Tipo de DC': 'PROJETO REDE',
     'DR': 'PR',
     'Seq': '1',
     'Dc Simulação': 'SIM-100201',
-    'Orçamento': 'ORC-2024-101',
+    'Orçamento': '53.700,00',
     'Status Med. Parcial': 'APROVADA',
     'Valor Parcial R$': '15.200,00',
     'Status Med. Final': 'EM ANÁLISE',
     'Valor Final R$': '38.500,00',
-    'Pedido': 'PED-100201',
-    'Valor Faturado': '38.500,00',
+    'Pedido': '4500123456',
+    'Valor Faturado': '53.700,00',
     'Saldo': '0,00',
     'Tempo': '35',
     'AGING': '10',
@@ -608,46 +695,96 @@ export function downloadModeloImportacaoPadrao() {
     'UF': 'PR',
     'Localidade': 'CURITIBA',
     'Tipo de Projeto': 'EXPANSÃO PON',
-    'Descricao': 'OBRA FIBRA BAIRRO CENTRO',
-    'Status da DC (Atual)': 'EM ANDAMENTO',
+    'Descricao': 'IMPLANTAÇÃO REDE ÓPTICA BAIRRO CENTRO',
+    'Status da DC (Atual)': 'EM EXECUÇÃO',
     'Plan. Estruturante': 'INPUT',
+    'Mês Input': 'mai/2026',
   };
 
   const sampleRow2: Record<string, string> = {
     'DC': 'DC-100202',
-    'REG': 'SUL',
-    'TIPO (Cateira)': 'REDE PRIMÁRIA',
-    'DR': 'SC',
+    'REG': 'RMG',
+    'TIPO (Carteira)': 'REDE PRIMÁRIA',
+    'Tipo de DC': 'MANUTENÇÃO',
+    'DR': 'MG',
     'Seq': '2',
     'Dc Simulação': 'SIM-100202',
-    'Orçamento': 'ORC-2024-102',
+    'Orçamento': '85.400,00',
     'Status Med. Parcial': 'PENDENTE',
     'Valor Parcial R$': '0,00',
     'Status Med. Final': 'NÃO INICIADA',
-    'Valor Final R$': '22.100,00',
-    'Pedido': 'PED-100202',
+    'Valor Final R$': '0,00',
+    'Pedido': '4500123457',
     'Valor Faturado': '0,00',
-    'Saldo': '22.100,00',
+    'Saldo': '85.400,00',
     'Tempo': '40',
     'AGING': '18',
     'Data Status': '20/08/2024',
-    'UF': 'SC',
-    'Localidade': 'FLORIANÓPOLIS',
+    'UF': 'MG',
+    'Localidade': 'BELO HORIZONTE',
     'Tipo de Projeto': 'ANEL DEDICADO',
     'Descricao': 'LANÇAMENTO DE CABO 36 FO',
-    'Status da DC (Atual)': 'PENDÊNCIA DOC',
+    'Status da DC (Atual)': 'EM ANDAMENTO',
     'Plan. Estruturante': 'BACKLOG',
+    'Mês Input': 'jun/2026',
   };
 
-  const worksheet = XLSX.utils.json_to_sheet([sampleRow1, sampleRow2], { header: headers });
+  const sampleRow3: Record<string, string> = {
+    'DC': 'DC-100203',
+    'REG': 'RCO',
+    'TIPO (Carteira)': 'CLIENTES CORPORATIVOS',
+    'Tipo de DC': 'PROJETO ESPECIAL',
+    'DR': 'GO',
+    'Seq': '3',
+    'Dc Simulação': 'SIM-100203',
+    'Orçamento': '124.800,00',
+    'Status Med. Parcial': 'APROVADA',
+    'Valor Parcial R$': '60.000,00',
+    'Status Med. Final': 'APROVADA',
+    'Valor Final R$': '64.800,00',
+    'Pedido': '4500123458',
+    'Valor Faturado': '124.800,00',
+    'Saldo': '0,00',
+    'Tempo': '55',
+    'AGING': '5',
+    'Data Status': '22/08/2024',
+    'UF': 'GO',
+    'Localidade': 'GOIÂNIA',
+    'Tipo de Projeto': 'INTERLIGAÇÃO BACKBONE',
+    'Descricao': 'AMPLIAÇÃO ROTA ÓPTICA GOIÂNIA-ANÁPOLIS',
+    'Status da DC (Atual)': 'OBRA CONCLUÍDA',
+    'Plan. Estruturante': 'INPUT',
+    'Mês Input': 'jul/2026',
+  };
+
+  const worksheet = XLSX.utils.json_to_sheet([sampleRow1, sampleRow2, sampleRow3], { header: headers });
   
   // Set column widths for readability
-  worksheet['!cols'] = headers.map(() => ({ wch: 22 }));
+  worksheet['!cols'] = headers.map((h) => ({
+    wch: Math.max(16, h.length + 4),
+  }));
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Tabela1');
 
   XLSX.writeFile(workbook, 'Modelo_Importacao_Padrao_Base_Matriz_VTAL.xlsx');
+}
+
+/**
+ * Downloads standard FR Template with exactly the 13 required columns
+ */
+export function downloadModeloImportacaoFR() {
+  const headers = [...FR_COLUMNS];
+  const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+  
+  worksheet['!cols'] = headers.map((h) => ({
+    wch: Math.max(16, h.length + 4),
+  }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'FR');
+
+  XLSX.writeFile(workbook, 'Modelo_Importacao_FR_VTAL.xlsx');
 }
 
 /**
@@ -858,13 +995,13 @@ export function parseNumberForExcel(val?: any, isCurrencyCol = false): number | 
  */
 export function exportarRegistrosParaExcel(registros: Registro[], nomeArquivo = 'VTAL_OBRAS_Registros') {
   const exportHeaders = ALL_COLUMNS.map((col) =>
-    col === 'Backlog/Input?' ? 'Plan. Estruturante' : col
+    (col as string) === 'Backlog/Input?' ? 'Plan. Estruturante' : col
   );
 
   const exportData = registros.map((item) => {
     const row: Record<string, any> = {};
     ALL_COLUMNS.forEach((col) => {
-      const headerKey = col === 'Backlog/Input?' ? 'Plan. Estruturante' : col;
+      const headerKey = (col as string) === 'Backlog/Input?' ? 'Plan. Estruturante' : col;
       const rawVal = (item as any)[col];
       if (rawVal === undefined || rawVal === null || rawVal === '') {
         row[headerKey] = '';
@@ -1015,4 +1152,264 @@ export function exportarRelatorioDcsNaoEncontradas(notFoundRows: { dc: string; r
 
   const dataAtual = new Date().toISOString().split('T')[0];
   XLSX.writeFile(workbook, `Relatorio_DCs_Nao_Encontradas_${dataAtual}.xlsx`);
+}
+
+/**
+ * Matches raw header to FR column name tolerating case, accents and whitespace
+ */
+export function matchFRColumn(rawHeader: string): string | null {
+  if (!rawHeader) return null;
+  const rawTrimmed = String(rawHeader).trim();
+  if (!rawTrimmed) return null;
+
+  const directMatch = FR_COLUMNS.find(
+    (col) => col.toLowerCase() === rawTrimmed.toLowerCase()
+  );
+  if (directMatch) return directMatch;
+
+  const clean = rawTrimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[º°ª#?:.\-_/\\()\[\]{}|;,+*!&]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+
+  if (clean === 'UF' || clean === 'ESTADO' || clean === 'SIGLA UF') return 'UF';
+  if (
+    clean === 'DC M' ||
+    clean === 'DCM' ||
+    clean === 'DC_M' ||
+    clean === 'DC MEDICAO' ||
+    clean === 'DCMEDICAO'
+  ) return 'DC-M';
+  if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
+  if (clean === 'MES' || clean === 'MES REF' || clean === 'MES REFERENCIA') return 'Mês';
+  if (clean === 'CENTRO' || clean === 'CENTRO DE CUSTO' || clean === 'CC') return 'CENTRO';
+  if (
+    clean === 'LOCALIDADE DE PRESTACAO' ||
+    clean === 'LOCALIDADE PRESTACAO' ||
+    clean.includes('PRESTACAO') ||
+    clean === 'LOCALIDADE'
+  ) return 'LOCALIDADE DE PRESTAÇÃO';
+  if (clean.includes('DATA') && (clean.includes('SOLICIT') || clean.includes('SOLICITACAO'))) return 'DATA DA SOLICITAÇÃO';
+  if (clean.includes('MIGRADA') || clean.includes('OPERACAO') || clean.includes('MIGRADA OPERACAO')) return 'DC MIGRADA/OPERAÇÃO';
+  if (
+    (clean.includes('MEDICAO') || clean.includes('MED')) &&
+    (clean.includes('N') || clean.includes('NUM') || clean.includes('NR'))
+  ) return 'Nº MEDIÇÃO';
+  if (
+    (clean.includes('PEDIDO') || clean.includes('PED')) &&
+    (clean.includes('N') || clean.includes('NUM') || clean.includes('NR'))
+  ) return 'Nº PEDIDO';
+  if (clean.includes('ITEM') && clean.includes('PEDIDO')) return 'ITEM DO PEDIDO';
+  if (clean === 'ITEM') return 'ITEM DO PEDIDO';
+  if (
+    clean === 'VALOR FR' ||
+    clean === 'VALOR FR R$' ||
+    clean === 'VLR FR' ||
+    (clean.includes('VALOR') && clean.includes('FR'))
+  ) return 'VALOR FR';
+  if (clean === 'FR' || clean === 'NUMERO FR' || clean === 'N FR' || clean === 'NR FR') return 'FR';
+
+  return null;
+}
+
+export interface ParseFRResult {
+  valid: boolean;
+  missingColumns: string[];
+  data: Omit<FRRegistro, 'id'>[];
+  totalRows: number;
+  error?: string;
+}
+
+/**
+ * Parses FR spreadsheet file
+ */
+export async function parseFRFile(file: File): Promise<ParseFRResult> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target?.result;
+        if (!buffer) {
+          throw new Error('Arquivo vazio ou não pôde ser lido.');
+        }
+
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+          throw new Error('Planilha não contém abas de dados.');
+        }
+
+        const worksheet = workbook.Sheets[sheetName];
+        const rawJson: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: '',
+          blankrows: false,
+        });
+
+        if (!rawJson || rawJson.length < 2) {
+          throw new Error('A planilha precisa ter ao menos uma linha de cabeçalho e uma de dados.');
+        }
+
+        const headerRow = rawJson[0] || [];
+        const columnMap = new Map<number, keyof Omit<FRRegistro, 'id' | '_updatedAt' | '_updatedBy'>>();
+        const detectedColSet = new Set<string>();
+
+        headerRow.forEach((col: any, idx: number) => {
+          if (col !== undefined && col !== null && String(col).trim()) {
+            const matched = matchFRColumn(String(col));
+            if (matched) {
+              columnMap.set(idx, matched as any);
+              detectedColSet.add(matched);
+            }
+          }
+        });
+
+        // Check if all 13 columns are present
+        const missingColumns = FR_COLUMNS.filter((col) => !detectedColSet.has(col));
+        if (missingColumns.length > 0) {
+          resolve({
+            valid: false,
+            missingColumns,
+            data: [],
+            totalRows: 0,
+            error: `Colunas obrigatórias ausentes na planilha: ${missingColumns.join(', ')}.`,
+          });
+          return;
+        }
+
+        // Process data rows
+        const cleanedRows: Omit<FRRegistro, 'id'>[] = [];
+        for (let i = 1; i < rawJson.length; i++) {
+          const row = rawJson[i];
+          if (!row || !Array.isArray(row)) continue;
+
+          // Check if row is completely empty
+          const hasAnyValue = row.some((val) => val !== undefined && val !== null && String(val).trim() !== '');
+          if (!hasAnyValue) continue;
+
+          const rowData: any = {};
+          columnMap.forEach((colKey, colIdx) => {
+            const rawVal = row[colIdx];
+            if (rawVal === undefined || rawVal === null) {
+              rowData[colKey] = '';
+              return;
+            }
+
+            if (colKey === 'DATA DA SOLICITAÇÃO') {
+              const parsedDate = parseDateForExcel(rawVal);
+              if (parsedDate) {
+                const dia = String(parsedDate.getDate()).padStart(2, '0');
+                const mes = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                const ano = parsedDate.getFullYear();
+                rowData[colKey] = `${dia}/${mes}/${ano}`;
+              } else {
+                rowData[colKey] = String(rawVal).trim();
+              }
+            } else if (colKey === 'VALOR FR') {
+              const num = typeof rawVal === 'number' ? rawVal : parseCurrencyWithDecimalCorrection(rawVal);
+              rowData[colKey] = num !== null && !isNaN(num) ? num : 0;
+            } else {
+              rowData[colKey] = String(rawVal).trim();
+            }
+          });
+
+          // Fallback for missing fields in row
+          FR_COLUMNS.forEach((col) => {
+            if (rowData[col] === undefined) {
+              rowData[col] = col === 'VALOR FR' ? 0 : '';
+            }
+          });
+
+          cleanedRows.push(rowData as Omit<FRRegistro, 'id'>);
+        }
+
+        resolve({
+          valid: true,
+          missingColumns: [],
+          data: cleanedRows,
+          totalRows: cleanedRows.length,
+        });
+      } catch (err: any) {
+        reject(new Error(err.message || 'Erro ao processar planilha de FR.'));
+      }
+    };
+
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo selecionado.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Exports FR records list to Excel
+ */
+export function exportarFRParaExcel(frs: FRRegistro[], nomeArquivo = 'VTAL_OBRAS_FRs') {
+  const exportHeaders = [...FR_COLUMNS];
+
+  const exportData = frs.map((item) => {
+    const row: Record<string, any> = {};
+    FR_COLUMNS.forEach((col) => {
+      const rawVal = (item as any)[col];
+      if (rawVal === undefined || rawVal === null || rawVal === '') {
+        row[col] = '';
+        return;
+      }
+
+      if (col === 'DATA DA SOLICITAÇÃO') {
+        const parsedDate = parseDateForExcel(rawVal);
+        row[col] = parsedDate || String(rawVal).trim();
+      } else if (col === 'VALOR FR') {
+        const num = typeof rawVal === 'number' ? rawVal : parseCurrencyWithDecimalCorrection(rawVal);
+        row[col] = num !== null ? num : 0;
+      } else {
+        row[col] = String(rawVal).trim();
+      }
+    });
+    return row;
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(exportData, {
+    header: exportHeaders,
+    cellDates: true,
+    dateNF: 'dd/mm/yyyy',
+  });
+
+  // Apply explicit cell types and number formats to worksheet cells
+  if (worksheet['!ref']) {
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const colName = FR_COLUMNS[C];
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = worksheet[cellAddress];
+        if (!cell) continue;
+
+        if (colName === 'DATA DA SOLICITAÇÃO') {
+          if (cell.v instanceof Date) {
+            cell.t = 'd';
+            cell.z = 'dd/mm/yyyy';
+          }
+        } else if (colName === 'VALOR FR') {
+          if (typeof cell.v === 'number') {
+            cell.t = 'n';
+            cell.z = '#,##0.00';
+          }
+        }
+      }
+    }
+  }
+
+  // Column widths
+  worksheet['!cols'] = exportHeaders.map((h) => ({
+    wch: Math.max(16, h.length + 4),
+  }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'FR');
+
+  const dataAtual = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(workbook, `${nomeArquivo}_${dataAtual}.xlsx`);
 }

@@ -18,11 +18,13 @@ import {
   Cloud,
   Database,
   CheckCircle2,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export type NavTabType =
   | 'registros'
   | 'dashboard'
+  | 'fr'
   | 'importacao'
   | 'segmentacoes'
   | 'usuarios';
@@ -41,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenFirebaseConfig,
 }) => {
   const { profile, user, logout, isAdmin } = useAuth();
-  const { registros, loadingRegistros, refreshRegistros, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
+  const { registros, frRegistros, loadingRegistros, refreshRegistros, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
 
   // Presença online em tempo real (Firestore event-based, exclusivo ADM)
   const {
@@ -67,8 +69,34 @@ export const Header: React.FC<HeaderProps> = ({
 
   const userName = profile?.name || user?.email?.split('@')[0] || 'caio.lira';
 
+  const headerRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    const updateHeaderHeight = () => {
+      if (headerRef.current) {
+        const height = headerRef.current.offsetHeight;
+        document.documentElement.style.setProperty('--corporate-header-height', `${height}px`);
+      }
+    };
+    updateHeaderHeight();
+    const ro = new ResizeObserver(() => updateHeaderHeight());
+    if (headerRef.current) {
+      ro.observe(headerRef.current);
+    }
+    window.addEventListener('resize', updateHeaderHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
+
   return (
-    <header id="corporate-header" className="sticky top-0 z-50 w-full shadow-md select-none font-sans isolate bg-[#06152d]">
+    <header
+      id="corporate-header"
+      ref={headerRef}
+      style={{ zIndex: 1000 }}
+      className="sticky top-0 z-[1000] w-full shadow-md select-none font-sans bg-[#06152d]"
+    >
       {/* =========================================================================
           LINHA 1 — Identidade e Usuário (~40px, fundo #0a1f44)
           ========================================================================= */}
@@ -275,7 +303,35 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
-          {/* 3. Importação (Visível APENAS para ADM) */}
+          {/* 3. FR (Faturamento / Medição - Visível APENAS para ADM) */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('fr')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'fr'
+                  ? 'bg-[#1a56db] text-white shadow-xs'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>FR</span>
+              <span
+                className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 ${
+                  activeTab === 'fr'
+                    ? 'bg-[#0a1f44] text-cyan-300 border border-cyan-400/30'
+                    : 'bg-white/15 text-slate-300'
+                }`}
+              >
+                {frRegistros.length.toLocaleString('pt-BR')}
+              </span>
+              <span className="text-[9px] bg-amber-500/30 text-amber-300 border border-amber-400/40 px-1 py-0.2 rounded font-bold">
+                ADM
+              </span>
+            </button>
+          )}
+
+          {/* 4. Importação (Visível APENAS para ADM) */}
           {isAdmin && (
             <button
               type="button"

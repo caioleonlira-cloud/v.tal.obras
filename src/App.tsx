@@ -8,6 +8,7 @@ import { MinhaContaModal } from './components/MinhaContaModal';
 import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { RegistrosView } from './components/Registros/RegistrosView';
 import { DashboardView } from './components/Dashboard/DashboardView';
+import { FRView } from './components/FR/FRView';
 import { ImportacaoView } from './components/Importacao/ImportacaoView';
 import { SegmentacoesView } from './components/Segmentacoes/SegmentacoesView';
 import { UsuariosView } from './components/Usuarios/UsuariosView';
@@ -78,7 +79,7 @@ const MainLayout: React.FC = () => {
       <Header
         activeTab={activeTab}
         setActiveTab={(tab) => {
-          if ((tab === 'segmentacoes' || tab === 'usuarios' || tab === 'importacao') && !isAdmin) {
+          if ((tab === 'segmentacoes' || tab === 'usuarios' || tab === 'importacao' || tab === 'fr') && !isAdmin) {
             setActiveTab('registros');
           } else {
             setActiveTab(tab);
@@ -103,6 +104,9 @@ const MainLayout: React.FC = () => {
 
         {isAdmin && (
           <>
+            <div className={activeTab === 'fr' ? 'block' : 'hidden'}>
+              <FRView />
+            </div>
             {activeTab === 'importacao' && <ImportacaoView />}
             {activeTab === 'segmentacoes' && <SegmentacoesView />}
             {activeTab === 'usuarios' && <UsuariosView />}

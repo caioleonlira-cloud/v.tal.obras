@@ -178,7 +178,7 @@ export const ImportacaoPadrao: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Introduction Card */}
+      {/* Introduction and Template Download Banner */}
       <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
@@ -195,10 +195,34 @@ export const ImportacaoPadrao: React.FC = () => {
 
         <button
           onClick={downloadModeloImportacaoPadrao}
-          className="shrink-0 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition-colors flex items-center space-x-2 cursor-pointer"
+          className="shrink-0 px-4 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
+          title="Baixar modelo oficial .xlsx com as 23 colunas esperadas"
         >
-          <Download className="w-4 h-4 text-slate-600" />
+          <Download className="w-4 h-4 text-cyan-300" />
           <span>Baixar Modelo Padrão (.xlsx)</span>
+        </button>
+      </div>
+
+      {/* Template Instructions Card */}
+      <div className="bg-gradient-to-r from-blue-50/70 to-slate-50 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-start space-x-3">
+          <FileSpreadsheet className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-slate-900 block">
+              Modelo de Planilha Padrão para Importação
+            </span>
+            <span className="text-slate-600 mt-0.5 block leading-relaxed">
+              O arquivo Excel deve conter a aba <strong>Tabela1</strong> com as 23 colunas oficiais (DC, REG, TIPO, DR, Orçamento, Medições, Pedido, Saldo, Localidade, etc). Baixe o modelo pronto preenchido com dados de exemplo para evitar divergências.
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={downloadModeloImportacaoPadrao}
+          className="self-start sm:self-center shrink-0 px-3.5 py-2 bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+        >
+          <Download className="w-3.5 h-3.5 text-blue-700" />
+          <span>Exportar Template .xlsx</span>
         </button>
       </div>
 
