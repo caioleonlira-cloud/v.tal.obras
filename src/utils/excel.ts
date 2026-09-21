@@ -13,8 +13,9 @@ import {
   getRegistroPlanEstruturante,
   getRegistroRegional,
 } from '../types';
-import { parseCurrencyValue, formatDecimalBR, formatBRL, formatCurrency } from './currency';
-export { parseCurrencyValue, formatDecimalBR, formatBRL, formatCurrency };
+import { parseCurrencyValue, parseFRValor, formatDecimalBR, formatBRL, formatCurrency } from './currency';
+import { normalizeMesFR } from './monthUtils';
+export { parseCurrencyValue, parseFRValor, normalizeMesFR, formatDecimalBR, formatBRL, formatCurrency };
 
 /**
  * Normalizes and validates a DC identifier.
@@ -1184,7 +1185,22 @@ export function matchFRColumn(rawHeader: string): string | null {
     clean === 'DCMEDICAO'
   ) return 'DC-M';
   if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
-  if (clean === 'MES' || clean === 'MES REF' || clean === 'MES REFERENCIA') return 'Mês';
+  if (
+    clean === 'MES' ||
+    clean === 'MES REF' ||
+    clean === 'MES REFERENCIA' ||
+    clean === 'MES DE REFERENCIA' ||
+    clean === 'MES ANO' ||
+    clean === 'MES/ANO' ||
+    clean === 'MES SOLICITACAO' ||
+    clean === 'MES DA SOLICITACAO' ||
+    clean === 'MES BASE' ||
+    clean === 'COMPETENCIA' ||
+    clean === 'MES COMPETENCIA' ||
+    clean === 'PERIODO' ||
+    (clean.includes('MES') && !clean.includes('INPUT')) ||
+    clean.includes('COMPETENCIA')
+  ) return 'Mês';
   if (clean === 'CENTRO' || clean === 'CENTRO DE CUSTO' || clean === 'CC') return 'CENTRO';
   if (
     clean === 'LOCALIDADE DE PRESTACAO' ||
@@ -1208,7 +1224,19 @@ export function matchFRColumn(rawHeader: string): string | null {
     clean === 'VALOR FR' ||
     clean === 'VALOR FR R$' ||
     clean === 'VLR FR' ||
-    (clean.includes('VALOR') && clean.includes('FR'))
+    clean === 'VALOR' ||
+    clean === 'VALOR R$' ||
+    clean === 'VLR' ||
+    clean === 'VALOR TOTAL' ||
+    clean === 'VALOR FATURADO' ||
+    clean === 'VALOR DA FR' ||
+    clean === 'VLR DA FR' ||
+    clean === 'VALOR DA MEDICAO' ||
+    clean === 'VALOR LIQUIDO' ||
+    clean === 'VALOR BRUTO' ||
+    clean === 'FATURAMENTO' ||
+    (clean.includes('VALOR') && (clean.includes('FR') || clean.includes('FATUR') || clean.includes('MEDIC') || clean.includes('TOTAL'))) ||
+    clean.includes('VALOR FR')
   ) return 'VALOR FR';
   if (clean === 'FR' || clean === 'NUMERO FR' || clean === 'N FR' || clean === 'NR FR') return 'FR';
 
@@ -1310,19 +1338,29 @@ export async function parseFRFile(file: File): Promise<ParseFRResult> {
                 rowData[colKey] = String(rawVal).trim();
               }
             } else if (colKey === 'VALOR FR') {
-              const num = typeof rawVal === 'number' ? rawVal : parseCurrencyWithDecimalCorrection(rawVal);
-              rowData[colKey] = num !== null && !isNaN(num) ? num : 0;
+              const num = parseFRValor(rawVal);
+              rowData[colKey] = num;
+            } else if (colKey === 'Mês') {
+              rowData[colKey] = normalizeMesFR(rawVal, rowData['DATA DA SOLICITAÇÃO']);
             } else {
               rowData[colKey] = String(rawVal).trim();
             }
           });
 
-          // Fallback for missing fields in row
+          // Fallback para campos ausentes ou incompletos na linha
           FR_COLUMNS.forEach((col) => {
             if (rowData[col] === undefined) {
               rowData[col] = col === 'VALOR FR' ? 0 : '';
             }
           });
+
+          // Se a coluna Mês ficou vazia ou '-', extrai a partir de DATA DA SOLICITAÇÃO
+          if (!rowData['Mês'] || rowData['Mês'] === '-' || rowData['Mês'] === '—') {
+            const mesFromDate = normalizeMesFR('', rowData['DATA DA SOLICITAÇÃO']);
+            if (mesFromDate && mesFromDate !== '-') {
+              rowData['Mês'] = mesFromDate;
+            }
+          }
 
           cleanedRows.push(rowData as Omit<FRRegistro, 'id'>);
         }

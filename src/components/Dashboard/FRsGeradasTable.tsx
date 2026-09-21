@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { FRRegistro } from '../../types';
-import { parseCurrencyValue, formatBRL } from '../../utils/currency';
-import { parseMesAnoSortKey } from '../../utils/monthUtils';
+import { parseFRValor, formatBRL } from '../../utils/currency';
+import { parseMesAnoSortKey, normalizeMesFR } from '../../utils/monthUtils';
 import { Receipt, Info } from 'lucide-react';
 
 interface FRsGeradasTableProps {
@@ -29,9 +29,9 @@ export const FRsGeradasTable: React.FC<FRsGeradasTableProps> = ({ frRegistros })
     let grandTotal = 0;
 
     frRegistros.forEach((row) => {
-      const reg = (row.REG || '').trim().toUpperCase() || '-';
-      const mes = (row.Mês || '').trim() || '-';
-      const val = parseCurrencyValue(row['VALOR FR']);
+      const reg = (row.REG ? String(row.REG).trim().toUpperCase() : '') || (row.UF ? String(row.UF).trim().toUpperCase() : '') || '-';
+      const mes = normalizeMesFR(row.Mês, row['DATA DA SOLICITAÇÃO']);
+      const val = parseFRValor(row['VALOR FR']);
 
       setReg.add(reg);
       setMes.add(mes);
@@ -55,8 +55,10 @@ export const FRsGeradasTable: React.FC<FRsGeradasTableProps> = ({ frRegistros })
       return a.localeCompare(b, 'pt-BR');
     });
 
-    // Colunas = valores únicos de Mês em ordem cronológica
+    // Colunas = valores únicos de Mês em ordem cronológica (colocando '-' por último se existir)
     const sortedMes = Array.from(setMes).sort((a, b) => {
+      if (a === '-') return 1;
+      if (b === '-') return -1;
       const keyA = parseMesAnoSortKey(a);
       const keyB = parseMesAnoSortKey(b);
       if (keyA !== keyB) return keyA - keyB;

@@ -20,7 +20,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
 import { exportarFRParaExcel } from '../../utils/excel';
-import { formatCurrency, parseCurrencyValue } from '../../utils/currency';
+import { formatCurrency, parseFRValor } from '../../utils/currency';
 import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -194,7 +194,7 @@ export const FRView: React.FC = () => {
 
   // Total sum of VALOR FR for filtered records
   const totalValorFR = useMemo(() => {
-    return filteredData.reduce((acc, curr) => acc + (Number(curr['VALOR FR']) || 0), 0);
+    return filteredData.reduce((acc, curr) => acc + parseFRValor(curr['VALOR FR']), 0);
   }, [filteredData]);
 
   // Paginated records
@@ -500,11 +500,7 @@ export const FRView: React.FC = () => {
                     <td className="p-3 font-mono text-slate-800 whitespace-nowrap">{row['Nº PEDIDO']}</td>
                     <td className="p-3 text-slate-700 whitespace-nowrap text-center">{row['ITEM DO PEDIDO']}</td>
                     <td className="p-3 font-bold text-emerald-800 whitespace-nowrap text-right">
-                      {formatCurrency(
-                        typeof row['VALOR FR'] === 'number'
-                          ? row['VALOR FR']
-                          : parseCurrencyValue(row['VALOR FR'])
-                      )}
+                      {formatCurrency(parseFRValor(row['VALOR FR']))}
                     </td>
                     <td className="p-3 font-mono font-bold text-cyan-800 whitespace-nowrap">{row.FR}</td>
                   </tr>

@@ -242,8 +242,11 @@ async function commitBatchWithTimeout(
   contextLabel = 'gravação em lote'
 ): Promise<void> {
   let timer: any;
+  let timeoutFired = false;
+
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
+      timeoutFired = true;
       reject(
         new Error(
           `Tempo esgotado (${Math.round(timeoutMs / 1000)}s) ao executar ${contextLabel} no Firestore. Verifique a conexão e as credenciais do Firebase.`
@@ -252,8 +255,16 @@ async function commitBatchWithTimeout(
     }, timeoutMs);
   });
 
+  const commitPromise = batch.commit().catch((err) => {
+    if (timeoutFired) {
+      console.warn(`Firestore commit completou com erro após timeout (${contextLabel}):`, err?.message);
+      return;
+    }
+    throw err;
+  });
+
   try {
-    await Promise.race([batch.commit(), timeoutPromise]);
+    await Promise.race([commitPromise, timeoutPromise]);
   } finally {
     clearTimeout(timer);
   }

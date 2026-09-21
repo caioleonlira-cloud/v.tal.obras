@@ -16,7 +16,7 @@ import {
 import * as XLSX from 'xlsx';
 import { useData } from '../../context/DataContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
-import { parseFRFile, ParseFRResult, formatCurrency, parseCurrencyValue } from '../../utils/excel';
+import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor } from '../../utils/excel';
 
 export const ImportacaoFR: React.FC = () => {
   const { frRegistros, importInfoFR, executarImportacaoFR } = useData();
@@ -331,11 +331,7 @@ export const ImportacaoFR: React.FC = () => {
                         <td className="p-2 text-slate-600">{row['DATA DA SOLICITAÇÃO']}</td>
                         <td className="p-2 text-slate-600">{row['Nº MEDIÇÃO']}</td>
                         <td className="p-2 font-bold text-emerald-800">
-                          {formatCurrency(
-                            typeof row['VALOR FR'] === 'number'
-                              ? row['VALOR FR']
-                              : parseCurrencyValue(row['VALOR FR'])
-                          )}
+                          {formatCurrency(parseFRValor(row['VALOR FR']))}
                         </td>
                         <td className="p-2 font-mono text-cyan-800">{row.FR}</td>
                       </tr>
