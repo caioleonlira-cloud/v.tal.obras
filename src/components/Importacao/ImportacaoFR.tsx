@@ -12,7 +12,6 @@ import {
   Loader2,
   HelpCircle,
   RefreshCw,
-  CloudUpload,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useData } from '../../context/DataContext';
@@ -20,7 +19,7 @@ import { FR_COLUMNS, FRRegistro } from '../../types';
 import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor } from '../../utils/excel';
 
 export const ImportacaoFR: React.FC = () => {
-  const { frRegistros, importInfoFR, executarImportacaoFR, sincronizarFRLocalParaFirestore } = useData();
+  const { frRegistros, importInfoFR, executarImportacaoFR } = useData();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState<boolean>(false);
@@ -34,13 +33,6 @@ export const ImportacaoFR: React.FC = () => {
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [executionSuccess, setExecutionSuccess] = useState<boolean>(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
-
-  // Online Cloud Synchronization State
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncProgressPct, setSyncProgressPct] = useState<number>(0);
-  const [syncProgressMsg, setSyncProgressMsg] = useState<string>('');
-  const [syncSuccess, setSyncSuccess] = useState<boolean>(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Lock body scroll when confirm modal is open
   useEffect(() => {
@@ -133,27 +125,6 @@ export const ImportacaoFR: React.FC = () => {
     }
   };
 
-  const handleSyncLocalToFirestore = async () => {
-    if (frRegistros.length === 0) return;
-    setIsSyncing(true);
-    setSyncError(null);
-    setSyncSuccess(false);
-    setSyncProgressPct(0);
-    setSyncProgressMsg('Iniciando sincronização da base com o Firebase...');
-
-    const res = await sincronizarFRLocalParaFirestore((pct, msg) => {
-      setSyncProgressPct(pct);
-      setSyncProgressMsg(msg);
-    });
-
-    setIsSyncing(false);
-    if (!res.success) {
-      setSyncError(res.erro || 'Falha ao sincronizar com o Firebase.');
-    } else {
-      setSyncSuccess(true);
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Informative Header & Last Import Badge */}
@@ -189,7 +160,7 @@ export const ImportacaoFR: React.FC = () => {
             <div className="flex items-center space-x-2 text-cyan-950 font-medium">
               <Clock className="w-4 h-4 text-cyan-700 shrink-0" />
               <span>
-                <strong>Última importação:</strong>{' '}
+                <strong>Última importação salva no Firebase:</strong>{' '}
                 {new Date(importInfoFR.importedAt).toLocaleDateString('pt-BR')} às{' '}
                 {new Date(importInfoFR.importedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{' '}
                 por <span className="underline">{importInfoFR.importedBy}</span> ({importInfoFR.totalLinhas} linhas)
@@ -207,83 +178,10 @@ export const ImportacaoFR: React.FC = () => {
         ) : (
           <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center space-x-2">
             <HelpCircle className="w-4 h-4 text-slate-500" />
-            <span>Nenhuma importação de FR registrada ainda. A base atual está vazia ou operando em cache local.</span>
+            <span>Nenhuma importação de FR registrada ainda. A base atual está vazia.</span>
           </div>
         )}
       </div>
-
-      {/* Sincronização da Base Local com Firebase Firestore */}
-      {frRegistros.length > 0 && (
-        <div className="bg-gradient-to-r from-blue-50/90 to-cyan-50/80 border border-blue-200/80 rounded-2xl p-5 shadow-2xs">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-start space-x-3">
-              <div className="p-2.5 bg-[#002855] text-white rounded-xl shadow-xs shrink-0">
-                <CloudUpload className="w-5 h-5 text-cyan-300" />
-              </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <span>Sincronização com o Banco de Dados Online (Firebase)</span>
-                  <span className="bg-blue-100 text-blue-800 text-[10.5px] font-bold px-2 py-0.5 rounded-full border border-blue-300">
-                    {frRegistros.length} registros locais
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
-                  Para que a tabela <strong>"FR's GERADAS"</strong> no Dashboard mostre os números para todos os usuários em qualquer computador, os dados devem estar gravados no Firebase. Clique abaixo para sincronizar a base atual com a nuvem.
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSyncLocalToFirestore}
-              disabled={isSyncing || isExecuting}
-              className="px-4 py-2.5 bg-[#002855] hover:bg-[#003875] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center space-x-2 shrink-0 cursor-pointer self-start md:self-auto"
-              title="Gravar base de FR no Firebase para todos os usuários verem no Dashboard"
-            >
-              {isSyncing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
-                  <span>Sincronizando...</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-4 h-4 text-cyan-300" />
-                  <span>Gravar no Firebase Firestore</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Sync Progress / Feedback */}
-          {isSyncing && (
-            <div className="mt-4 pt-3 border-t border-blue-200/60">
-              <div className="flex items-center justify-between text-xs text-slate-800 font-medium mb-1.5">
-                <span>{syncProgressMsg || 'Sincronizando...'}</span>
-                <span className="font-bold">{syncProgressPct}%</span>
-              </div>
-              <div className="w-full bg-blue-200/80 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-[#002855] h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${syncProgressPct}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {syncSuccess && (
-            <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Base de FR sincronizada com o Firebase com sucesso! A tabela "FR's GERADAS" no Dashboard já está disponível para todos os usuários em tempo real.</span>
-            </div>
-          )}
-
-          {syncError && (
-            <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center space-x-2">
-              <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{syncError}</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Rules & Requirements Checklist */}
       <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-5">
@@ -504,7 +402,7 @@ export const ImportacaoFR: React.FC = () => {
                     />
                   </div>
                   <p className="text-[11px] text-slate-500 text-center">
-                    Gravando em lotes de até 200 registros no Firestore... Por favor não feche esta tela.
+                    Gravando diretamente no Firebase Firestore... Por favor não feche esta tela.
                   </p>
                 </div>
               ) : (

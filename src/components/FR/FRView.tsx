@@ -16,9 +16,6 @@ import {
   Clock,
   HelpCircle,
   X,
-  CloudUpload,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
@@ -29,7 +26,7 @@ import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 type SortDirection = 'asc' | 'desc' | null;
 
 export const FRView: React.FC = () => {
-  const { frRegistros, loadingFRs, importInfoFR, refreshFRs, sincronizarFRLocalParaFirestore } = useData();
+  const { frRegistros, loadingFRs, importInfoFR, refreshFRs } = useData();
 
   // Search & Filters State
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -39,24 +36,6 @@ export const FRView: React.FC = () => {
   const [selectedOperacao, setSelectedOperacao] = useState<string[]>([]);
   const [dataInicio, setDataInicio] = useState<string>(''); // YYYY-MM-DD
   const [dataFim, setDataFim] = useState<string>(''); // YYYY-MM-DD
-
-  // Cloud Sync state
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  const handleSyncToFirestore = async () => {
-    if (frRegistros.length === 0) return;
-    setIsSyncing(true);
-    setSyncFeedback(null);
-    const res = await sincronizarFRLocalParaFirestore();
-    setIsSyncing(false);
-    if (res.success) {
-      setSyncFeedback({ type: 'success', message: 'Base de FR salva e sincronizada no Firebase Firestore com sucesso!' });
-      setTimeout(() => setSyncFeedback(null), 6000);
-    } else {
-      setSyncFeedback({ type: 'error', message: res.erro || 'Falha ao sincronizar com o Firebase.' });
-    }
-  };
 
   // Sorting
   const [sortField, setSortField] = useState<keyof FRRegistro | null>(null);
@@ -292,18 +271,6 @@ export const FRView: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2.5">
-            {frRegistros.length > 0 && (
-              <button
-                onClick={handleSyncToFirestore}
-                disabled={isSyncing}
-                className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl border border-blue-200 text-xs font-bold transition-all shadow-xs flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                title="Gravar no Firebase para disponibilizar para todos os computadores no Dashboard"
-              >
-                <CloudUpload className={`w-3.5 h-3.5 ${isSyncing ? 'animate-bounce text-blue-600' : 'text-blue-600'}`} />
-                <span className="hidden sm:inline">{isSyncing ? 'Gravando...' : 'Salvar no Firebase'}</span>
-              </button>
-            )}
-
             <button
               onClick={() => refreshFRs()}
               className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold transition-all shadow-xs flex items-center space-x-1.5 cursor-pointer"
@@ -324,24 +291,6 @@ export const FRView: React.FC = () => {
             </button>
           </div>
         </div>
-
-        {/* Sync Feedback Message */}
-        {syncFeedback && (
-          <div
-            className={`mt-3 p-3 rounded-xl border text-xs flex items-center space-x-2 ${
-              syncFeedback.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-rose-50 border-rose-200 text-rose-800'
-            }`}
-          >
-            {syncFeedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            )}
-            <span>{syncFeedback.message}</span>
-          </div>
-        )}
 
         {/* Last Import Info Badge */}
         {importInfoFR ? (
