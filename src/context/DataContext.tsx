@@ -910,6 +910,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               segData[docSnap.id as SegmentacaoKey] = data.opcoes;
             }
           });
+          const rawResp = segData['Resp.Medição'] || segData['Resp.Medição (Sul)'];
+          if (rawResp) {
+            segData['Resp.Medição'] = rawResp;
+            segData['Resp.Medição (Sul)'] = rawResp;
+          }
           setSegmentacoes((prev) => ({
             ...DEFAULT_SEGMENTATIONS,
             ...segData,
@@ -1014,6 +1019,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // 5. Manage Segmentations
+  const syncSegState = (prev: Record<SegmentacaoKey, string[]>, key: SegmentacaoKey, opts: string[]) => {
+    const next = { ...prev, [key]: opts };
+    if (key === 'Resp.Medição (Sul)') next['Resp.Medição'] = opts;
+    if (key === 'Resp.Medição') next['Resp.Medição (Sul)'] = opts;
+    return next;
+  };
+
   const addSegmentacaoOpcao = async (segKey: SegmentacaoKey, novaOpcao: string) => {
     const limpa = novaOpcao.trim().toUpperCase();
     if (!limpa) return;
@@ -1023,7 +1035,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const novasOpcoes = [...opcoesAtuais, limpa];
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: novasOpcoes }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: novasOpcoes }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, novasOpcoes));
   };
 
   const addMultiplasSegmentacaoOpcoes = async (segKey: SegmentacaoKey, novasOpcoes: string[]) => {
@@ -1040,7 +1052,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: opcoesAtuais }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: opcoesAtuais }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, opcoesAtuais));
   };
 
   const editSegmentacaoOpcao = async (segKey: SegmentacaoKey, index: number, novoValor: string) => {
@@ -1051,26 +1063,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: opcoesAtuais }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: opcoesAtuais }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, opcoesAtuais));
   };
 
   const removeSegmentacaoOpcao = async (segKey: SegmentacaoKey, index: number) => {
     const opcoesAtuais = (segmentacoes[segKey] || []).filter((_, i) => i !== index);
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: opcoesAtuais }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: opcoesAtuais }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, opcoesAtuais));
   };
 
   const limparSegmentacao = async (segKey: SegmentacaoKey) => {
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: [] }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: [] }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, []));
   };
 
   const reorderSegmentacaoOpcoes = async (segKey: SegmentacaoKey, novasOpcoes: string[]) => {
     const docRef = doc(db, 'segmentacoes', segKey);
     await setDoc(docRef, { id: segKey, nome: segKey, opcoes: novasOpcoes }, { merge: true });
-    setSegmentacoes((prev) => ({ ...prev, [segKey]: novasOpcoes }));
+    setSegmentacoes((prev) => syncSegState(prev, segKey, novasOpcoes));
   };
 
   const restaurarSegmentacoesPadrao = async () => {

@@ -90,6 +90,7 @@ export type SegmentacaoKey =
   | 'CELULA SAP'
   | 'PROJETOS'
   | 'Resp.Medição (Sul)'
+  | 'Resp.Medição'
   | 'RESP.';
 
 export interface Segmentacao {
@@ -219,6 +220,20 @@ export const DEFAULT_SEGMENTATIONS: Record<SegmentacaoKey, string[]> = {
     'CONTR. COMPLEMENTAR',
   ],
   'Resp.Medição (Sul)': [
+    'PATRICK',
+    'SHEILA',
+    'LEANDRO',
+    'MARIANA',
+    'VAGNER',
+    'EVERTON',
+    'ADRIELLI',
+    'DOUGLAS',
+    'BRUNO',
+    'ERICA',
+    'PETERSON',
+    'WESLEY',
+  ],
+  'Resp.Medição': [
     'PATRICK',
     'SHEILA',
     'LEANDRO',

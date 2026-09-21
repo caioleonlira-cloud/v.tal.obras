@@ -16,16 +16,16 @@
   --fs-table-badge: 10px;
 
   /* --- MODAL DE EDIÇÃO DA DC --- */
-  --fs-modal-title: 17px;         /* Título do modal (DC: 1215...) */
-  --fs-modal-subtitle: 12px;      /* Subtítulo/descrição */
-  --fs-modal-badge: 11px;         /* Badges do cabeçalho */
-  --fs-modal-block-title: 14px;   /* Título dos blocos (Bloco 2 / Bloco 1) */
-  --fs-modal-caption: 11px;       /* Texto '(Colunas W a AF)' e chips */
-  --fs-modal-label: var(--fs-label); /* Labels dos campos */
-  --fs-modal-input: var(--fs-input); /* Valores de inputs, selects e textarea */
-  --fs-modal-btn: 12.5px;         /* Botões do rodapé e 'Copiar Todos os Dados' */
-  --fs-modal-footer: 12px;        /* Texto 'Última atualização' */
-  --modal-input-height: 32px;     /* Altura reduzida dos inputs/selects */
+  --fs-modal-title: 13.5px;        /* Título do modal (DC: 1215...) */
+  --fs-modal-subtitle: 10px;       /* Subtítulo/descrição */
+  --fs-modal-badge: 9.5px;         /* Badges do cabeçalho */
+  --fs-modal-block-title: 11.5px;  /* Título dos blocos (Bloco 2 / Bloco 1) */
+  --fs-modal-caption: 9.5px;       /* Texto '(Colunas W a AF)' e chips */
+  --fs-modal-label: 10px;          /* Labels dos campos */
+  --fs-modal-input: 10.5px;        /* Valores de inputs, selects e textarea */
+  --fs-modal-btn: 10.5px;          /* Botões do rodapé e 'Copiar Todos os Dados' */
+  --fs-modal-footer: 9.5px;        /* Texto 'Última atualização' */
+  --modal-input-height: 29px;      /* Altura compacta dos inputs/selects */
 
   /* --- DASHBOARD (Painéis e Tabelas) --- */
   --fs-dash-panel-title: var(--fs-title);       /* Título do painel */

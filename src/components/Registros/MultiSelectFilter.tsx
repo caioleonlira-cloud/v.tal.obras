@@ -255,29 +255,27 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
             }}
             className="w-64 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-40 p-2 animate-in fade-in duration-75 select-none"
           >
-            {/* Internal Search */}
-            {options.length > 6 && (
-              <div className="relative mb-2">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Filtrar opções..."
-                  className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#002855] focus:bg-white"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Internal Search - Present on all filters */}
+            <div className="relative mb-2">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filtrar opções..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-[#002855] focus:bg-white"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
 
             {/* Quick Select / Clear Toolbar */}
             <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100 text-[10px]">

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { RegistroBloco2Form } from './RegistroBloco2Form';
 import { RegistroBloco1Details } from './RegistroBloco1Details';
+import { isValidDateBR } from '../../utils/dateUtils';
 
 interface RegistroEditModalProps {
   registro: Registro | null;
@@ -105,6 +106,21 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validação estrita de preenchimento de datas
+    const dateFields = [
+      { key: 'Data Previsão Entrega (Medição)', label: 'Data Previsão Entrega (Medição)' },
+      { key: 'Data Previsão Entrega (Projeto)', label: 'Data Previsão Entrega (Projeto)' },
+      { key: 'Data Tratativa', label: 'Data Tratativa' },
+    ];
+
+    for (const field of dateFields) {
+      const val = (formData as any)[field.key];
+      if (val && val.trim() !== '' && !isValidDateBR(val)) {
+        setErrorMsg(`O campo "${field.label}" deve conter uma data válida no formato dd/mm/aaaa (ou ficar em branco).`);
+        return;
+      }
+    }
+
     setSaving(true);
     setErrorMsg(null);
     try {
@@ -124,28 +140,28 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
   return createPortal(
     <div
       style={{ zIndex: 2000 }}
-      className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-2.5 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-[960px] max-h-[88vh] flex flex-col overflow-hidden my-auto">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-[780px] max-h-[84vh] flex flex-col overflow-hidden my-auto">
         {/* Header - Fixed */}
-        <div className="bg-[#002855] text-white px-5 sm:px-6 py-3.5 flex items-center justify-between shrink-0">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="p-2 rounded-lg bg-[#005B94]/50 border border-cyan-400/30 shrink-0">
-              <Building2 className="w-5 h-5 text-cyan-300" />
+        <div className="bg-[#002855] text-white px-3.5 sm:px-4 py-2 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-2 min-w-0">
+            <div className="p-1 rounded-md bg-[#005B94]/50 border border-cyan-400/30 shrink-0">
+              <Building2 className="w-3.5 h-3.5 text-cyan-300" />
             </div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-base sm:text-[17px] font-bold text-white tracking-wide">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h3 className="fs-modal-title font-bold text-white tracking-wide">
                   DC: {registro.DC}
                 </h3>
-                <span className="px-2.5 py-0.5 rounded text-xs font-bold bg-[#007A87] text-white">
+                <span className="px-1.5 py-0.5 rounded fs-modal-badge font-bold bg-[#007A87] text-white">
                   {registro.UF || 'UF'} - {registro.Localidade || 'Localidade'}
                 </span>
-                <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-[#001D3D] text-white border border-white/20">
+                <span className="px-1.5 py-0.5 rounded fs-modal-badge font-semibold bg-[#001D3D] text-white border border-white/20">
                   {registro['Status da DC (Atual)'] || 'Sem Status'}
                 </span>
               </div>
-              <p className="text-blue-100/80 text-xs font-normal truncate max-w-xl sm:max-w-2xl mt-0.5">
+              <p className="text-blue-100/80 fs-modal-subtitle font-normal truncate max-w-md sm:max-w-xl mt-0.5">
                 {registro.Descricao || registro['Tipo de Projeto'] || 'Detalhes da Obra'}
               </p>
             </div>
@@ -153,24 +169,24 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer shrink-0 ml-2"
+            className="text-white/80 hover:text-white p-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer shrink-0 ml-2"
             title="Fechar"
           >
-            <X className="w-5 h-5" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Scrollable Body - ONLY middle rola */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 bg-slate-50/70">
+        <div className="p-3 sm:p-3.5 overflow-y-auto space-y-3 flex-1 bg-slate-50/70">
           {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-2 text-xs text-red-700">
+            <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-2 text-xs text-red-700">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           {success && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start space-x-2 text-xs text-emerald-700">
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start space-x-2 text-xs text-emerald-700">
               <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
               <span>Dados atualizados com sucesso no Firestore!</span>
             </div>
@@ -195,8 +211,8 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
         </div>
 
         {/* Footer actions - Fixed */}
-        <div className="bg-slate-50/90 px-5 sm:px-6 py-3 border-t border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-slate-500 font-normal">
+        <div className="bg-slate-50/90 px-3.5 sm:px-4 py-2 border-t border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
+          <div className="fs-modal-footer text-slate-500 font-normal">
             {registro._updatedAt ? (
               <span>
                 Última atualização:{' '}
@@ -208,11 +224,11 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center space-x-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors cursor-pointer"
+              className="px-3 py-1 border border-slate-300 rounded-md fs-modal-btn font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
@@ -221,13 +237,13 @@ export const RegistroEditModal: React.FC<RegistroEditModalProps> = ({
               type="submit"
               form="form-edit-bloco2"
               disabled={saving}
-              className="px-4 py-2 bg-[#002855] hover:bg-[#001D3D] text-white rounded-lg text-xs font-bold shadow-xs transition-colors disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
+              className="px-3 py-1 bg-[#002855] hover:bg-[#001D3D] text-white rounded-md fs-modal-btn font-bold shadow-xs transition-colors disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
             >
               {saving ? (
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <Check className="w-4 h-4" />
+                  <Check className="w-3 h-3" />
                   <span>Salvar Alterações (Bloco 2)</span>
                 </>
               )}

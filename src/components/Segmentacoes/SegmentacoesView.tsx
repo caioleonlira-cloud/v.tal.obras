@@ -28,7 +28,7 @@ const LISTAS_INFO: { key: SegmentacaoKey; titulo: string; desc: string }[] = [
   },
   {
     key: 'Resp.Medição (Sul)',
-    titulo: 'Resp. Medição (Sul)',
+    titulo: 'Resp. Medição',
     desc: 'Alimenta o campo "Resp.Medição"',
   },
   {

@@ -1156,25 +1156,25 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             ...(freezeDcColumn ? { left: 84 } : {}),
           }}
           onClick={() => handleSort('DC')}
-          className={`py-2.5 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors ${
+          className={`py-2.5 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
             freezeDcColumn
               ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-slate-600'
               : ''
           }`}
         >
-          <div className="flex items-center justify-between space-x-1.5">
+          <div className="flex items-center justify-center space-x-1.5 text-center">
             <span className="flex items-center space-x-1 text-cyan-300 font-extrabold">
               <span>DC</span>
               {freezeDcColumn && <Pin className="w-3 h-3 text-cyan-400 rotate-45" />}
             </span>
             {sortColumn === 'DC' ? (
               sortDirection === 'asc' ? (
-                <ArrowUp className="w-3.5 h-3.5 text-cyan-400" />
+                <ArrowUp className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               ) : (
-                <ArrowDown className="w-3.5 h-3.5 text-cyan-400" />
+                <ArrowDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               )
             ) : (
-              <ArrowUpDown className="w-3 h-3 text-slate-400" />
+              <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
             )}
           </div>
         </th>
@@ -1193,13 +1193,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 opacity: 1,
               }}
               onClick={() => handleSort(colKey)}
-              className={`py-2.5 px-3 hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer ${
+              className={`py-2.5 px-3 hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer text-center ${
                 colKey === 'REG' || colKey === 'UF' || colKey === 'AGING'
                   ? 'min-w-[80px]'
                   : ''
               }`}
             >
-              <div className="flex items-center justify-between space-x-1.5">
+              <div className="flex items-center justify-center space-x-1.5 text-center">
                 <span className="truncate text-slate-100">
                   {(colKey as string) === 'TIPO (Cateira)' || colKey === 'TIPO (Carteira)'
                     ? 'TIPO (Carteira)'
@@ -1978,27 +1978,29 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         );
                       }
 
-                      // Regional & UF
+                      // Regional & UF (UF é centralizada conforme solicitado)
                       if (colKey === 'REG' || colKey === 'UF') {
                         const cellVal = colKey === 'REG' ? (getRegistroRegional(item) || val || 'RSUL') : val;
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className={`py-2 px-3 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text ${
+                              colKey === 'UF' ? 'text-center' : ''
+                            }`}
                           >
                             {cellVal || <span className="text-slate-300">—</span>}
                           </td>
                         );
                       }
 
-                      // AGING
-                      if (colKey === 'AGING') {
+                      // AGING & TEMPO (Centralizadas)
+                      if (colKey === 'AGING' || colKey === 'Tempo') {
                         const num = parseInt(val, 10);
                         const isHigh = !isNaN(num) && num > 30;
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text text-center"
                           >
                             {val ? (
                               <span
@@ -2017,7 +2019,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         );
                       }
 
-                      // Pedido, Valor Faturado, Saldo
+                      // Pedido (Centralizado), Valor Faturado, Saldo
                       if (colKey === 'Valor Faturado' || colKey === 'Saldo') {
                         const numVal = parseCurrencyValue(val);
                         return (
@@ -2039,7 +2041,50 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text"
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            title={val}
+                          >
+                            {val || <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      }
+
+                      // PLAN. ESTRUTURANTE (Centralizada)
+                      if (colKey === 'Plan. Estruturante' || (colKey as string) === 'Backlog/Input?') {
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            title={val}
+                          >
+                            {val || <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      }
+
+                      // MÊS INPUT (Centralizada)
+                      if (colKey === 'Mês Input') {
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            title={val}
+                          >
+                            {val || <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      }
+
+                      // TIPO(CARTEIRA) (Centralizada)
+                      if (
+                        colKey === 'TIPO (Carteira)' ||
+                        (colKey as string) === 'TIPO (Cateira)' ||
+                        (colKey as string) === 'TIPO(CARTEIRA)'
+                      ) {
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
