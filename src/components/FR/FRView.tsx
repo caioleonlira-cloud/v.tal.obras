@@ -21,6 +21,13 @@ import { useData } from '../../context/DataContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
 import { exportarFRParaExcel } from '../../utils/excel';
 import { formatCurrency, parseFRValor } from '../../utils/currency';
+import { parseMesAnoSortKey } from '../../utils/monthUtils';
+import {
+  getFRFilterValue,
+  matchesFRFilter,
+  sortFilterOptions,
+  BLANK_FILTER_OPTION,
+} from '../../utils/filterUtils';
 import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -45,39 +52,6 @@ export const FRView: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(25);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Unique options for multi-selects
-  const ufOptions = useMemo(() => {
-    const set = new Set<string>();
-    frRegistros.forEach((r) => {
-      if (r.UF) set.add(r.UF.trim().toUpperCase());
-    });
-    return Array.from(set).sort();
-  }, [frRegistros]);
-
-  const regOptions = useMemo(() => {
-    const set = new Set<string>();
-    frRegistros.forEach((r) => {
-      if (r.REG) set.add(r.REG.trim().toUpperCase());
-    });
-    return Array.from(set).sort();
-  }, [frRegistros]);
-
-  const mesOptions = useMemo(() => {
-    const set = new Set<string>();
-    frRegistros.forEach((r) => {
-      if (r.Mês) set.add(r.Mês.trim());
-    });
-    return Array.from(set).sort();
-  }, [frRegistros]);
-
-  const operacaoOptions = useMemo(() => {
-    const set = new Set<string>();
-    frRegistros.forEach((r) => {
-      if (r['DC MIGRADA/OPERAÇÃO']) set.add(r['DC MIGRADA/OPERAÇÃO'].trim());
-    });
-    return Array.from(set).sort();
-  }, [frRegistros]);
-
   // Helper to parse DD/MM/YYYY into timestamp for range comparison
   const parseDateToTimestamp = (dateStr: string): number | null => {
     if (!dateStr) return null;
@@ -93,65 +67,138 @@ export const FRView: React.FC = () => {
     return isNaN(iso) ? null : iso;
   };
 
-  // Filtered dataset
-  const filteredData = useMemo(() => {
-    let result = frRegistros;
+  // Helper for correlated filtering
+  const matchesFRFilterSubset = (
+    item: FRRegistro,
+    excludeKey?: 'UF' | 'REG' | 'MES' | 'OPERACAO'
+  ) => {
+    if (!item) return false;
 
-    // 1. Text Search (DC-M, FR, Nº MEDIÇÃO, Nº PEDIDO, LOCALIDADE DE PRESTAÇÃO, CENTRO)
+    // 1. Text Search (DC-M, FR, Nº MEDIÇÃO, Nº PEDIDO, LOCALIDADE DE PRESTAÇÃO, CENTRO, UF)
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      result = result.filter((r) => {
-        return (
-          (r['DC-M'] && r['DC-M'].toLowerCase().includes(term)) ||
-          (r.FR && r.FR.toLowerCase().includes(term)) ||
-          (r['Nº MEDIÇÃO'] && r['Nº MEDIÇÃO'].toLowerCase().includes(term)) ||
-          (r['Nº PEDIDO'] && r['Nº PEDIDO'].toLowerCase().includes(term)) ||
-          (r['LOCALIDADE DE PRESTAÇÃO'] && r['LOCALIDADE DE PRESTAÇÃO'].toLowerCase().includes(term)) ||
-          (r.CENTRO && r.CENTRO.toLowerCase().includes(term)) ||
-          (r.UF && r.UF.toLowerCase().includes(term))
-        );
-      });
+      const match =
+        (item['DC-M'] && item['DC-M'].toLowerCase().includes(term)) ||
+        (item.FR && item.FR.toLowerCase().includes(term)) ||
+        (item['Nº MEDIÇÃO'] && item['Nº MEDIÇÃO'].toLowerCase().includes(term)) ||
+        (item['Nº PEDIDO'] && item['Nº PEDIDO'].toLowerCase().includes(term)) ||
+        (item['LOCALIDADE DE PRESTAÇÃO'] && item['LOCALIDADE DE PRESTAÇÃO'].toLowerCase().includes(term)) ||
+        (item.CENTRO && item.CENTRO.toLowerCase().includes(term)) ||
+        (item.UF && item.UF.toLowerCase().includes(term));
+      if (!match) return false;
     }
 
     // 2. UF
-    if (selectedUF.length > 0) {
-      const set = new Set(selectedUF.map((u) => u.toUpperCase()));
-      result = result.filter((r) => r.UF && set.has(r.UF.trim().toUpperCase()));
+    if (excludeKey !== 'UF' && selectedUF.length > 0) {
+      if (!matchesFRFilter(item, 'UF', selectedUF)) return false;
     }
 
     // 3. REG
-    if (selectedREG.length > 0) {
-      const set = new Set(selectedREG.map((reg) => reg.toUpperCase()));
-      result = result.filter((r) => r.REG && set.has(r.REG.trim().toUpperCase()));
+    if (excludeKey !== 'REG' && selectedREG.length > 0) {
+      if (!matchesFRFilter(item, 'REG', selectedREG)) return false;
     }
 
     // 4. Mês
-    if (selectedMes.length > 0) {
-      const set = new Set(selectedMes);
-      result = result.filter((r) => r.Mês && set.has(r.Mês.trim()));
+    if (excludeKey !== 'MES' && selectedMes.length > 0) {
+      if (!matchesFRFilter(item, 'MES', selectedMes)) return false;
     }
 
     // 5. DC MIGRADA/OPERAÇÃO
-    if (selectedOperacao.length > 0) {
-      const set = new Set(selectedOperacao);
-      result = result.filter((r) => r['DC MIGRADA/OPERAÇÃO'] && set.has(r['DC MIGRADA/OPERAÇÃO'].trim()));
+    if (excludeKey !== 'OPERACAO' && selectedOperacao.length > 0) {
+      if (!matchesFRFilter(item, 'OPERACAO', selectedOperacao)) return false;
     }
 
     // 6. Data da Solicitação Range
     if (dataInicio || dataFim) {
       const startTs = dataInicio ? new Date(`${dataInicio}T00:00:00`).getTime() : null;
       const endTs = dataFim ? new Date(`${dataFim}T23:59:59`).getTime() : null;
-
-      result = result.filter((r) => {
-        const rowTs = parseDateToTimestamp(r['DATA DA SOLICITAÇÃO']);
-        if (rowTs === null) return false;
-        if (startTs !== null && rowTs < startTs) return false;
-        if (endTs !== null && rowTs > endTs) return false;
-        return true;
-      });
+      const rowTs = parseDateToTimestamp(item['DATA DA SOLICITAÇÃO']);
+      if (rowTs === null) return false;
+      if (startTs !== null && rowTs < startTs) return false;
+      if (endTs !== null && rowTs > endTs) return false;
     }
 
-    // 7. Sorting
+    return true;
+  };
+
+  // Unique options & counts for multi-selects with (EM BRANCO) support
+  const {
+    ufOptions,
+    ufCounts,
+    regOptions,
+    regCounts,
+    mesOptions,
+    mesCounts,
+    operacaoOptions,
+    operacaoCounts,
+  } = useMemo(() => {
+    const uCounts: Record<string, number> = {};
+    const rCounts: Record<string, number> = {};
+    const mCounts: Record<string, number> = {};
+    const opCounts: Record<string, number> = {};
+
+    let hasBlankUF = false;
+    let hasBlankREG = false;
+    let hasBlankMes = false;
+    let hasBlankOp = false;
+
+    frRegistros.forEach((r) => {
+      // UF
+      const ufVal = getFRFilterValue(r, 'UF');
+      if (ufVal === BLANK_FILTER_OPTION) hasBlankUF = true;
+      if (matchesFRFilterSubset(r, 'UF')) uCounts[ufVal] = (uCounts[ufVal] || 0) + 1;
+      else if (selectedUF.includes(ufVal) && !uCounts[ufVal]) uCounts[ufVal] = 0;
+
+      // REG
+      const regVal = getFRFilterValue(r, 'REG');
+      if (regVal === BLANK_FILTER_OPTION) hasBlankREG = true;
+      if (matchesFRFilterSubset(r, 'REG')) rCounts[regVal] = (rCounts[regVal] || 0) + 1;
+      else if (selectedREG.includes(regVal) && !rCounts[regVal]) rCounts[regVal] = 0;
+
+      // Mês
+      const mesVal = getFRFilterValue(r, 'MES');
+      if (mesVal === BLANK_FILTER_OPTION) hasBlankMes = true;
+      if (matchesFRFilterSubset(r, 'MES')) mCounts[mesVal] = (mCounts[mesVal] || 0) + 1;
+      else if (selectedMes.includes(mesVal) && !mCounts[mesVal]) mCounts[mesVal] = 0;
+
+      // Operação
+      const opVal = getFRFilterValue(r, 'OPERACAO');
+      if (opVal === BLANK_FILTER_OPTION) hasBlankOp = true;
+      if (matchesFRFilterSubset(r, 'OPERACAO')) opCounts[opVal] = (opCounts[opVal] || 0) + 1;
+      else if (selectedOperacao.includes(opVal) && !opCounts[opVal]) opCounts[opVal] = 0;
+    });
+
+    if (hasBlankUF && uCounts[BLANK_FILTER_OPTION] === undefined) uCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankREG && rCounts[BLANK_FILTER_OPTION] === undefined) rCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankMes && mCounts[BLANK_FILTER_OPTION] === undefined) mCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankOp && opCounts[BLANK_FILTER_OPTION] === undefined) opCounts[BLANK_FILTER_OPTION] = 0;
+
+    return {
+      ufOptions: sortFilterOptions(Object.keys(uCounts)),
+      ufCounts: uCounts,
+      regOptions: sortFilterOptions(Object.keys(rCounts)),
+      regCounts: rCounts,
+      mesOptions: sortFilterOptions(Object.keys(mCounts), (a, b) => parseMesAnoSortKey(a) - parseMesAnoSortKey(b)),
+      mesCounts: mCounts,
+      operacaoOptions: sortFilterOptions(Object.keys(opCounts)),
+      operacaoCounts: opCounts,
+    };
+  }, [
+    frRegistros,
+    searchTerm,
+    selectedUF,
+    selectedREG,
+    selectedMes,
+    selectedOperacao,
+    dataInicio,
+    dataFim,
+  ]);
+
+  // Filtered dataset
+  const filteredData = useMemo(() => {
+    let result = frRegistros.filter((r) => matchesFRFilterSubset(r));
+
+    // Sorting
     if (sortField && sortDirection) {
       result = [...result].sort((a, b) => {
         const valA = a[sortField];
@@ -351,6 +398,7 @@ export const FRView: React.FC = () => {
             <MultiSelectFilter
               label="UF"
               options={ufOptions}
+              optionCounts={ufCounts}
               selected={selectedUF}
               onChange={(sel) => {
                 setSelectedUF(sel);
@@ -365,6 +413,7 @@ export const FRView: React.FC = () => {
             <MultiSelectFilter
               label="REG"
               options={regOptions}
+              optionCounts={regCounts}
               selected={selectedREG}
               onChange={(sel) => {
                 setSelectedREG(sel);
@@ -379,6 +428,7 @@ export const FRView: React.FC = () => {
             <MultiSelectFilter
               label="Mês"
               options={mesOptions}
+              optionCounts={mesCounts}
               selected={selectedMes}
               onChange={(sel) => {
                 setSelectedMes(sel);
@@ -393,6 +443,7 @@ export const FRView: React.FC = () => {
             <MultiSelectFilter
               label="Operação"
               options={operacaoOptions}
+              optionCounts={operacaoCounts}
               selected={selectedOperacao}
               onChange={(sel) => {
                 setSelectedOperacao(sel);

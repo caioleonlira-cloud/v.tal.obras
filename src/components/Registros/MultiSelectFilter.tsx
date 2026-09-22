@@ -128,11 +128,29 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
     };
   }, [isOpen]);
 
+  const orderedOptions = useMemo(() => {
+    if (!options.includes('(EM BRANCO)')) return options;
+    return ['(EM BRANCO)', ...options.filter((opt) => opt !== '(EM BRANCO)')];
+  }, [options]);
+
   const filteredOptions = useMemo(() => {
-    if (!search.trim()) return options;
+    if (!search.trim()) return orderedOptions;
     const term = search.toLowerCase().trim();
-    return options.filter((opt) => opt.toLowerCase().includes(term));
-  }, [options, search]);
+    const matched = orderedOptions.filter((opt) => {
+      if (opt.toLowerCase().includes(term)) return true;
+      if (
+        opt === '(EM BRANCO)' &&
+        (term === 'branco' || term === 'vazio' || term === 'sem' || term === 'vazia' || term === 'nulo' || term === 'null')
+      ) {
+        return true;
+      }
+      return false;
+    });
+    if (matched.includes('(EM BRANCO)')) {
+      return ['(EM BRANCO)', ...matched.filter((opt) => opt !== '(EM BRANCO)')];
+    }
+    return matched;
+  }, [orderedOptions, search]);
 
   const handleToggle = (value: string) => {
     if (selected.includes(value)) {
@@ -143,7 +161,7 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   };
 
   const handleSelectAll = () => {
-    onChange([...options]);
+    onChange([...orderedOptions]);
   };
 
   const handleClear = (e?: React.MouseEvent) => {
@@ -155,9 +173,9 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   const triggerLabel = useMemo(() => {
     if (selected.length === 0) return placeholder;
     if (selected.length === 1) return selected[0];
-    if (selected.length === options.length && options.length > 0) return 'Todas';
+    if (selected.length === orderedOptions.length && orderedOptions.length > 0) return 'Todas';
     return `${selected.length} selecionados`;
-  }, [selected, options.length, placeholder]);
+  }, [selected, orderedOptions.length, placeholder]);
 
   // Determine if columnRefName is redundant (identical to label)
   const isRedundantRef = useMemo(() => {
@@ -328,7 +346,12 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
                         >
                           {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                         </div>
-                        <span className="truncate text-[11px]" title={opt}>
+                        <span
+                          className={`truncate text-[11px] ${
+                            opt === '(EM BRANCO)' ? 'italic text-slate-500 font-medium' : ''
+                          }`}
+                          title={opt === '(EM BRANCO)' ? '(EM BRANCO) - Sem preenchimento na planilha' : opt}
+                        >
                           {opt}
                         </span>
                       </div>

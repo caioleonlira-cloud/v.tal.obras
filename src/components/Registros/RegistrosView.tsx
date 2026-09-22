@@ -22,6 +22,14 @@ import {
   isValidDC,
 } from '../../utils/excel';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
+import {
+  getRegistroFilterValue,
+  matchesRegistroFilter,
+  sortFilterOptions,
+  BLANK_FILTER_OPTION,
+  isBlankValue,
+} from '../../utils/filterUtils';
+import { parseMesAnoSortKey } from '../../utils/monthUtils';
 import { RegistroEditModal } from './RegistroEditModal';
 import { HistoricoModal } from './HistoricoModal';
 import { MultiSelectFilter } from './MultiSelectFilter';
@@ -342,79 +350,48 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     }
 
     if (excludeKey !== 'REG' && filterRegional.length > 0) {
-      const regVal = (getRegistroRegional(item) || item.REG || 'RSUL').trim().toUpperCase();
-      if (!filterRegional.includes(regVal)) return false;
+      if (!matchesRegistroFilter(item, 'REG', filterRegional)) return false;
     }
     if (excludeKey !== 'UF' && filterUF.length > 0) {
-      if (!item.UF || !filterUF.includes(item.UF.trim().toUpperCase())) return false;
+      if (!matchesRegistroFilter(item, 'UF', filterUF)) return false;
     }
     if (excludeKey !== 'CARTEIRA' && filterCarteira.length > 0) {
-      const cartVal = getRegistroCarteira(item);
-      if (!cartVal || !filterCarteira.includes(cartVal)) return false;
+      if (!matchesRegistroFilter(item, 'CARTEIRA', filterCarteira)) return false;
     }
     if (excludeKey !== 'TIPO_DC' && filterTipoDC.length > 0) {
-      const tdcVal = getRegistroTipoDC(item);
-      if (!tdcVal || !filterTipoDC.includes(tdcVal)) return false;
+      if (!matchesRegistroFilter(item, 'TIPO_DC', filterTipoDC)) return false;
     }
     if (excludeKey !== 'AGING' && filterAging.length > 0) {
-      if (!item.AGING || !filterAging.includes(item.AGING.trim())) return false;
+      if (!matchesRegistroFilter(item, 'AGING', filterAging)) return false;
     }
     if (excludeKey !== 'STATUS_ATUAL' && filterStatusAtual.length > 0) {
-      if (
-        !item['Status da DC (Atual)'] ||
-        !filterStatusAtual.includes(item['Status da DC (Atual)'].trim())
-      )
-        return false;
+      if (!matchesRegistroFilter(item, 'STATUS_ATUAL', filterStatusAtual)) return false;
     }
     if (excludeKey !== 'STATUS_INFORME' && filterStatusInforme.length > 0) {
-      if (
-        !item['Status Informe (Campo)'] ||
-        !filterStatusInforme.includes(item['Status Informe (Campo)'].trim())
-      )
-        return false;
+      if (!matchesRegistroFilter(item, 'STATUS_INFORME', filterStatusInforme)) return false;
     }
     if (excludeKey !== 'RESPONSAVEL' && filterResponsavel.length > 0) {
-      const respNorm = normalizeResponsavel(item.Responsavel);
-      const match = filterResponsavel.some((fr) => {
-        const frNorm = normalizeResponsavel(fr);
-        if (frNorm === '(EM BRANCO)') {
-          return respNorm === '(EM BRANCO)';
-        }
-        return respNorm.toLowerCase() === fr.toLowerCase();
-      });
-      if (!match) return false;
+      if (!matchesRegistroFilter(item, 'RESPONSAVEL', filterResponsavel)) return false;
     }
     if (excludeKey !== 'TIPO_PROJETO' && filterTipoProjeto.length > 0) {
-      if (!item['Tipo de Projeto'] || !filterTipoProjeto.includes(item['Tipo de Projeto'].trim()))
-        return false;
+      if (!matchesRegistroFilter(item, 'TIPO_PROJETO', filterTipoProjeto)) return false;
     }
     // Ponto 5: Novos filtros Status Med. Parcial e Status Med. Final
     if (excludeKey !== 'STATUS_MED_PARCIAL' && filterStatusMedParcial.length > 0) {
-      const val = (item['Status Med. Parcial'] || '').trim();
-      if (!val || !filterStatusMedParcial.includes(val)) return false;
+      if (!matchesRegistroFilter(item, 'STATUS_MED_PARCIAL', filterStatusMedParcial)) return false;
     }
     if (excludeKey !== 'STATUS_MED_FINAL' && filterStatusMedFinal.length > 0) {
-      const val = (item['Status Med. Final'] || '').trim();
-      if (!val || !filterStatusMedFinal.includes(val)) return false;
+      if (!matchesRegistroFilter(item, 'STATUS_MED_FINAL', filterStatusMedFinal)) return false;
     }
     if (excludeKey !== 'BACKLOG_INPUT' && filterBacklogInput.length > 0) {
-      const val = getRegistroPlanEstruturante(item);
-      if (!val || !filterBacklogInput.includes(val)) return false;
+      if (!matchesRegistroFilter(item, 'BACKLOG_INPUT', filterBacklogInput)) return false;
     }
     if (excludeKey !== 'MES_INPUT' && filterMesInput.length > 0) {
-      const val = getRegistroMesInput(item);
-      if (!val || !filterMesInput.includes(val)) return false;
+      if (!matchesRegistroFilter(item, 'MES_INPUT', filterMesInput)) return false;
     }
     // Ponto 3: Novo filtro Resp. Medição
     if (excludeKey !== 'RESP_MEDICAO' && filterRespMedicao.length > 0) {
-      const respMed = (item['Resp.Medição'] || '').trim();
-      const match = filterRespMedicao.some((frm) => {
-        if (frm === 'Não Atribuído' || frm === 'NÃO ATRIBUÍDO' || frm === 'Sem Resp.') {
-          return !respMed || respMed === '-' || respMed === 'Não Atribuído' || respMed === 'NÃO ATRIBUÍDO';
-        }
-        return respMed.toLowerCase() === frm.toLowerCase();
-      });
-      if (!match) return false;
+      if (!matchesRegistroFilter(item, 'RESP_MEDICAO', filterRespMedicao)) return false;
     }
     // Interactive Value Filters from Dashboard
     if (filterOnlyWithParcial) {
@@ -487,147 +464,166 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     const backlogInpCounts: Record<string, number> = {};
     const respMedCounts: Record<string, number> = {};
 
+    let hasBlankReg = false;
+    let hasBlankUF = false;
+    let hasBlankCart = false;
+    let hasBlankAg = false;
+    let hasBlankStAtual = false;
+    let hasBlankStInf = false;
+    let hasBlankResp = false;
+    let hasBlankProj = false;
+    let hasBlankStMedParc = false;
+    let hasBlankStMedFin = false;
+    let hasBlankTipoDc = false;
+    let hasBlankMesInp = false;
+    let hasBlankBacklog = false;
+    let hasBlankRespMed = false;
+
     registros.forEach((r) => {
+      if (!r || !isValidDC(r.DC)) return;
+
       // 1. REGIONAL
-      const regVal = (getRegistroRegional(r) || r.REG || 'RSUL').trim().toUpperCase();
-      if (regVal && regVal !== 'SEM REGIONAL') {
-        if (matchesFilterSubset(r, 'REG')) {
-          regCounts[regVal] = (regCounts[regVal] || 0) + 1;
-        } else if (filterRegional.includes(regVal) && !regCounts[regVal]) {
-          regCounts[regVal] = 0;
-        }
+      const regVal = getRegistroFilterValue(r, 'REG');
+      if (regVal === BLANK_FILTER_OPTION) hasBlankReg = true;
+      if (matchesFilterSubset(r, 'REG')) {
+        regCounts[regVal] = (regCounts[regVal] || 0) + 1;
+      } else if (filterRegional.includes(regVal) && !regCounts[regVal]) {
+        regCounts[regVal] = 0;
       }
 
       // 2. UF
-      if (r.UF) {
-        const val = r.UF.trim().toUpperCase();
-        if (matchesFilterSubset(r, 'UF')) {
-          uCounts[val] = (uCounts[val] || 0) + 1;
-        } else if (filterUF.includes(val) && !uCounts[val]) {
-          uCounts[val] = 0;
-        }
+      const ufVal = getRegistroFilterValue(r, 'UF');
+      if (ufVal === BLANK_FILTER_OPTION) hasBlankUF = true;
+      if (matchesFilterSubset(r, 'UF')) {
+        uCounts[ufVal] = (uCounts[ufVal] || 0) + 1;
+      } else if (filterUF.includes(ufVal) && !uCounts[ufVal]) {
+        uCounts[ufVal] = 0;
       }
 
       // 3. TIPO (CARTEIRA)
-      const cartVal = getRegistroCarteira(r);
-      if (cartVal) {
-        if (matchesFilterSubset(r, 'CARTEIRA')) {
-          cartCounts[cartVal] = (cartCounts[cartVal] || 0) + 1;
-        } else if (filterCarteira.includes(cartVal) && !cartCounts[cartVal]) {
-          cartCounts[cartVal] = 0;
-        }
+      const cartVal = getRegistroFilterValue(r, 'CARTEIRA');
+      if (cartVal === BLANK_FILTER_OPTION) hasBlankCart = true;
+      if (matchesFilterSubset(r, 'CARTEIRA')) {
+        cartCounts[cartVal] = (cartCounts[cartVal] || 0) + 1;
+      } else if (filterCarteira.includes(cartVal) && !cartCounts[cartVal]) {
+        cartCounts[cartVal] = 0;
       }
 
       // 4. AGING
-      if (r.AGING) {
-        const val = r.AGING.trim();
-        if (matchesFilterSubset(r, 'AGING')) {
-          agCounts[val] = (agCounts[val] || 0) + 1;
-        } else if (filterAging.includes(val) && !agCounts[val]) {
-          agCounts[val] = 0;
-        }
+      const agVal = getRegistroFilterValue(r, 'AGING');
+      if (agVal === BLANK_FILTER_OPTION) hasBlankAg = true;
+      if (matchesFilterSubset(r, 'AGING')) {
+        agCounts[agVal] = (agCounts[agVal] || 0) + 1;
+      } else if (filterAging.includes(agVal) && !agCounts[agVal]) {
+        agCounts[agVal] = 0;
       }
 
       // 5. Status da DC (Atual)
-      if (r['Status da DC (Atual)']) {
-        const val = r['Status da DC (Atual)'].trim();
-        if (matchesFilterSubset(r, 'STATUS_ATUAL')) {
-          stAtualCounts[val] = (stAtualCounts[val] || 0) + 1;
-        } else if (filterStatusAtual.includes(val) && !stAtualCounts[val]) {
-          stAtualCounts[val] = 0;
-        }
+      const stAtualVal = getRegistroFilterValue(r, 'STATUS_ATUAL');
+      if (stAtualVal === BLANK_FILTER_OPTION) hasBlankStAtual = true;
+      if (matchesFilterSubset(r, 'STATUS_ATUAL')) {
+        stAtualCounts[stAtualVal] = (stAtualCounts[stAtualVal] || 0) + 1;
+      } else if (filterStatusAtual.includes(stAtualVal) && !stAtualCounts[stAtualVal]) {
+        stAtualCounts[stAtualVal] = 0;
       }
 
       // 6. Status Informe (Campo)
-      if (r['Status Informe (Campo)']) {
-        const val = r['Status Informe (Campo)'].trim();
-        if (matchesFilterSubset(r, 'STATUS_INFORME')) {
-          stInfCounts[val] = (stInfCounts[val] || 0) + 1;
-        } else if (filterStatusInforme.includes(val) && !stInfCounts[val]) {
-          stInfCounts[val] = 0;
-        }
+      const stInfVal = getRegistroFilterValue(r, 'STATUS_INFORME');
+      if (stInfVal === BLANK_FILTER_OPTION) hasBlankStInf = true;
+      if (matchesFilterSubset(r, 'STATUS_INFORME')) {
+        stInfCounts[stInfVal] = (stInfCounts[stInfVal] || 0) + 1;
+      } else if (filterStatusInforme.includes(stInfVal) && !stInfCounts[stInfVal]) {
+        stInfCounts[stInfVal] = 0;
       }
 
       // 7. Responsável
-      const respVal = normalizeResponsavel(r.Responsavel);
-      if (respVal) {
-        if (matchesFilterSubset(r, 'RESPONSAVEL')) {
-          respCounts[respVal] = (respCounts[respVal] || 0) + 1;
-        } else if (filterResponsavel.includes(respVal) && !respCounts[respVal]) {
-          respCounts[respVal] = 0;
-        }
+      const respVal = getRegistroFilterValue(r, 'RESPONSAVEL');
+      if (respVal === BLANK_FILTER_OPTION) hasBlankResp = true;
+      if (matchesFilterSubset(r, 'RESPONSAVEL')) {
+        respCounts[respVal] = (respCounts[respVal] || 0) + 1;
+      } else if (filterResponsavel.includes(respVal) && !respCounts[respVal]) {
+        respCounts[respVal] = 0;
       }
 
       // 8. Tipo de Projeto
-      if (r['Tipo de Projeto']) {
-        const val = r['Tipo de Projeto'].trim();
-        if (matchesFilterSubset(r, 'TIPO_PROJETO')) {
-          projCounts[val] = (projCounts[val] || 0) + 1;
-        } else if (filterTipoProjeto.includes(val) && !projCounts[val]) {
-          projCounts[val] = 0;
-        }
+      const projVal = getRegistroFilterValue(r, 'TIPO_PROJETO');
+      if (projVal === BLANK_FILTER_OPTION) hasBlankProj = true;
+      if (matchesFilterSubset(r, 'TIPO_PROJETO')) {
+        projCounts[projVal] = (projCounts[projVal] || 0) + 1;
+      } else if (filterTipoProjeto.includes(projVal) && !projCounts[projVal]) {
+        projCounts[projVal] = 0;
       }
 
       // 9. Status Med. Parcial
-      if (r['Status Med. Parcial']) {
-        const val = r['Status Med. Parcial'].trim();
-        if (matchesFilterSubset(r, 'STATUS_MED_PARCIAL')) {
-          stMedParcCounts[val] = (stMedParcCounts[val] || 0) + 1;
-        } else if (filterStatusMedParcial.includes(val) && !stMedParcCounts[val]) {
-          stMedParcCounts[val] = 0;
-        }
+      const stMedParcVal = getRegistroFilterValue(r, 'STATUS_MED_PARCIAL');
+      if (stMedParcVal === BLANK_FILTER_OPTION) hasBlankStMedParc = true;
+      if (matchesFilterSubset(r, 'STATUS_MED_PARCIAL')) {
+        stMedParcCounts[stMedParcVal] = (stMedParcCounts[stMedParcVal] || 0) + 1;
+      } else if (filterStatusMedParcial.includes(stMedParcVal) && !stMedParcCounts[stMedParcVal]) {
+        stMedParcCounts[stMedParcVal] = 0;
       }
 
       // 10. Status Med. Final
-      if (r['Status Med. Final']) {
-        const val = r['Status Med. Final'].trim();
-        if (matchesFilterSubset(r, 'STATUS_MED_FINAL')) {
-          stMedFinCounts[val] = (stMedFinCounts[val] || 0) + 1;
-        } else if (filterStatusMedFinal.includes(val) && !stMedFinCounts[val]) {
-          stMedFinCounts[val] = 0;
-        }
+      const stMedFinVal = getRegistroFilterValue(r, 'STATUS_MED_FINAL');
+      if (stMedFinVal === BLANK_FILTER_OPTION) hasBlankStMedFin = true;
+      if (matchesFilterSubset(r, 'STATUS_MED_FINAL')) {
+        stMedFinCounts[stMedFinVal] = (stMedFinCounts[stMedFinVal] || 0) + 1;
+      } else if (filterStatusMedFinal.includes(stMedFinVal) && !stMedFinCounts[stMedFinVal]) {
+        stMedFinCounts[stMedFinVal] = 0;
       }
 
       // 10.1 Tipo de DC
-      const tdc = getRegistroTipoDC(r);
-      if (tdc) {
-        if (matchesFilterSubset(r, 'TIPO_DC')) {
-          tipoDcCounts[tdc] = (tipoDcCounts[tdc] || 0) + 1;
-        } else if (filterTipoDC.includes(tdc) && !tipoDcCounts[tdc]) {
-          tipoDcCounts[tdc] = 0;
-        }
+      const tdc = getRegistroFilterValue(r, 'TIPO_DC');
+      if (tdc === BLANK_FILTER_OPTION) hasBlankTipoDc = true;
+      if (matchesFilterSubset(r, 'TIPO_DC')) {
+        tipoDcCounts[tdc] = (tipoDcCounts[tdc] || 0) + 1;
+      } else if (filterTipoDC.includes(tdc) && !tipoDcCounts[tdc]) {
+        tipoDcCounts[tdc] = 0;
       }
 
       // 10.2 Mês Input
-      const mi = getRegistroMesInput(r);
-      if (mi) {
-        if (matchesFilterSubset(r, 'MES_INPUT')) {
-          mesInpCounts[mi] = (mesInpCounts[mi] || 0) + 1;
-        } else if (filterMesInput.includes(mi) && !mesInpCounts[mi]) {
-          mesInpCounts[mi] = 0;
-        }
+      const mi = getRegistroFilterValue(r, 'MES_INPUT');
+      if (mi === BLANK_FILTER_OPTION) hasBlankMesInp = true;
+      if (matchesFilterSubset(r, 'MES_INPUT')) {
+        mesInpCounts[mi] = (mesInpCounts[mi] || 0) + 1;
+      } else if (filterMesInput.includes(mi) && !mesInpCounts[mi]) {
+        mesInpCounts[mi] = 0;
       }
 
       // 11. Plan. Estruturante (Backlog/Input?)
-      const pe = getRegistroPlanEstruturante(r);
-      if (pe) {
-        if (matchesFilterSubset(r, 'BACKLOG_INPUT')) {
-          backlogInpCounts[pe] = (backlogInpCounts[pe] || 0) + 1;
-        } else if (filterBacklogInput.includes(pe) && !backlogInpCounts[pe]) {
-          backlogInpCounts[pe] = 0;
-        }
+      const pe = getRegistroFilterValue(r, 'BACKLOG_INPUT');
+      if (pe === BLANK_FILTER_OPTION) hasBlankBacklog = true;
+      if (matchesFilterSubset(r, 'BACKLOG_INPUT')) {
+        backlogInpCounts[pe] = (backlogInpCounts[pe] || 0) + 1;
+      } else if (filterBacklogInput.includes(pe) && !backlogInpCounts[pe]) {
+        backlogInpCounts[pe] = 0;
       }
 
       // 12. Resp. Medição (Ponto 3)
-      if (r['Resp.Medição']) {
-        const val = r['Resp.Medição'].trim();
-        if (matchesFilterSubset(r, 'RESP_MEDICAO')) {
-          respMedCounts[val] = (respMedCounts[val] || 0) + 1;
-        } else if (filterRespMedicao.includes(val) && !respMedCounts[val]) {
-          respMedCounts[val] = 0;
-        }
+      const rm = getRegistroFilterValue(r, 'RESP_MEDICAO');
+      if (rm === BLANK_FILTER_OPTION) hasBlankRespMed = true;
+      if (matchesFilterSubset(r, 'RESP_MEDICAO')) {
+        respMedCounts[rm] = (respMedCounts[rm] || 0) + 1;
+      } else if (filterRespMedicao.includes(rm) && !respMedCounts[rm]) {
+        respMedCounts[rm] = 0;
       }
     });
+
+    // Ensure (EM BRANCO) stays available as an option if any records in the base dataset are empty
+    if (hasBlankReg && regCounts[BLANK_FILTER_OPTION] === undefined) regCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankUF && uCounts[BLANK_FILTER_OPTION] === undefined) uCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankCart && cartCounts[BLANK_FILTER_OPTION] === undefined) cartCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankAg && agCounts[BLANK_FILTER_OPTION] === undefined) agCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankStAtual && stAtualCounts[BLANK_FILTER_OPTION] === undefined) stAtualCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankStInf && stInfCounts[BLANK_FILTER_OPTION] === undefined) stInfCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankResp && respCounts[BLANK_FILTER_OPTION] === undefined) respCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankProj && projCounts[BLANK_FILTER_OPTION] === undefined) projCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankStMedParc && stMedParcCounts[BLANK_FILTER_OPTION] === undefined) stMedParcCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankStMedFin && stMedFinCounts[BLANK_FILTER_OPTION] === undefined) stMedFinCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankTipoDc && tipoDcCounts[BLANK_FILTER_OPTION] === undefined) tipoDcCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankMesInp && mesInpCounts[BLANK_FILTER_OPTION] === undefined) mesInpCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankBacklog && backlogInpCounts[BLANK_FILTER_OPTION] === undefined) backlogInpCounts[BLANK_FILTER_OPTION] = 0;
+    if (hasBlankRespMed && respMedCounts[BLANK_FILTER_OPTION] === undefined) respMedCounts[BLANK_FILTER_OPTION] = 0;
 
     // Ensure configured segmentations are present
     (segmentacoes['STATUS DE OBRA'] || []).forEach((st) => {
@@ -641,43 +637,41 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       }
     });
 
-    const sortNumericOrAlpha = (arr: string[]) => {
-      return [...arr].sort((a, b) => {
-        const numA = parseFloat(a);
-        const numB = parseFloat(b);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-        return a.localeCompare(b);
-      });
+    const sortNumericOrAlpha = (a: string, b: string) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b, 'pt-BR');
     };
 
     return {
-      regionalOptions: Object.keys(regCounts).sort(),
+      regionalOptions: sortFilterOptions(Object.keys(regCounts)),
       regionalCounts: regCounts,
-      ufOptions: Object.keys(uCounts).sort(),
+      ufOptions: sortFilterOptions(Object.keys(uCounts)),
       ufCounts: uCounts,
-      carteiraOptions: Object.keys(cartCounts).sort(),
+      carteiraOptions: sortFilterOptions(Object.keys(cartCounts)),
       carteiraCounts: cartCounts,
-      agingOptions: sortNumericOrAlpha(Object.keys(agCounts)),
+      agingOptions: sortFilterOptions(Object.keys(agCounts), sortNumericOrAlpha),
       agingCounts: agCounts,
-      statusAtualOptions: Object.keys(stAtualCounts).sort(),
+      statusAtualOptions: sortFilterOptions(Object.keys(stAtualCounts)),
       statusAtualCounts: stAtualCounts,
-      statusInformeOptions: Object.keys(stInfCounts).sort(),
+      statusInformeOptions: sortFilterOptions(Object.keys(stInfCounts)),
       statusInformeCounts: stInfCounts,
-      responsavelOptions: Object.keys(respCounts).sort(sortResponsaveis),
+      responsavelOptions: sortFilterOptions(Object.keys(respCounts), sortResponsaveis),
       responsavelCounts: respCounts,
-      tipoProjetoOptions: Object.keys(projCounts).sort(),
+      tipoProjetoOptions: sortFilterOptions(Object.keys(projCounts)),
       tipoProjetoCounts: projCounts,
-      statusMedParcialOptions: Object.keys(stMedParcCounts).sort(),
+      statusMedParcialOptions: sortFilterOptions(Object.keys(stMedParcCounts)),
       statusMedParcialCounts: stMedParcCounts,
-      statusMedFinalOptions: Object.keys(stMedFinCounts).sort(),
+      statusMedFinalOptions: sortFilterOptions(Object.keys(stMedFinCounts)),
       statusMedFinalCounts: stMedFinCounts,
-      backlogInputOptions: Object.keys(backlogInpCounts).sort(),
+      backlogInputOptions: sortFilterOptions(Object.keys(backlogInpCounts)),
       backlogInputCounts: backlogInpCounts,
-      tipoDCOptions: Object.keys(tipoDcCounts).sort(),
+      tipoDCOptions: sortFilterOptions(Object.keys(tipoDcCounts)),
       tipoDCCounts: tipoDcCounts,
-      mesInputOptions: Object.keys(mesInpCounts).sort(),
+      mesInputOptions: sortFilterOptions(Object.keys(mesInpCounts), (a, b) => parseMesAnoSortKey(a) - parseMesAnoSortKey(b)),
       mesInputCounts: mesInpCounts,
-      respMedicaoOptions: Object.keys(respMedCounts).sort(),
+      respMedicaoOptions: sortFilterOptions(Object.keys(respMedCounts)),
       respMedicaoCounts: respMedCounts,
     };
   }, [
@@ -1980,7 +1974,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
 
                       // Regional & UF (UF é centralizada conforme solicitado)
                       if (colKey === 'REG' || colKey === 'UF') {
-                        const cellVal = colKey === 'REG' ? (getRegistroRegional(item) || val || 'RSUL') : val;
+                        const cellVal = colKey === 'REG' ? (getRegistroRegional(item) || val || '') : val;
                         return (
                           <td
                             key={colKey}
