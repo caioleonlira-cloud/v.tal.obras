@@ -820,7 +820,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       const descMatch = (item['Descrição da DC'] || item.Descricao || '')
         .toLowerCase()
         .includes(q);
-      if (!dcMatch && !descMatch) return false;
+      const simulaMatch = (
+        item['Dc Simulação'] ||
+        (item as any)['DC SIMULAÇÃO'] ||
+        (item as any)['DC Simulação'] ||
+        (item as any)['Dc Simulacao'] ||
+        (item as any)['DC SIMULACAO'] ||
+        ''
+      )
+        .toLowerCase()
+        .includes(q);
+      if (!dcMatch && !descMatch && !simulaMatch) return false;
     }
 
     if (excludeKey !== 'REG' && filterRegional.length > 0) {
@@ -1016,21 +1026,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
       if (matchesFilterSubset(r, 'RESP_MEDICAO')) respMedCounts[rmVal] = (respMedCounts[rmVal] || 0) + 1;
       else if (filterRespMedicao.includes(rmVal) && !respMedCounts[rmVal]) respMedCounts[rmVal] = 0;
     });
-
-    if (hasBlankReg && regCounts[BLANK_FILTER_OPTION] === undefined) regCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankUF && uCounts[BLANK_FILTER_OPTION] === undefined) uCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankCart && cartCounts[BLANK_FILTER_OPTION] === undefined) cartCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankTdc && tdcCounts[BLANK_FILTER_OPTION] === undefined) tdcCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankAg && agCounts[BLANK_FILTER_OPTION] === undefined) agCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStAtual && stAtualCounts[BLANK_FILTER_OPTION] === undefined) stAtualCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStInf && stInfCounts[BLANK_FILTER_OPTION] === undefined) stInfCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankResp && respCounts[BLANK_FILTER_OPTION] === undefined) respCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankProj && projCounts[BLANK_FILTER_OPTION] === undefined) projCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStMedParc && stMedParcCounts[BLANK_FILTER_OPTION] === undefined) stMedParcCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStMedFin && stMedFinCounts[BLANK_FILTER_OPTION] === undefined) stMedFinCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankBacklog && backlogInpCounts[BLANK_FILTER_OPTION] === undefined) backlogInpCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankMesInp && mesInpCounts[BLANK_FILTER_OPTION] === undefined) mesInpCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankRespMed && respMedCounts[BLANK_FILTER_OPTION] === undefined) respMedCounts[BLANK_FILTER_OPTION] = 0;
 
     const sortNumericOrAlpha = (a: string, b: string) => {
       const numA = parseFloat(a);
@@ -1706,7 +1701,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                 {/* Search DC */}
                 <div className="w-full min-w-0">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
-                    Buscar DC
+                    Buscar DC/Descrição
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none text-slate-400">
@@ -1715,7 +1710,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
                     <input
                       id="search-dc-dashboard"
                       type="text"
-                      placeholder="Buscar..."
+                      placeholder="DC, Simulação, Descrição..."
+                      title="Buscar por DC, DC Simulação ou Descrição da Obra"
                       value={searchDC}
                       onChange={(e) => setSearchDC(e.target.value)}
                       className="block w-full pl-6 pr-5 py-1 bg-slate-50 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] h-[28px]"

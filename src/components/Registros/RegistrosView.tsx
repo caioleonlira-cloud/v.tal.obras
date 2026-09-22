@@ -138,8 +138,17 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const [filterOnlyWithFaturado, setFilterOnlyWithFaturado] = useState(false);
   const [filterOnlyWithSaldo, setFilterOnlyWithSaldo] = useState(false);
 
-  // 3. Pagination & Sorting (Ponto 3: Persistir ordenação personalizada)
+  // 3. Pagination, Sorting & View Height Mode
   const [currentPage, setCurrentPage] = useState(1);
+  const [tableHeightMode, setTableHeightMode] = useState<'padrao' | 'expandida' | 'maxima'>(() => {
+    try {
+      const saved = localStorage.getItem('vtal_registros_table_height_mode');
+      if (saved === 'padrao' || saved === 'expandida' || saved === 'maxima') return saved;
+    } catch {
+      // ignore
+    }
+    return 'expandida'; // Padrão agora é expandida para mostrar muitas obras simultaneamente
+  });
   const [rowsPerPage, setRowsPerPage] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('vtal_registros_rows_per_page');
@@ -339,12 +348,20 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       return false;
     }
 
-    // 1. Search in DC or Descricao
+    // 1. Search in DC, Descricao or DC Simulação
     if (searchDC.trim()) {
       const term = searchDC.toLowerCase().trim();
       const dcVal = (item.DC || '').toLowerCase();
       const descVal = (item['Descrição da DC'] || item.Descricao || '').toLowerCase();
-      if (!dcVal.includes(term) && !descVal.includes(term)) {
+      const simulaVal = (
+        item['Dc Simulação'] ||
+        (item as any)['DC SIMULAÇÃO'] ||
+        (item as any)['DC Simulação'] ||
+        (item as any)['Dc Simulacao'] ||
+        (item as any)['DC SIMULACAO'] ||
+        ''
+      ).toLowerCase();
+      if (!dcVal.includes(term) && !descVal.includes(term) && !simulaVal.includes(term)) {
         return false;
       }
     }
@@ -608,22 +625,6 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         respMedCounts[rm] = 0;
       }
     });
-
-    // Ensure (EM BRANCO) stays available as an option if any records in the base dataset are empty
-    if (hasBlankReg && regCounts[BLANK_FILTER_OPTION] === undefined) regCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankUF && uCounts[BLANK_FILTER_OPTION] === undefined) uCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankCart && cartCounts[BLANK_FILTER_OPTION] === undefined) cartCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankAg && agCounts[BLANK_FILTER_OPTION] === undefined) agCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStAtual && stAtualCounts[BLANK_FILTER_OPTION] === undefined) stAtualCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStInf && stInfCounts[BLANK_FILTER_OPTION] === undefined) stInfCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankResp && respCounts[BLANK_FILTER_OPTION] === undefined) respCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankProj && projCounts[BLANK_FILTER_OPTION] === undefined) projCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStMedParc && stMedParcCounts[BLANK_FILTER_OPTION] === undefined) stMedParcCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankStMedFin && stMedFinCounts[BLANK_FILTER_OPTION] === undefined) stMedFinCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankTipoDc && tipoDcCounts[BLANK_FILTER_OPTION] === undefined) tipoDcCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankMesInp && mesInpCounts[BLANK_FILTER_OPTION] === undefined) mesInpCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankBacklog && backlogInpCounts[BLANK_FILTER_OPTION] === undefined) backlogInpCounts[BLANK_FILTER_OPTION] = 0;
-    if (hasBlankRespMed && respMedCounts[BLANK_FILTER_OPTION] === undefined) respMedCounts[BLANK_FILTER_OPTION] = 0;
 
     // Ensure configured segmentations are present
     (segmentacoes['STATUS DE OBRA'] || []).forEach((st) => {
@@ -1112,18 +1113,32 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
     }
   }, [currentPage]);
 
-  // Altura máxima calculada para o container de rolagem próprio da tabela (relativo ao viewport)
-  const tableMaxHeight = useMemo(() => {
-    let offset = 245;
-    if (isFiltersExpanded) offset += 105;
-    if (isIndicatorsExpanded) offset += 45;
-    return `calc(100vh - ${offset}px)`;
-  }, [isFiltersExpanded, isIndicatorsExpanded]);
+  // Altura dinâmica e expandida para visualização de mais linhas (obras) simultaneamente
+  const tableHeightStyles = useMemo(() => {
+    switch (tableHeightMode) {
+      case 'padrao':
+        return {
+          maxHeight: 'calc(100vh - 170px)',
+          minHeight: '520px',
+        };
+      case 'maxima':
+        return {
+          maxHeight: 'calc(100vh - 40px)',
+          minHeight: '840px',
+        };
+      case 'expandida':
+      default:
+        return {
+          maxHeight: 'calc(100vh - 85px)',
+          minHeight: '680px',
+        };
+    }
+  }, [tableHeightMode]);
 
   // Render header row com position: sticky nativo relativo ao container de rolagem
   const renderHeaderRow = () => {
     return (
-      <tr className="text-white text-[11px] font-bold uppercase tracking-wider">
+      <tr className="text-white text-[11px] font-bold uppercase tracking-wider bg-[#001e40]">
         {/* Sticky Action Column (100% opaco, fixo no topo e na esquerda) */}
         <th
           style={{
@@ -1134,7 +1149,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             zIndex: 40,
             opacity: 1,
           }}
-          className="py-2.5 px-2 border-r border-b border-slate-700 w-[84px] min-w-[84px] max-w-[84px] text-center"
+          className="py-1.5 px-2 border-r border-b border-[#001428] w-[84px] min-w-[84px] max-w-[84px] text-center"
         >
           Ações
         </th>
@@ -1150,9 +1165,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             ...(freezeDcColumn ? { left: 84 } : {}),
           }}
           onClick={() => handleSort('DC')}
-          className={`py-2.5 px-3 border-r border-b border-slate-700 min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
+          className={`py-1.5 px-2.5 border-r border-b border-[#001428] min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
             freezeDcColumn
-              ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-slate-600'
+              ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-[#001428]'
               : ''
           }`}
         >
@@ -1187,7 +1202,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 opacity: 1,
               }}
               onClick={() => handleSort(colKey)}
-              className={`py-2.5 px-3 hover:bg-[#002046] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[110px] cursor-pointer text-center ${
+              className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap min-w-[110px] cursor-pointer text-center ${
                 colKey === 'REG' || colKey === 'UF' || colKey === 'AGING'
                   ? 'min-w-[80px]'
                   : ''
@@ -1229,7 +1244,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 opacity: 1,
               }}
               onClick={() => handleSort(colKey)}
-              className="py-2.5 px-3 hover:bg-[#002f66] transition-colors border-r border-b border-slate-700/80 whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
+              className="py-1.5 px-2.5 hover:bg-[#002f66] transition-colors border-r border-b border-[#002952] whitespace-nowrap min-w-[130px] cursor-pointer text-cyan-100 font-bold text-center"
             >
               <div className="flex items-center justify-center space-x-1.5">
                 <span className="truncate">{colKey}</span>
@@ -1460,7 +1475,8 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                     setSearchDC(e.target.value);
                     setCurrentPage(1);
                   }}
-                  placeholder="Buscar..."
+                  placeholder="DC, Simulação, Descrição..."
+                  title="Buscar por DC, DC Simulação ou Descrição da Obra"
                   className="block w-full pl-6 pr-5 py-1 bg-slate-50/70 border border-slate-300 rounded-md text-[11px] text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855] transition-all shadow-2xs h-[28px]"
                 />
                 {searchDC && (
@@ -1806,6 +1822,56 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             onShowOnlyEdicao={handleShowOnlyEdicao}
           />
 
+          {/* Seletor de Altura da Tabela (Expandir visualização das obras) */}
+          <div className="flex items-center space-x-0.5 bg-slate-100 border border-slate-300/80 rounded p-0.5 text-[10px]">
+            <span className="text-slate-500 font-semibold px-1 hidden md:inline">Ver:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setTableHeightMode('padrao');
+                try { localStorage.setItem('vtal_registros_table_height_mode', 'padrao'); } catch {}
+              }}
+              className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                tableHeightMode === 'padrao'
+                  ? 'bg-[#002855] text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Altura padrão (~15 linhas visíveis)"
+            >
+              Padrão
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTableHeightMode('expandida');
+                try { localStorage.setItem('vtal_registros_table_height_mode', 'expandida'); } catch {}
+              }}
+              className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                tableHeightMode === 'expandida'
+                  ? 'bg-[#002855] text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Altura expandida (~22 linhas visíveis)"
+            >
+              Expandida
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTableHeightMode('maxima');
+                try { localStorage.setItem('vtal_registros_table_height_mode', 'maxima'); } catch {}
+              }}
+              className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                tableHeightMode === 'maxima'
+                  ? 'bg-[#002855] text-white shadow-2xs'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Altura máxima (~30+ linhas visíveis)"
+            >
+              Máxima
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => setFreezeDcColumn(!freezeDcColumn)}
@@ -1846,14 +1912,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         <div
           ref={tableContainerRef}
           style={{
-            maxHeight: tableMaxHeight,
-            minHeight: '400px',
+            maxHeight: tableHeightStyles.maxHeight,
+            minHeight: tableHeightStyles.minHeight,
           }}
-          className="overflow-y-auto overflow-x-auto relative custom-scrollbar"
+          className="overflow-y-auto overflow-x-auto relative custom-scrollbar transition-all duration-200"
         >
           <table className="w-full text-left text-xs border-separate border-spacing-0">
-            {/* Table Header original com sticky nativo */}
-            <thead className="sticky top-0 z-30 select-none">
+            {/* Table Header original com sticky nativo e fundo sólido */}
+            <thead className="sticky top-0 z-30 select-none bg-[#001e40]">
               {renderHeaderRow()}
             </thead>
 
@@ -1891,7 +1957,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                   >
                     {/* Sticky Action Column (100% opaco, fixo na esquerda) */}
                     <td
-                      className="py-2 px-2 border-r border-b border-slate-200 text-center w-[84px] min-w-[84px] max-w-[84px]"
+                      className="py-1.5 px-2 border-r border-b border-slate-200 text-center w-[84px] min-w-[84px] max-w-[84px]"
                       style={{
                         position: 'sticky',
                         left: 0,
@@ -1937,7 +2003,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                               backgroundColor: '#ffffff',
                             }
                       }
-                      className={`py-2 px-3 font-extrabold text-[#002855] border-r border-b whitespace-nowrap select-text min-w-[130px] ${
+                      className={`py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b whitespace-nowrap select-text min-w-[130px] ${
                         freezeDcColumn
                           ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.18)] border-r-2 border-slate-300'
                           : 'border-slate-200'
@@ -1964,7 +2030,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 font-medium text-slate-700 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 font-medium text-slate-700 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -1978,7 +2044,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className={`py-2 px-3 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text ${
+                            className={`py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text ${
                               colKey === 'UF' ? 'text-center' : ''
                             }`}
                           >
@@ -1994,7 +2060,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text text-center"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 whitespace-nowrap bg-slate-50/30 cursor-default select-text text-center"
                           >
                             {val ? (
                               <span
@@ -2019,7 +2085,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text"
                             title={val}
                           >
                             {numVal > 0 ? (
@@ -2035,7 +2101,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2048,7 +2114,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2061,7 +2127,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-700 font-medium whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2078,7 +2144,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         return (
                           <td
                             key={colKey}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={val}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2090,7 +2156,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                       return (
                         <td
                           key={colKey}
-                          className="py-2 px-3 border-r border-b border-slate-100 text-slate-600 whitespace-nowrap max-w-xs truncate bg-slate-50/20 cursor-default select-text"
+                          className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-600 whitespace-nowrap max-w-xs truncate bg-slate-50/20 cursor-default select-text"
                           title={val}
                         >
                           {val || <span className="text-slate-300">—</span>}
@@ -2108,12 +2174,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-b border-slate-100 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title="Clique para editar este registro"
                           >
                             {val ? (
                               <span
-                                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] border shadow-2xs ${getStatusBadgeClass(
+                                className={`inline-block px-2 py-0.5 rounded-full text-[10px] border shadow-2xs ${getStatusBadgeClass(
                                   val
                                 )}`}
                               >
@@ -2132,7 +2198,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 font-bold text-slate-800 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title="Clique para editar este registro"
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2146,7 +2212,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 max-w-xs truncate bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-700 max-w-xs truncate bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                             title={val || 'Clique para adicionar observação'}
                           >
                             {val || <span className="text-slate-300">—</span>}
@@ -2161,7 +2227,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           <td
                             key={colKey}
                             onClick={() => handleOpenEdit(item)}
-                            className={`py-2 px-3 whitespace-nowrap text-center cursor-pointer transition-colors ${pendenciaHighlightClass}`}
+                            className={`py-1.5 px-2.5 whitespace-nowrap text-center cursor-pointer transition-colors ${pendenciaHighlightClass}`}
                             title={`Clique para editar este registro (${colKey}: ${val})`}
                           >
                             <span className="font-bold text-[11px]">{val}</span>
@@ -2174,7 +2240,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         <td
                           key={colKey}
                           onClick={() => handleOpenEdit(item)}
-                          className="py-2 px-3 border-r border-b border-slate-100 text-slate-700 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
+                          className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-700 whitespace-nowrap bg-blue-50/20 text-center cursor-pointer hover:bg-blue-100/50 transition-colors"
                           title="Clique para editar este registro"
                         >
                           {val ? (
@@ -2193,9 +2259,9 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         </div>
 
         {/* Table Bottom Pagination Bar */}
-        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-          {/* Row count info */}
-          <div className="flex items-center space-x-3">
+        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Row count info & Table height control */}
+          <div className="flex items-center space-x-3 flex-wrap gap-y-1.5">
             <div className="flex items-center space-x-1.5 text-slate-600">
               <span className="text-[11px]">Linhas por página:</span>
               <select
@@ -2218,6 +2284,57 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 <option value={200}>200</option>
                 <option value={500}>500</option>
               </select>
+            </div>
+
+            <span className="text-slate-300">|</span>
+
+            {/* Altura da tela */}
+            <div className="flex items-center space-x-1 text-slate-600">
+              <span className="text-[11px]">Altura na tela:</span>
+              <div className="inline-flex rounded-md shadow-2xs border border-slate-300 bg-white p-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTableHeightMode('padrao');
+                    try { localStorage.setItem('vtal_registros_table_height_mode', 'padrao'); } catch {}
+                  }}
+                  className={`px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                    tableHeightMode === 'padrao'
+                      ? 'bg-[#002855] text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Padrão
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTableHeightMode('expandida');
+                    try { localStorage.setItem('vtal_registros_table_height_mode', 'expandida'); } catch {}
+                  }}
+                  className={`px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                    tableHeightMode === 'expandida'
+                      ? 'bg-[#002855] text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Expandida
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTableHeightMode('maxima');
+                    try { localStorage.setItem('vtal_registros_table_height_mode', 'maxima'); } catch {}
+                  }}
+                  className={`px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                    tableHeightMode === 'maxima'
+                      ? 'bg-[#002855] text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Máxima
+                </button>
+              </div>
             </div>
 
             <span className="text-slate-300">|</span>

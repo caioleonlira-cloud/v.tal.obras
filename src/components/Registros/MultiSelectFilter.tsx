@@ -129,9 +129,16 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
   }, [isOpen]);
 
   const orderedOptions = useMemo(() => {
-    if (!options.includes('(EM BRANCO)')) return options;
-    return ['(EM BRANCO)', ...options.filter((opt) => opt !== '(EM BRANCO)')];
-  }, [options]);
+    // Hide (EM BRANCO) if its count is 0 and it is not currently selected
+    const validOptions = options.filter((opt) => {
+      if (opt === '(EM BRANCO)' && optionCounts && optionCounts[opt] === 0 && !selected.includes(opt)) {
+        return false;
+      }
+      return true;
+    });
+    if (!validOptions.includes('(EM BRANCO)')) return validOptions;
+    return ['(EM BRANCO)', ...validOptions.filter((opt) => opt !== '(EM BRANCO)')];
+  }, [options, optionCounts, selected]);
 
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return orderedOptions;
