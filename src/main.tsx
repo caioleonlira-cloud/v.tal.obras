@@ -6,6 +6,9 @@ import './index.css';
 
 // Previne que rejeições de promessas não capturadas (ex: Firebase offline ou aborts) quebrem a aplicação
 if (typeof window !== 'undefined') {
+  if ('scrollRestoration' in window.history) {
+    window.history.scrollRestoration = 'manual';
+  }
   window.addEventListener('unhandledrejection', (event) => {
     console.warn('Unhandled Promise Rejection prevenida:', event.reason);
     // Se o erro for de conexão, cota ou abort do Firebase, previne o popup do browser

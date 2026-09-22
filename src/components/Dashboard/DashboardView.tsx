@@ -700,6 +700,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
   const handleNavigateWithDashboardFilters = (extraFilters: RegistrosFilterPayload) => {
     if (!onNavigateToRegistros) return;
 
+    // Salva a posição exata da barra de rolagem vertical no momento exato do clique (antes de qualquer navegação)
+    const currentY =
+      window.pageYOffset ||
+      window.scrollY ||
+      document.documentElement.scrollTop ||
+      document.body.scrollTop ||
+      0;
+    if (currentY > 0) {
+      try {
+        sessionStorage.setItem('vtal_dashboard_scroll_pos', String(currentY));
+      } catch (e) {}
+    }
+
     // 1. Gather all active dashboard filters
     const payload: RegistrosFilterPayload = {};
 

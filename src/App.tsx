@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
 import { isFirebaseConfigured } from './lib/firebase';
@@ -23,10 +23,138 @@ const MainLayout: React.FC = () => {
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
   const [registrosInitialFilters, setRegistrosInitialFilters] = useState<RegistrosFilterPayload | null>(null);
 
+  // Memorização da posição de rolagem vertical do Dashboard para retorno exato
+  const dashboardScrollPosRef = useRef<number>(0);
+  const isNavigatingAwayRef = useRef<boolean>(false);
+
+  // Rastreia e grava a posição da barra de rolagem do Dashboard em tempo real
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+
+    isNavigatingAwayRef.current = false;
+
+    const handleScroll = () => {
+      if (isNavigatingAwayRef.current) return;
+      const currentY =
+        window.pageYOffset ||
+        window.scrollY ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+
+      if (currentY > 0) {
+        dashboardScrollPosRef.current = currentY;
+        try {
+          sessionStorage.setItem('vtal_dashboard_scroll_pos', String(currentY));
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [activeTab]);
+
+  // Ao retornar para o Dashboard, restaura a barra de rolagem exatamente onde o usuário estava
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      isNavigatingAwayRef.current = false;
+
+      let targetY = dashboardScrollPosRef.current;
+      if (!targetY || targetY <= 0) {
+        try {
+          const stored = sessionStorage.getItem('vtal_dashboard_scroll_pos');
+          if (stored) targetY = Number(stored);
+        } catch (e) {}
+      }
+
+      if (targetY && targetY > 0) {
+        let attempts = 0;
+        const maxAttempts = 35; // Mantém tentativa por ~1 segundo enquanto o layout reflete todas as tabelas
+
+        const restoreScroll = () => {
+          attempts++;
+
+          window.scrollTo({ top: targetY, behavior: 'instant' });
+          if (document.documentElement) {
+            document.documentElement.scrollTop = targetY;
+          }
+          if (document.body) {
+            document.body.scrollTop = targetY;
+          }
+
+          const currentY =
+            window.pageYOffset ||
+            window.scrollY ||
+            document.documentElement.scrollTop ||
+            document.body.scrollTop ||
+            0;
+
+          // Se alcançou a posição exata (tolerância de 15px) ou esgotou as tentativas
+          if (Math.abs(currentY - targetY) <= 15 || attempts >= maxAttempts) {
+            clearInterval(timer);
+          }
+        };
+
+        requestAnimationFrame(restoreScroll);
+        const timer = setInterval(restoreScroll, 30);
+        return () => clearInterval(timer);
+      }
+    }
+  }, [activeTab]);
+
   const handleNavigateToRegistros = (filters: RegistrosFilterPayload) => {
+    // 1. Sinaliza para ignorar o scroll disparado pelo scrollTo(0) da navegação
+    isNavigatingAwayRef.current = true;
+
+    // 2. Salva a posição exata da tabela que o usuário estava visualizando antes de mudar de aba
+    const currentY =
+      window.pageYOffset ||
+      window.scrollY ||
+      document.documentElement.scrollTop ||
+      document.body.scrollTop ||
+      0;
+
+    if (currentY > 0) {
+      dashboardScrollPosRef.current = currentY;
+      try {
+        sessionStorage.setItem('vtal_dashboard_scroll_pos', String(currentY));
+      } catch (e) {}
+    }
+
     setRegistrosInitialFilters({ ...filters });
     setActiveTab('registros');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  };
+
+  const handleTabChange = (tab: NavTabType) => {
+    if (activeTab === 'dashboard' && tab !== 'dashboard') {
+      isNavigatingAwayRef.current = true;
+      const currentY =
+        window.pageYOffset ||
+        window.scrollY ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+
+      if (currentY > 0) {
+        dashboardScrollPosRef.current = currentY;
+        try {
+          sessionStorage.setItem('vtal_dashboard_scroll_pos', String(currentY));
+        } catch (e) {}
+      }
+    } else if (tab === 'dashboard') {
+      isNavigatingAwayRef.current = false;
+    }
+
+    if ((tab === 'segmentacoes' || tab === 'usuarios' || tab === 'importacao' || tab === 'fr') && !isAdmin) {
+      setActiveTab('registros');
+    } else {
+      setActiveTab(tab);
+    }
   };
 
   // Garantir que ao autenticar/logar, a tela inicial seja sempre a aba "Registros" (Ponto 4)
@@ -78,13 +206,7 @@ const MainLayout: React.FC = () => {
       {/* Fixed Corporate Header in 2 Lines (TeleMont Style) */}
       <Header
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          if ((tab === 'segmentacoes' || tab === 'usuarios' || tab === 'importacao' || tab === 'fr') && !isAdmin) {
-            setActiveTab('registros');
-          } else {
-            setActiveTab(tab);
-          }
-        }}
+        setActiveTab={handleTabChange}
         onOpenMinhaConta={() => setIsMinhaContaOpen(true)}
         onOpenFirebaseConfig={() => setIsFirebaseConfigOpen(true)}
       />
