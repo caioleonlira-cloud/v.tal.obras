@@ -143,8 +143,12 @@ export const UsuariosView: React.FC = () => {
   };
 
   const handleDeleteUser = async (targetUser: UserProfile) => {
-    if (targetUser.email.toLowerCase() === INITIAL_ADMIN_EMAIL.toLowerCase()) {
-      alert('Não é possível excluir o administrador inicial do sistema.');
+    if (targetUser.uid === currentUser?.uid) {
+      alert('Você não pode excluir o seu próprio usuário enquanto estiver conectado.');
+      return;
+    }
+    if (targetUser.email.toLowerCase() === INITIAL_ADMIN_EMAIL.toLowerCase() && targetUser.status === 'active') {
+      alert('Não é possível excluir o administrador ativo principal do sistema.');
       return;
     }
     if (!confirm(`Deseja realmente remover o usuário "${targetUser.name || targetUser.email}" do sistema?`)) {
@@ -271,7 +275,7 @@ export const UsuariosView: React.FC = () => {
               ) : (
                 filteredUsers.map((u) => {
                   const isCurrent = u.uid === currentUser?.uid;
-                  const isSeedAdmin = u.email.toLowerCase() === INITIAL_ADMIN_EMAIL.toLowerCase();
+                  const isSeedAdmin = u.email.toLowerCase() === INITIAL_ADMIN_EMAIL.toLowerCase() && u.status === 'active';
 
                   return (
                     <tr key={u.uid} className="hover:bg-slate-50/80 transition-colors">

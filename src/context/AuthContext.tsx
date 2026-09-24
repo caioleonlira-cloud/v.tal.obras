@@ -80,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           name: auth.currentUser.displayName || 'Caio Lira',
           role: 'ADM',
           status: 'active',
-          password: '123456',
+          password: 'Ca0109le',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -384,11 +384,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
         if (!hasAdmin) {
           list.unshift({
-            uid: 'admin-caio-lira',
+            uid: '0ffC6qGQq5VhdZv91WcWHOToyd43',
             email: INITIAL_ADMIN_EMAIL,
             name: 'Caio Lira',
             role: 'ADM',
             status: 'active',
+            password: 'Ca0109le',
             createdAt: new Date().toISOString(),
           });
         }
@@ -427,14 +428,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
       }
 
-      // Se for primeira inicialização da conta do administrador com a senha padrão inicial 123456
+      // Se for primeira inicialização da conta do administrador com a senha definida ou padrão inicial
       if (
         (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') &&
         isSystemAdminEmail(cleanEmail) &&
-        cleanPass === '123456'
+        (cleanPass === 'Ca0109le' || cleanPass === '123456')
       ) {
         try {
-          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, '123456');
+          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
           authUser = cred.user;
         } catch {
           throw new Error('E-mail ou senha incorretos.');
