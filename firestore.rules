@@ -2,13 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Regra global de segurança: Bloqueia qualquer acesso por padrão
-    // Remove o allow read, write: if true global
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Funções auxiliares
+    // Funções auxiliares de autenticação
     function isSignedIn() {
       return request.auth != null;
     }
@@ -17,91 +11,92 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Leitura segura dos dados do próprio usuário autenticado
+    // Leitura segura do documento do próprio usuário autenticado
     function getUserDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    // Usuário autenticado com role == 'ADM' verificado em users/{uid}
+    // E-mails de administradores mestres do sistema (insensível a maiúsculas/minúsculas)
+    function isSystemAdmin() {
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email != null && (
+          request.auth.token.email.lower() == 'caio.lira@telemontrms.com.br' ||
+          request.auth.token.email.lower() == 'caioleonlira@gmail.com'
+        );
+    }
+
+    // Administrador do sistema ou usuário com role == 'ADM'
     function isAdmin() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        getUserDoc().data.role == 'ADM';
+      return isSignedIn() && (
+        isSystemAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         getUserDoc().data.get('role', '') == 'ADM')
+      );
     }
 
-    // Usuário autenticado com status == 'active' verificado em users/{uid}
-    function isActive() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        getUserDoc().data.status == 'active';
-    }
-
-    // Coleção de usuários: /users/{uid}
-    // - Exige request.auth != null
-    // - Cada usuário lê apenas seu próprio documento (ADM lê todos)
-    // - Cada usuário edita apenas o próprio documento sem alterar role ou status
-    // - Apenas ADM cria, edita papel/status de outros usuários, ou exclui
-    // - NUNCA aceita o campo password sendo gravado
+    // 1. Coleção de usuários: /users/{uid}
     match /users/{uid} {
       allow get: if isCurrentUser(uid) || isAdmin();
       allow list: if isAdmin();
 
-      allow create: if isAdmin() && !('password' in request.resource.data);
+      allow create: if !('password' in request.resource.data) && (
+        isAdmin() ||
+        (isCurrentUser(uid) &&
+          request.resource.data.get('role', '') == 'PADRAO' &&
+          request.resource.data.get('status', '') == 'active')
+      );
 
       allow update: if !('password' in request.resource.data) && (
+        isAdmin() ||
         (isCurrentUser(uid) &&
-          request.resource.data.role == resource.data.role &&
-          request.resource.data.status == resource.data.status) ||
-        isAdmin()
+          request.resource.data.get('role', '') == resource.data.get('role', '') &&
+          request.resource.data.get('status', '') == resource.data.get('status', ''))
       );
 
       allow delete: if isAdmin();
     }
 
-    // Coleções principais operacionais:
-    // - Usuários com status == 'active' leiam e escrevam (criar e atualizar)
-    // - Apenas usuários com role == 'ADM' excluam qualquer registro
-
+    // 2. Coleção de registros operacionais de obras
     match /registros/{docId} {
-      allow read: if isActive();
-      allow create, update: if isActive();
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
-    match /fr_registros/{docId} {
-      allow read: if isActive();
-      allow create, update: if isActive();
-      allow delete: if isAdmin();
-    }
-
-    match /historico_edicoes/{docId} {
-      allow read: if isActive();
-      allow create, update: if isActive();
-      allow delete: if isAdmin();
-    }
-
-    match /metadata/{docId} {
-      allow read: if isActive();
-      allow create, update: if isActive();
-      allow delete: if isAdmin();
-    }
-
-    // Coleções adicionais de suporte à aplicação
-    match /segmentacoes/{docId} {
-      allow read: if isActive();
-      allow create, update: if isActive();
-      allow delete: if isAdmin();
-    }
-
-    match /online_sessions/{docId} {
+    // 3. Coleção de registros de faturamento/medição (FR)
+    match /fr_registros/{frId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isAdmin();
     }
 
+    // 4. Histórico de auditoria e edições
+    match /historico_edicoes/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 5. Segmentações e opções dinâmicas
+    match /segmentacoes/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 6. Sessões de usuários online
+    match /online_sessions/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 7. Metadados operacionais e de importação
+    match /metadata/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 8. Configurações gerais do sistema
     match /system_config/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // Bloqueio global por padrão para qualquer outra coleção não declarada
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

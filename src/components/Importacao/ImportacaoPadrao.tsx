@@ -147,7 +147,9 @@ export const ImportacaoPadrao: React.FC = () => {
         stack: err?.stack,
         fullError: err,
       });
-      setParseError('Falha durante a gravação no Firestore: ' + (err?.message || 'Erro de comunicação com o banco de dados.'));
+      const codePart = err?.code ? `[${err.code}] ` : '';
+      const fullMsg = err?.message || 'Erro de comunicação com o banco de dados.';
+      setParseError(fullMsg.includes(err?.code) ? fullMsg : `${codePart}${fullMsg}`);
     } finally {
       setExecuting(false);
     }
@@ -298,17 +300,20 @@ export const ImportacaoPadrao: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden space-y-6 p-6">
           {/* Error Banner when execution or validation fails */}
           {parseError && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start justify-between space-x-2 animate-in fade-in duration-200">
-              <div className="flex items-start space-x-2">
-                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="p-4 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start justify-between space-x-2 animate-in fade-in duration-200">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                 <div>
-                  <h5 className="font-bold text-red-800">Falha na Operação</h5>
-                  <p className="mt-0.5">{parseError}</p>
+                  <h5 className="font-bold text-rose-950">Falha na Gravação no Firestore</h5>
+                  <p className="mt-1 font-mono text-xs bg-rose-100/80 p-2.5 rounded-lg border border-rose-200 text-rose-950 whitespace-pre-wrap">{parseError}</p>
+                  <p className="mt-2 text-[11px] text-rose-700 font-semibold">
+                    ⚠️ Atenção: Os dados ficaram salvos temporariamente apenas na memória local deste navegador e NÃO foram sincronizados no banco de dados Firestore.
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setParseError(null)}
-                className="text-red-400 hover:text-red-600 p-1 rounded-md"
+                className="text-rose-400 hover:text-rose-700 p-1 rounded-md cursor-pointer"
                 title="Fechar aviso"
               >
                 <X className="w-4 h-4" />

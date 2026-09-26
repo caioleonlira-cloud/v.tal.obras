@@ -15,11 +15,13 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useData } from '../../context/DataContext';
+import { useAuth } from '../../context/AuthContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
 import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor } from '../../utils/excel';
 
 export const ImportacaoFR: React.FC = () => {
-  const { frRegistros, importInfoFR, executarImportacaoFR } = useData();
+  const { frRegistros, importInfoFR, executarImportacaoFR, sincronizarFRLocalParaFirestore } = useData();
+  const { logout } = useAuth();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState<boolean>(false);
@@ -33,6 +35,29 @@ export const ImportacaoFR: React.FC = () => {
   const [progressMsg, setProgressMsg] = useState<string>('');
   const [executionSuccess, setExecutionSuccess] = useState<boolean>(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [syncingLocal, setSyncingLocal] = useState<boolean>(false);
+
+  const handleRetrySyncLocal = async () => {
+    setSyncingLocal(true);
+    setExecutionError(null);
+    try {
+      const res = await sincronizarFRLocalParaFirestore((pct, msg) => {
+        setProgressPct(pct);
+        setProgressMsg(msg);
+      });
+      if (res.success) {
+        setExecutionSuccess(true);
+        setSelectedFile(null);
+        setParseResult(null);
+      } else {
+        setExecutionError(res.erro || 'Falha ao sincronizar dados com o Firestore.');
+      }
+    } catch (e: any) {
+      setExecutionError(e?.message || 'Erro ao sincronizar com o Firestore.');
+    } finally {
+      setSyncingLocal(false);
+    }
+  };
 
   // Lock body scroll when confirm modal is open
   useEffect(() => {
@@ -104,24 +129,38 @@ export const ImportacaoFR: React.FC = () => {
     setProgressPct(0);
     setProgressMsg('Iniciando substituição da base de FR...');
 
-    const res = await executarImportacaoFR(
-      parseResult.data,
-      selectedFile.name,
-      (pct, msg) => {
-        setProgressPct(pct);
-        setProgressMsg(msg);
-      }
-    );
+    try {
+      const res = await executarImportacaoFR(
+        parseResult.data,
+        selectedFile.name,
+        (pct, msg) => {
+          setProgressPct(pct);
+          setProgressMsg(msg);
+        }
+      );
 
-    setIsExecuting(false);
-    if (res.erro) {
-      setExecutionError(res.erro);
-      setExecutionSuccess(false);
-    } else {
-      setExecutionSuccess(true);
+      setIsExecuting(false);
       setShowConfirmModal(false);
-      setSelectedFile(null);
-      setParseResult(null);
+
+      if (res.erro) {
+        setExecutionError(res.erro);
+        setExecutionSuccess(false);
+      } else {
+        setExecutionSuccess(true);
+        setSelectedFile(null);
+        setParseResult(null);
+      }
+    } catch (err: any) {
+      setIsExecuting(false);
+      setShowConfirmModal(false);
+      const codePart = err?.code ? `${err.code}: ` : '';
+      const fullMsg = err?.message || 'Falha inesperada durante a importação.';
+      setExecutionError(
+        fullMsg.includes('localmente')
+          ? `${codePart}${fullMsg}`
+          : `${codePart}${fullMsg}. Atenção: Os dados ficaram salvos apenas localmente neste navegador e NÃO foram gravados no banco de dados Firestore.`
+      );
+      setExecutionSuccess(false);
     }
   };
 
@@ -263,12 +302,36 @@ export const ImportacaoFR: React.FC = () => {
 
         {/* Execution Error */}
         {executionError && (
-          <div className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start space-x-3">
+          <div className="mt-4 p-4 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start space-x-3 animate-in fade-in duration-200">
             <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Ocorreu uma falha durante a gravação no banco de dados:</p>
-              <p className="mt-1">{executionError}</p>
-              <p className="mt-1 text-[11px] text-rose-700">A operação foi interrompida com segurança e não foi dada como concluída.</p>
+            <div className="flex-1">
+              <p className="font-bold text-rose-950">Falha durante a gravação no banco de dados Firestore:</p>
+              <p className="mt-1 font-mono text-xs bg-rose-100/80 p-2.5 rounded-lg border border-rose-200 text-rose-950 whitespace-pre-wrap">{executionError}</p>
+              <p className="mt-2 text-[11px] text-rose-700 font-semibold">
+                ⚠️ A operação foi interrompida no Firestore. Os dados NÃO foram salvos na nuvem e permaneceram apenas na memória local deste navegador.
+              </p>
+              <div className="mt-3 flex items-center space-x-2 flex-wrap gap-2">
+                {frRegistros.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRetrySyncLocal}
+                    disabled={syncingLocal}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {syncingLocal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    <span>{syncingLocal ? 'Sincronizando com o Firestore...' : 'Tentar sincronizar base local com o Firestore'}</span>
+                  </button>
+                )}
+                {executionError.includes('permission-denied') && (
+                  <button
+                    type="button"
+                    onClick={() => logout()}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-rose-300 hover:bg-rose-100 text-rose-800 rounded-lg text-[11px] font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    <span>Sair e Fazer Login Novamente</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

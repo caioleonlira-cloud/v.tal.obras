@@ -9,7 +9,6 @@ import {
   UserCheck,
   Edit2,
   Trash2,
-  Mail,
   Check,
   X,
   AlertCircle,
@@ -28,7 +27,6 @@ export const UsuariosView: React.FC = () => {
     updateUserStatus,
     updateUserRole,
     updateUserName,
-    sendPasswordReset,
     removeUser,
     logoutAllUsers,
   } = useAuth();
@@ -38,8 +36,6 @@ export const UsuariosView: React.FC = () => {
   const [isLogoutAllModalOpen, setIsLogoutAllModalOpen] = useState(false);
   const [logoutAllLoading, setLogoutAllLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [resetEmailLoading, setResetEmailLoading] = useState(false);
-  const [resetEmailFeedback, setResetEmailFeedback] = useState<string | null>(null);
 
   // New User Form State
   const [newEmail, setNewEmail] = useState('');
@@ -103,21 +99,6 @@ export const UsuariosView: React.FC = () => {
     }
   };
 
-  const handleSendResetLink = async () => {
-    if (!editingUser?.email) return;
-    setResetEmailLoading(true);
-    setResetEmailFeedback(null);
-    try {
-      await sendPasswordReset(editingUser.email);
-      setResetEmailFeedback(`Link de redefinição enviado com sucesso para ${editingUser.email}!`);
-      showFeedback(`Link de redefinição enviado com sucesso para ${editingUser.email}!`);
-    } catch (err: any) {
-      alert('Erro ao enviar link de redefinição: ' + (err.message || err));
-    } finally {
-      setResetEmailLoading(false);
-    }
-  };
-
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -128,7 +109,6 @@ export const UsuariosView: React.FC = () => {
       await updateUserRole(editingUser.uid, editingUser.role);
       await updateUserStatus(editingUser.uid, editingUser.status);
       setEditingUser(null);
-      setResetEmailFeedback(null);
       showFeedback('Perfil do usuário atualizado com sucesso!');
     } catch (err: any) {
       setFormError(err.message || 'Erro ao atualizar usuário.');
@@ -344,7 +324,6 @@ export const UsuariosView: React.FC = () => {
                           <button
                             onClick={() => {
                               setEditingUser({ ...u });
-                              setResetEmailFeedback(null);
                             }}
                             className="p-1.5 text-slate-500 hover:text-[#002855] hover:bg-slate-100 rounded-lg transition-colors"
                             title="Editar usuário"
@@ -528,39 +507,10 @@ export const UsuariosView: React.FC = () => {
                   />
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Redefinição de Senha
-                    </label>
-                    <span className="text-[10px] text-slate-500 font-medium">
-                      Firebase Auth Seguro
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Por segurança, as senhas não são armazenadas no sistema. Para redefinir o acesso deste usuário, envie um link seguro diretamente para o e-mail cadastrado.
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    ℹ️ <strong>Segurança de Acesso:</strong> Por segurança, as senhas não são armazenadas no sistema e não podem ser redefinidas por aqui. Cada usuário deve alterar sua própria senha em <strong>Minha Conta</strong>, dentro do sistema.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleSendResetLink}
-                    disabled={resetEmailLoading}
-                    className="w-full py-2 px-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-lg text-xs font-bold shadow-2xs transition-colors flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {resetEmailLoading ? (
-                      <div className="w-3.5 h-3.5 border-2 border-[#002855] border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <Mail className="w-3.5 h-3.5 text-[#002855]" />
-                        <span>Enviar link de redefinição de senha</span>
-                      </>
-                    )}
-                  </button>
-                  {resetEmailFeedback && (
-                    <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-[11px] flex items-center space-x-1.5 animate-in fade-in">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{resetEmailFeedback}</span>
-                    </div>
-                  )}
                 </div>
 
                 <div>

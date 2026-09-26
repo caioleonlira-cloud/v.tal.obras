@@ -273,6 +273,38 @@ async function commitBatchWithTimeout(
   }
 }
 
+// Helper to format detailed batch errors preserving exact Firebase error code and message
+function formatBatchErrorMessage(
+  err: any,
+  successBatches: number,
+  failedBatches: number,
+  totalBatches: number,
+  context: string
+): string {
+  const code = err?.code ? `${err.code}: ` : (err?.name && err.name !== 'Error' ? `${err.name}: ` : 'permission-denied: ');
+  const message = err?.message || 'Missing or insufficient permissions / Falha na comunicação com o Firestore.';
+  return `${code}${message} (${successBatches} lote(s) gravado(s) com sucesso, ${failedBatches} de ${totalBatches} lote(s) falharam no Firestore durante ${context}). Atenção: Os dados foram salvos temporariamente apenas na memória local deste navegador e NÃO foram gravados no banco de dados Firestore.`;
+}
+
+function createBatchError(
+  err: any,
+  successBatches: number,
+  failedBatches: number,
+  totalBatches: number,
+  context: string
+): Error {
+  const code = err?.code || 'permission-denied';
+  const message = err?.message || 'Missing or insufficient permissions';
+  const fullMsg = formatBatchErrorMessage(err, successBatches, failedBatches, totalBatches, context);
+  const errorObj = new Error(fullMsg);
+  (errorObj as any).code = code;
+  (errorObj as any).originalMessage = message;
+  (errorObj as any).successBatches = successBatches;
+  (errorObj as any).failedBatches = failedBatches;
+  (errorObj as any).totalBatches = totalBatches;
+  return errorObj;
+}
+
 // Helper to clean objects so Firestore never receives `undefined`
 function sanitizeRecord<T extends Record<string, any>>(obj: T): T {
   const clean: any = {};
@@ -1436,6 +1468,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 3. If Firebase is configured, sync to Firestore
     if (isFirebaseConfigured) {
       const BATCH_SIZE = 200;
+      const numBatchesRemovidas = diff.removidas.length > 0 ? Math.ceil(diff.removidas.length / BATCH_SIZE) : 0;
+      const numBatchesNovas = diff.novas.length > 0 ? Math.ceil(diff.novas.length / BATCH_SIZE) : 0;
+      const numBatchesAtualizadas = diff.atualizadas.length > 0 ? Math.ceil(diff.atualizadas.length / BATCH_SIZE) : 0;
+      const totalBatches = numBatchesRemovidas + numBatchesNovas + numBatchesAtualizadas;
+
+      let successBatches = 0;
+      let failedBatches = 0;
+      let lastBatchError: any = null;
 
       // Delete removed records
       if (diff.removidas.length > 0) {
@@ -1450,8 +1490,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
           try {
             await commitBatchWithTimeout(batch, 30000, 'exclusão de registros removidos');
+            successBatches++;
           } catch (err: any) {
-            console.warn('Aviso exclusão Firestore:', err?.message);
+            failedBatches++;
+            lastBatchError = err;
+            console.error('Falha de gravação no Firestore (exclusão lote):', err);
           }
           completedOps += chunk.length;
           reportProgress(`Excluindo registros... (${completedOps}/${totalOps})`);
@@ -1486,8 +1529,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
           try {
             await commitBatchWithTimeout(batch, 30000, 'inserção de novos registros');
+            successBatches++;
           } catch (err: any) {
-            console.warn('Aviso inserção Firestore:', err?.message);
+            failedBatches++;
+            lastBatchError = err;
+            console.error('Falha de gravação no Firestore (inserção lote):', err);
           }
           completedOps += chunk.length;
           reportProgress(`Gravando novos registros... (${completedOps}/${totalOps})`);
@@ -1512,12 +1558,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
           try {
             await commitBatchWithTimeout(batch, 30000, 'atualização de base matriz');
+            successBatches++;
           } catch (err: any) {
-            console.warn('Aviso atualização Firestore:', err?.message);
+            failedBatches++;
+            lastBatchError = err;
+            console.error('Falha de gravação no Firestore (atualização lote):', err);
           }
           completedOps += chunk.length;
           reportProgress(`Atualizando base matriz... (${completedOps}/${totalOps})`);
         }
+      }
+
+      // Se algum lote falhou no Firestore, interrompe e lança o erro real
+      if (failedBatches > 0) {
+        throw createBatchError(
+          lastBatchError,
+          successBatches,
+          failedBatches,
+          totalBatches,
+          'importação padrão da base matriz'
+        );
       }
 
       try {
@@ -1631,6 +1691,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // If Firebase is configured, sync to Firestore
     if (isFirebaseConfigured && validUpdates.length > 0) {
       const BATCH_SIZE = 200;
+      const totalBatches = Math.ceil(validUpdates.length / BATCH_SIZE);
+      let successBatches = 0;
+      let failedBatches = 0;
+      let lastBatchError: any = null;
+
       for (let i = 0; i < validUpdates.length; i += BATCH_SIZE) {
         const chunk = validUpdates.slice(i, i + BATCH_SIZE);
         const batch = writeBatch(db);
@@ -1645,11 +1710,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         try {
           await commitBatchWithTimeout(batch, 30000, 'atualização massiva de registros');
+          successBatches++;
         } catch (e: any) {
-          console.warn('Aviso atualização massiva Firestore:', e?.message);
+          failedBatches++;
+          lastBatchError = e;
+          console.error('Falha de gravação no Firestore (lote massivo):', e);
         }
         completedOps += chunk.length;
         reportProgress(`Gravando registros... (${completedOps}/${totalOps})`);
+      }
+
+      if (failedBatches > 0) {
+        throw createBatchError(
+          lastBatchError,
+          successBatches,
+          failedBatches,
+          totalBatches,
+          'importação massiva de registros'
+        );
       }
 
       try {
@@ -1990,46 +2068,121 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isFirebaseConfigured) {
         const frCol = collection(db, 'fr_registros');
 
-        // 1. Consulta rápida dos documentos anteriores
-        onProgress?.(25, 'Verificando base anterior no Firebase...');
-        const existingSnap = await getDocs(frCol).catch(() => null);
-        const existingDocs = existingSnap ? existingSnap.docs : [];
+        // Verificação prévia: usuário precisa ter role 'ADM' no documento users/{uid} no Firestore
+        onProgress?.(15, 'Validando permissão de Administrador no Firestore...');
+        let currentAuthUser = auth.currentUser;
+        if (!currentAuthUser && typeof (auth as any).authStateReady === 'function') {
+          await (auth as any).authStateReady().catch(() => {});
+          currentAuthUser = auth.currentUser;
+        }
 
-        // 2. Exclusão rápida de documentos anteriores em lotes ordenados
-        if (existingDocs.length > 0) {
-          const BATCH_SIZE_DEL = 250;
-          for (let i = 0; i < existingDocs.length; i += BATCH_SIZE_DEL) {
-            const slice = existingDocs.slice(i, i + BATCH_SIZE_DEL);
-            const pct = 25 + Math.round(((i + slice.length) / existingDocs.length) * 20);
-            onProgress?.(pct, `Substituindo registros anteriores no Firebase (${i + slice.length}/${existingDocs.length})...`);
+        if (!currentAuthUser) {
+          return {
+            total: 0,
+            erro: 'permission-denied: Sessão de autenticação não encontrada no Firebase Authentication. Para gravar dados no Firestore, sua conta precisa estar conectada. Por favor, saia do sistema e faça login novamente com seu e-mail e senha.',
+          };
+        }
 
-            const batch = writeBatch(db);
-            for (const d of slice) {
-              batch.delete(d.ref);
-            }
+        // Renova o token do Firebase Auth para garantir validade ativa da sessão
+        try {
+          await currentAuthUser.getIdToken(true);
+        } catch (tokenErr) {
+          console.warn('Aviso ao renovar token do Firebase Auth:', tokenErr);
+        }
+
+        const realAuthUid = currentAuthUser.uid;
+        const currentEmail = (currentAuthUser.email || user?.email || profile?.email || '').trim().toLowerCase();
+        const isMaster = isSystemAdminEmail(currentEmail) || isSystemAdminEmail(user?.email);
+
+        try {
+          const userDocRef = doc(db, 'users', realAuthUid);
+          let userDocSnap = await getDoc(userDocRef);
+
+          // Se for o administrador do sistema e o documento em users/{uid} ainda não existir ou não tiver role ADM, inicializa-o no Firestore
+          if ((!userDocSnap.exists() || userDocSnap.data()?.role !== 'ADM') && isMaster) {
             try {
-              await commitBatchWithTimeout(batch, 20000, 'limpeza prévia FR');
-            } catch (delErr: any) {
-              console.warn('Aviso na limpeza prévia FR:', delErr?.message);
+              await setDoc(
+                userDocRef,
+                {
+                  uid: realAuthUid,
+                  email: currentEmail,
+                  name: currentAuthUser.displayName || user?.displayName || profile?.name || 'Caio Lira',
+                  role: 'ADM',
+                  status: 'active',
+                  updatedAt: new Date().toISOString(),
+                },
+                { merge: true }
+              );
+              userDocSnap = await getDoc(userDocRef);
+            } catch (initErr) {
+              console.warn('Aviso ao sincronizar documento de administrador no Firestore:', initErr);
+            }
+          }
+
+          const userData = userDocSnap.exists() ? userDocSnap.data() : null;
+          const isAdm = checkIsAdmin() || isMaster || userData?.role === 'ADM' || profile?.role === 'ADM' || isAdmin;
+          if (!isAdm) {
+            return {
+              total: 0,
+              erro: `permission-denied: Permissão insuficiente. Para substituir e excluir a base de FR, o seu usuário (${currentEmail || realAuthUid}) precisa ter perfil de Administrador (role: 'ADM') configurado no documento users/${realAuthUid} no Firestore. Operação cancelada; nenhum dado foi alterado no banco de dados.`,
+            };
+          }
+        } catch (permErr: any) {
+          const isAdmFallback = checkIsAdmin() || isMaster || profile?.role === 'ADM' || isAdmin;
+          if (!isAdmFallback) {
+            const code = permErr?.code || 'permission-denied';
+            const msg = permErr?.message || 'Erro ao validar perfil de administrador no Firestore';
+            return {
+              total: 0,
+              erro: `${code}: ${msg}. Falha ao verificar perfil em users/${realAuthUid}. Os dados foram salvos apenas localmente.`,
+            };
+          }
+        }
+
+        // 1. Consulta dos documentos anteriores para substituição limpa (sem tocá-los ainda)
+        onProgress?.(20, 'Consultando base anterior no Firebase...');
+        let existingDocs: any[] = [];
+        try {
+          const existingSnap = await getDocs(frCol);
+          existingDocs = existingSnap.docs;
+        } catch (getErr: any) {
+          console.warn('Tentativa inicial de leitura de fr_registros falhou, tentando novamente com renovação de token...', getErr);
+          try {
+            await currentAuthUser.getIdToken(true);
+            const retrySnap = await getDocs(frCol);
+            existingDocs = retrySnap.docs;
+          } catch (retryErr: any) {
+            console.warn('Consulta remota de documentos prévios falhou; utilizando referências locais para limpeza posterior se existirem:', retryErr);
+            if (frRegistros && frRegistros.length > 0) {
+              existingDocs = frRegistros
+                .filter((r) => r.id && !r.id.startsWith('fr_local_'))
+                .map((r) => ({ ref: doc(db, 'fr_registros', r.id) } as any));
             }
           }
         }
 
-        // 3. Inserção controlada dos novos registros em lotes estáveis de 250
+        // 2. TUDO OU NADA: Grava TODOS os novos registros em lotes primeiro (com novos IDs)
+        const newlyCreatedRefs: any[] = [];
         const createdList: FRRegistro[] = [];
-        const BATCH_SIZE_INSERT = 250;
-        const totalBatches = Math.ceil(dados.length / BATCH_SIZE_INSERT);
+        const BATCH_SIZE_INSERT = 150;
+        const totalInsertBatches = Math.ceil(dados.length / BATCH_SIZE_INSERT);
+        let insertSuccessBatches = 0;
+        let insertFailedBatches = 0;
+        let insertLastError: any = null;
 
         for (let i = 0; i < dados.length; i += BATCH_SIZE_INSERT) {
           const slice = dados.slice(i, i + BATCH_SIZE_INSERT);
           const currentBatchNum = Math.floor(i / BATCH_SIZE_INSERT) + 1;
-          const pct = 45 + Math.round(((i + slice.length) / dados.length) * 50);
+          const pct = 25 + Math.round(((i + slice.length) / dados.length) * 50);
           onProgress?.(
             pct,
-            `Gravando lote ${currentBatchNum} de ${totalBatches} no Firebase (${i + slice.length}/${dados.length})...`
+            `Gravando novos registros (lote ${currentBatchNum} de ${totalInsertBatches})...`
           );
 
           const batch = writeBatch(db);
+          const batchRefs: any[] = [];
+          const batchItems: FRRegistro[] = [];
+
           for (const item of slice) {
             const newDocRef = doc(frCol);
             const sanitized = sanitizeRecord(item);
@@ -2038,7 +2191,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               _updatedAt: nowIso,
               _updatedBy: updatedBy,
             });
-            createdList.push({
+            batchRefs.push(newDocRef);
+            batchItems.push({
               id: newDocRef.id,
               ...item,
               _updatedAt: nowIso,
@@ -2048,24 +2202,64 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           try {
             await commitBatchWithTimeout(batch, 25000, `gravação lote ${currentBatchNum} FR`);
+            insertSuccessBatches++;
+            newlyCreatedRefs.push(...batchRefs);
+            createdList.push(...batchItems);
           } catch (batchErr: any) {
-            console.warn(`Lote ${currentBatchNum} de FR precisou de reenvio secundário:`, batchErr?.message);
-            // Fallback de reenvio em sub-lotes menores de 50 registros para contornar qualquer limite
-            const SUB_SIZE = 50;
-            for (let s = 0; s < slice.length; s += SUB_SIZE) {
-              const subSlice = slice.slice(s, s + SUB_SIZE);
-              const subBatch = writeBatch(db);
-              for (const item of subSlice) {
-                const subDocRef = doc(frCol);
-                subBatch.set(subDocRef, {
-                  ...sanitizeRecord(item),
-                  _updatedAt: nowIso,
-                  _updatedBy: updatedBy,
-                });
+            insertFailedBatches++;
+            insertLastError = batchErr;
+            console.error(`Falha de gravação no lote ${currentBatchNum} de FR:`, batchErr);
+            break; // Interrompe imediatamente para não comprometer o banco
+          }
+        }
+
+        // 3. Se qualquer lote falhar, cancela, faz rollback dos novos documentos e PRESERVA a base anterior intacta
+        if (insertFailedBatches > 0) {
+          onProgress?.(78, 'Falha na gravação detectada. Desfazendo alterações e restaurando estado seguro...');
+          if (newlyCreatedRefs.length > 0) {
+            const BATCH_SIZE_RB = 150;
+            for (let i = 0; i < newlyCreatedRefs.length; i += BATCH_SIZE_RB) {
+              const slice = newlyCreatedRefs.slice(i, i + BATCH_SIZE_RB);
+              const rbBatch = writeBatch(db);
+              for (const r of slice) {
+                rbBatch.delete(r);
               }
-              await subBatch.commit().catch((subErr) => {
-                console.warn('Erro ao salvar sub-lote no Firebase:', subErr?.message);
-              });
+              try {
+                await commitBatchWithTimeout(rbBatch, 20000, 'rollback lote FR');
+              } catch (rbErr) {
+                console.warn('Aviso no rollback de inserção parcial:', rbErr);
+              }
+            }
+          }
+
+          const errCode = insertLastError?.code || 'write-failed';
+          const errMsg = insertLastError?.message || 'Erro ao gravar novos registros no Firestore';
+          return {
+            total: 0,
+            erro: `Importação cancelada (${errCode}: ${errMsg}). Os registros gravados nesta tentativa foram desfeitos (rollback) e a base anterior de FR foi PRESERVADA INTACTA no Firestore.`,
+          };
+        }
+
+        // 4. Só depois de confirmar que TODOS os novos lotes foram gravados com sucesso, removemos os documentos antigos
+        if (existingDocs.length > 0) {
+          const BATCH_SIZE_DEL = 150;
+          const totalDelBatches = Math.ceil(existingDocs.length / BATCH_SIZE_DEL);
+          let delCount = 0;
+
+          for (let i = 0; i < existingDocs.length; i += BATCH_SIZE_DEL) {
+            const slice = existingDocs.slice(i, i + BATCH_SIZE_DEL);
+            delCount += slice.length;
+            const pct = 75 + Math.round((delCount / existingDocs.length) * 20);
+            onProgress?.(pct, `Substituindo base anterior: limpando registros obsoletos (${delCount}/${existingDocs.length})...`);
+
+            const batch = writeBatch(db);
+            for (const d of slice) {
+              batch.delete(d.ref);
+            }
+            try {
+              await commitBatchWithTimeout(batch, 25000, 'remoção base anterior FR');
+            } catch (delErr: any) {
+              console.warn('Aviso ao remover registro obsoleto anterior:', delErr?.message);
             }
           }
         }
@@ -2077,9 +2271,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           importedBy: updatedBy,
           totalLinhas: totalNew,
         };
-        await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo).catch((metaErr) => {
+        try {
+          await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
+        } catch (metaErr: any) {
           console.warn('Aviso ao gravar metadados de FR:', metaErr?.message);
-        });
+        }
 
         // Atualiza estado e cache local
         setFrRegistros(createdList);
@@ -2111,7 +2307,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { total: totalNew };
     } catch (err: any) {
       console.error('Erro na gravação direta de FR no Firebase:', err);
-      // Fallback de segurança para nunca perder dados do usuário
       if (dados && dados.length > 0) {
         const fallbackNowIso = new Date().toISOString();
         const fallbackUpdatedBy = user?.email || auth?.currentUser?.email || 'ADM';
@@ -2130,12 +2325,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setFrRegistros(localList);
         saveLocalFR(localList);
         setImportInfoFR(metaInfo);
+        const code = err?.code || 'permission-denied';
+        const msg = err?.message || 'Erro de comunicação com o Firestore';
         return {
-          total: dados.length,
-          erro: `Aviso: os dados foram carregados, mas houve lentidão na resposta do Firebase (${err?.message || 'erro de rede'}).`,
+          total: 0,
+          erro: `${code}: ${msg}. Atenção: Os dados foram salvos temporariamente apenas na memória local deste navegador e NÃO foram gravados no servidor Firestore.`,
         };
       }
-      return { total: 0, erro: err?.message || 'Falha ao processar arquivo.' };
+      return { total: 0, erro: `${err?.code || 'error'}: ${err?.message || 'Falha ao processar arquivo.'}` };
     }
   };
 
@@ -2156,78 +2353,159 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedBy = user?.email || auth?.currentUser?.email || 'ADM';
         const frCol = collection(db, 'fr_registros');
 
-        onProgress?.(5, 'Consultando base remota no Firebase...');
-        const existingSnap = await getDocs(frCol);
-        const existingDocs = existingSnap.docs;
-        const totalToDelete = existingDocs.length;
-        const totalNew = localData.length;
-
-        const BATCH_SIZE = 100;
-        let deleted = 0;
-        for (let i = 0; i < existingDocs.length; i += BATCH_SIZE) {
-          const slice = existingDocs.slice(i, i + BATCH_SIZE);
-          const batch = writeBatch(db);
-          for (const d of slice) {
-            batch.delete(d.ref);
-          }
-          try {
-            await commitBatchWithTimeout(batch, 25000, `limpeza pré-sincronização FR (${deleted}/${totalToDelete})`);
-          } catch (delErr: any) {
-            const retryBatch = writeBatch(db);
-            for (const d of slice) retryBatch.delete(d.ref);
-            await retryBatch.commit();
-          }
-          deleted += slice.length;
-          const pct = Math.round((deleted / (totalToDelete + totalNew || 1)) * 35);
-          onProgress?.(pct, `Preparando Firebase: removendo ${deleted} de ${totalToDelete}...`);
+        let currentAuthUser = auth.currentUser;
+        if (!currentAuthUser && typeof (auth as any).authStateReady === 'function') {
+          await (auth as any).authStateReady().catch(() => {});
+          currentAuthUser = auth.currentUser;
         }
 
+        if (!currentAuthUser) {
+          return {
+            success: false,
+            erro: 'permission-denied: Sessão de autenticação não encontrada no Firebase Authentication. Faça login novamente para sincronizar os dados com o servidor.',
+          };
+        }
+
+        try {
+          await currentAuthUser.getIdToken(true);
+        } catch (tokenErr) {
+          console.warn('Aviso ao atualizar token do Firebase Auth:', tokenErr);
+        }
+
+        const realAuthUid = currentAuthUser.uid;
+        const currentEmail = (currentAuthUser.email || user?.email || profile?.email || '').trim().toLowerCase();
+        const isMaster = isSystemAdminEmail(currentEmail) || isSystemAdminEmail(user?.email);
+        const isAdm = checkIsAdmin() || isMaster || profile?.role === 'ADM' || isAdmin;
+
+        if (!isAdm) {
+          return {
+            success: false,
+            erro: `permission-denied: Permissão insuficiente. Para sincronizar a base de FR no Firestore, o seu usuário (${currentEmail || realAuthUid}) precisa ter perfil de Administrador (role: 'ADM').`,
+          };
+        }
+
+        onProgress?.(5, 'Consultando base remota no Firebase...');
+        let existingDocs: any[] = [];
+        try {
+          const existingSnap = await getDocs(frCol);
+          existingDocs = existingSnap.docs;
+        } catch (getErr: any) {
+          console.warn('Tentativa inicial de leitura de fr_registros no sync falhou, tentando novamente com renovação de token...', getErr);
+          try {
+            await currentAuthUser.getIdToken(true);
+            const retrySnap = await getDocs(frCol);
+            existingDocs = retrySnap.docs;
+          } catch (retryErr: any) {
+            console.warn('Consulta remota prévia no sync falhou, usando referências locais se existirem:', retryErr);
+            if (frRegistros && frRegistros.length > 0) {
+              existingDocs = frRegistros
+                .filter((r) => r.id && !r.id.startsWith('fr_local_'))
+                .map((r) => ({ ref: doc(db, 'fr_registros', r.id) } as any));
+            }
+          }
+        }
+        const totalNew = localData.length;
+
+        // 1. TUDO OU NADA: Grava TODOS os registros locais no Firebase primeiro com novos IDs
         let inserted = 0;
+        const newlyCreatedRefs: any[] = [];
         const syncedList: FRRegistro[] = [];
+        const BATCH_SIZE = 150;
+        const totalInsertBatches = Math.ceil(localData.length / BATCH_SIZE);
+        let insertSuccessBatches = 0;
+        let insertFailedBatches = 0;
+        let insertLastError: any = null;
+
         for (let i = 0; i < localData.length; i += BATCH_SIZE) {
           const slice = localData.slice(i, i + BATCH_SIZE);
+          const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
           const batch = writeBatch(db);
+          const batchRefs: any[] = [];
           const batchItems: FRRegistro[] = [];
 
           for (const item of slice) {
-            const docId = item.id && !item.id.startsWith('fr_local_') ? item.id : doc(frCol).id;
-            const newDocRef = doc(db, 'fr_registros', docId);
+            const newDocRef = doc(frCol);
             const sanitized = sanitizeRecord(item);
             batch.set(newDocRef, {
               ...sanitized,
               _updatedAt: item._updatedAt || nowIso,
               _updatedBy: item._updatedBy || updatedBy,
             });
+            batchRefs.push(newDocRef);
             batchItems.push({
               ...item,
-              id: docId,
+              id: newDocRef.id,
               _updatedAt: item._updatedAt || nowIso,
               _updatedBy: item._updatedBy || updatedBy,
             });
           }
 
           try {
-            await commitBatchWithTimeout(batch, 30000, `sincronização lote FR (${inserted}/${totalNew})`);
+            await commitBatchWithTimeout(batch, 25000, `sincronização lote ${currentBatchNum} FR (${inserted}/${totalNew})`);
+            insertSuccessBatches++;
+            newlyCreatedRefs.push(...batchRefs);
+            syncedList.push(...batchItems);
           } catch (insErr: any) {
-            console.warn('Lote de sincronização falhou, tentando gravação direta por item:', insErr?.message);
-            for (const bItem of batchItems) {
+            insertFailedBatches++;
+            insertLastError = insErr;
+            console.error('Falha de gravação Firestore (sincronizarFR):', insErr);
+            break; // Interrompe imediatamente se qualquer lote falhar
+          }
+
+          inserted += slice.length;
+          const pct = 15 + Math.round((inserted / totalNew) * 60);
+          onProgress?.(pct, `Enviando para o Firebase: lote ${currentBatchNum} de ${totalInsertBatches} (${inserted}/${totalNew})...`);
+        }
+
+        // 2. Se qualquer lote falhar, cancela, faz rollback dos novos documentos e PRESERVA a base anterior
+        if (insertFailedBatches > 0) {
+          onProgress?.(78, 'Falha detectada. Desfazendo alterações parciais e restaurando estado anterior seguro...');
+          if (newlyCreatedRefs.length > 0) {
+            const BATCH_SIZE_RB = 150;
+            for (let i = 0; i < newlyCreatedRefs.length; i += BATCH_SIZE_RB) {
+              const slice = newlyCreatedRefs.slice(i, i + BATCH_SIZE_RB);
+              const rbBatch = writeBatch(db);
+              for (const r of slice) {
+                rbBatch.delete(r);
+              }
               try {
-                const dRef = doc(db, 'fr_registros', bItem.id);
-                await setDoc(dRef, {
-                  ...sanitizeRecord(bItem),
-                  _updatedAt: bItem._updatedAt,
-                  _updatedBy: bItem._updatedBy,
-                });
-              } catch (singleErr: any) {
-                console.warn(`Aviso sync item ${bItem.id}:`, singleErr?.message);
+                await commitBatchWithTimeout(rbBatch, 20000, 'rollback lote sync FR');
+              } catch (rbErr) {
+                console.warn('Aviso no rollback sync:', rbErr);
               }
             }
           }
 
-          syncedList.push(...batchItems);
-          inserted += slice.length;
-          const pct = 35 + Math.round((inserted / totalNew) * 60);
-          onProgress?.(pct, `Enviando para o Firebase: ${inserted} de ${totalNew}...`);
+          const errCode = insertLastError?.code || 'sync-failed';
+          const errMsg = insertLastError?.message || 'Erro ao sincronizar registros de FR no Firestore';
+          return {
+            success: false,
+            erro: `Sincronização cancelada (${errCode}: ${errMsg}). Os registros gravados nesta tentativa foram desfeitos (rollback) e a base anterior de FR foi PRESERVADA INTACTA no Firestore.`,
+          };
+        }
+
+        // 3. SÓ DEPOIS que todos os novos registros foram confirmados no Firebase, remove a base antiga
+        if (existingDocs.length > 0) {
+          onProgress?.(80, `Substituindo base anterior: removendo ${existingDocs.length} registros obsoletos...`);
+          const BATCH_SIZE_DEL = 150;
+          let delCount = 0;
+
+          for (let i = 0; i < existingDocs.length; i += BATCH_SIZE_DEL) {
+            const slice = existingDocs.slice(i, i + BATCH_SIZE_DEL);
+            delCount += slice.length;
+            const pct = 80 + Math.round((delCount / existingDocs.length) * 15);
+            onProgress?.(pct, `Removendo registros anteriores obsoletos (${delCount}/${existingDocs.length})...`);
+
+            const batch = writeBatch(db);
+            for (const d of slice) {
+              batch.delete(d.ref);
+            }
+            try {
+              await commitBatchWithTimeout(batch, 25000, 'limpeza base antiga FR');
+            } catch (delErr: any) {
+              console.warn('Aviso ao remover registro obsoleto anterior no sync:', delErr?.message);
+            }
+          }
         }
 
         const metaInfo: ImportInfoFR = importInfoFR || {

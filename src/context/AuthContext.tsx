@@ -10,7 +10,6 @@ import {
   getAuth,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   doc,
@@ -24,7 +23,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { auth, db, firebaseConfig } from '../lib/firebase';
+import { auth, db, firebaseConfig, isFirebaseConfigured } from '../lib/firebase';
 import { UserProfile, UserRole, INITIAL_ADMIN_EMAIL, ADMIN_EMAILS, isSystemAdminEmail } from '../types';
 
 export interface AppUser {
@@ -44,8 +43,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
   logoutAllUsers: () => Promise<void>;
   changePassword: (oldPass: string, newPass: string) => Promise<void>;
-  sendPasswordReset: (email: string) => Promise<void>;
-  updateUserPassword: (emailOrUid: string, newPassword?: string) => Promise<void>;
   createUser: (email: string, pass: string, name: string, role: UserRole) => Promise<void>;
   updateUserStatus: (uid: string, status: 'active' | 'inactive') => Promise<void>;
   updateUserRole: (uid: string, role: UserRole) => Promise<void>;
@@ -263,12 +260,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (saved) {
       try {
         const parsedProfile: UserProfile = JSON.parse(saved);
-        setProfile(parsedProfile);
-        setUser({
-          uid: parsedProfile.uid,
-          email: parsedProfile.email,
-          displayName: parsedProfile.name,
-        });
+        if (parsedProfile && parsedProfile.uid) {
+          setProfile(parsedProfile);
+          setUser({
+            uid: parsedProfile.uid,
+            email: parsedProfile.email,
+            displayName: parsedProfile.name,
+          });
+        }
       } catch (e) {
         localStorage.removeItem(LOCAL_STORAGE_KEY);
       }
@@ -292,6 +291,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         await syncUserProfile(currentUser);
+      } else {
+        // Se o Firebase Auth confirma que não há usuário conectado e o Firebase está ativo,
+        // limpa o estado e o cache local para não manter sessão fantasma desconectada do Firebase
+        if (isFirebaseConfigured) {
+          setUser(null);
+          setProfile(null);
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          localStorage.removeItem(SESSION_DATE_KEY);
+          localStorage.removeItem(SESSION_TIMESTAMP_KEY);
+        }
       }
       setLoading(false);
     });
@@ -309,7 +318,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const todayLocalDate = new Date().toLocaleDateString('sv'); // YYYY-MM-DD in local time
       if (sessionDate && sessionDate !== todayLocalDate) {
         logout();
-        alert('Sua sessão expirou devido à virada do dia (00:00). Por favor, faça login novamente.');
+        console.warn('Sua sessão expirou devido à virada do dia (00:00). Por favor, faça login novamente.');
       }
     };
 
@@ -355,7 +364,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             user.uid !== initiatedByUid
           ) {
             logout();
-            alert('Sua sessão foi encerrada pelo administrador do sistema.');
+            console.warn('Sua sessão foi encerrada pelo administrador do sistema.');
           }
         }
       },
@@ -384,21 +393,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           delete (docData as any).password;
           list.push({ uid: docSnap.id, ...docData });
         });
-
-        // Ensure default admin is present in list if empty
-        const hasAdmin = list.some(
-          (u) => u.email.toLowerCase() === INITIAL_ADMIN_EMAIL.toLowerCase()
-        );
-        if (!hasAdmin) {
-          list.unshift({
-            uid: '0ffC6qGQq5VhdZv91WcWHOToyd43',
-            email: INITIAL_ADMIN_EMAIL,
-            name: 'Caio Lira',
-            role: 'ADM',
-            status: 'active',
-            createdAt: new Date().toISOString(),
-          });
-        }
 
         list.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
         setUsersList(list);
@@ -540,28 +534,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const sendPasswordReset = async (emailOrUid: string) => {
-    if (!isAdmin) {
-      throw new Error('Apenas administradores podem enviar links de redefinição de senha.');
-    }
-    let targetEmail = (emailOrUid || '').trim().toLowerCase();
-    if (!targetEmail.includes('@')) {
-      const found = usersList.find((u) => u.uid === emailOrUid);
-      if (found && found.email) {
-        targetEmail = found.email.toLowerCase();
-      }
-    }
-    if (!targetEmail || !targetEmail.includes('@')) {
-      throw new Error('E-mail do usuário inválido para envio do link.');
-    }
-
-    await sendPasswordResetEmail(auth, targetEmail);
-  };
-
-  const updateUserPassword = async (emailOrUid: string) => {
-    await sendPasswordReset(emailOrUid);
-  };
-
   const createUser = async (email: string, pass: string, name: string, role: UserRole) => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
@@ -678,8 +650,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         logoutAllUsers,
         changePassword,
-        sendPasswordReset,
-        updateUserPassword,
         createUser,
         updateUserStatus,
         updateUserRole,
