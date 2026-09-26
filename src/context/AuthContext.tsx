@@ -10,6 +10,7 @@ import {
   getAuth,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   doc,
@@ -43,7 +44,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   logoutAllUsers: () => Promise<void>;
   changePassword: (oldPass: string, newPass: string) => Promise<void>;
-  updateUserPassword: (uid: string, newPassword: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  updateUserPassword: (emailOrUid: string, newPassword?: string) => Promise<void>;
   createUser: (email: string, pass: string, name: string, role: UserRole) => Promise<void>;
   updateUserStatus: (uid: string, status: 'active' | 'inactive') => Promise<void>;
   updateUserRole: (uid: string, role: UserRole) => Promise<void>;
@@ -65,6 +67,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
 
+  const isAdmin =
+    profile?.role === 'ADM' ||
+    isSystemAdminEmail(user?.email) ||
+    isSystemAdminEmail(profile?.email);
+
   // Seed default admin in Firestore if needed
   const ensureAdminDoc = async () => {
     if (!auth.currentUser || !isSystemAdminEmail(auth.currentUser.email)) {
@@ -80,7 +87,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           name: auth.currentUser.displayName || 'Caio Lira',
           role: 'ADM',
           status: 'active',
-          password: 'Ca0109le',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -151,7 +157,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: existingData?.name || defaultName,
             role: isInitialAdmin ? 'ADM' : (existingData?.role || 'PADRAO'),
             status: existingData?.status || 'active',
-            password: existingData?.password,
             createdAt: existingData?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
@@ -362,9 +367,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [user]);
 
-  // Listen to all users in Firestore in realtime (only when user is authenticated)
+  // Listen to all users in Firestore in realtime (only when user is authenticated and is admin)
   useEffect(() => {
-    if (!user) {
+    if (!user || !isAdmin) {
       setUsersList([]);
       return;
     }
@@ -375,7 +380,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (snapshot) => {
         const list: UserProfile[] = [];
         snapshot.forEach((docSnap) => {
-          list.push({ uid: docSnap.id, ...docSnap.data() } as UserProfile);
+          const docData = docSnap.data() as UserProfile;
+          delete (docData as any).password;
+          list.push({ uid: docSnap.id, ...docData });
         });
 
         // Ensure default admin is present in list if empty
@@ -389,7 +396,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: 'Caio Lira',
             role: 'ADM',
             status: 'active',
-            password: 'Ca0109le',
             createdAt: new Date().toISOString(),
           });
         }
@@ -403,7 +409,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     return () => unsub();
-  }, [user]);
+  }, [user, isAdmin]);
 
   const login = async (email: string, pass: string) => {
     setError(null);
@@ -426,20 +432,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(
           'O provedor Email/Senha não está ativado no Firebase Console. Acesse o Firebase Console > Authentication > Sign-in method e ative o provedor "E-mail/Senha".'
         );
-      }
-
-      // Se for primeira inicialização da conta do administrador com a senha definida ou padrão inicial
-      if (
-        (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') &&
-        isSystemAdminEmail(cleanEmail) &&
-        (cleanPass === 'Ca0109le' || cleanPass === '123456')
-      ) {
-        try {
-          const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
-          authUser = cred.user;
-        } catch {
-          throw new Error('E-mail ou senha incorretos.');
-        }
       } else if (errCode === 'auth/wrong-password' || errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') {
         throw new Error('E-mail ou senha incorretos.');
       } else if (errCode === 'auth/user-disabled') {
@@ -536,35 +528,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Update in Firestore
+    // Update in Firestore (sem salvar campo password)
     const userDocRef = doc(db, 'users', profile.uid);
     await updateDoc(userDocRef, {
-      password: newPass,
       updatedAt: new Date().toISOString(),
     });
 
-    const updated = { ...profile, password: newPass };
+    const updated = { ...profile, updatedAt: new Date().toISOString() };
+    delete (updated as any).password;
     setProfile(updated);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const updateUserPassword = async (uid: string, newPassword: string) => {
+  const sendPasswordReset = async (emailOrUid: string) => {
     if (!isAdmin) {
-      throw new Error('Apenas administradores podem alterar senhas de outros usuários.');
+      throw new Error('Apenas administradores podem enviar links de redefinição de senha.');
     }
-    if (!newPassword || newPassword.length < 6) {
-      throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+    let targetEmail = (emailOrUid || '').trim().toLowerCase();
+    if (!targetEmail.includes('@')) {
+      const found = usersList.find((u) => u.uid === emailOrUid);
+      if (found && found.email) {
+        targetEmail = found.email.toLowerCase();
+      }
+    }
+    if (!targetEmail || !targetEmail.includes('@')) {
+      throw new Error('E-mail do usuário inválido para envio do link.');
     }
 
-    const userDocRef = doc(db, 'users', uid);
-    await updateDoc(userDocRef, {
-      password: newPassword,
-      updatedAt: new Date().toISOString(),
-    });
+    await sendPasswordResetEmail(auth, targetEmail);
+  };
 
-    setUsersList((prev) =>
-      prev.map((u) => (u.uid === uid ? { ...u, password: newPassword } : u))
-    );
+  const updateUserPassword = async (emailOrUid: string) => {
+    await sendPasswordReset(emailOrUid);
   };
 
   const createUser = async (email: string, pass: string, name: string, role: UserRole) => {
@@ -610,12 +605,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: cleanName || cleanEmail.split('@')[0],
       role: role,
       status: 'active',
-      password: pass,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // 2. Save document to Firestore users collection
+    // 2. Save document to Firestore users collection (sem campo password)
     await setDoc(doc(db, 'users', authUid), newUserData);
 
     // Optimistically update local usersList so user appears instantly
@@ -671,11 +665,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await ensureAdminDoc();
   };
 
-  const isAdmin =
-    profile?.role === 'ADM' ||
-    isSystemAdminEmail(user?.email) ||
-    isSystemAdminEmail(profile?.email);
-
   return (
     <AuthContext.Provider
       value={{
@@ -689,6 +678,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         logoutAllUsers,
         changePassword,
+        sendPasswordReset,
         updateUserPassword,
         createUser,
         updateUserStatus,
