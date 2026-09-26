@@ -501,37 +501,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Nenhum usuário conectado.');
     }
 
-    if (auth.currentUser && auth.currentUser.email) {
-      try {
-        const cred = EmailAuthProvider.credential(auth.currentUser.email, oldPass);
-        await reauthenticateWithCredential(auth.currentUser, cred);
-        await updatePassword(auth.currentUser, newPass);
-      } catch (err: any) {
-        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-          throw new Error('A senha atual informada está incorreta.');
-        }
-        if (err.code === 'auth/weak-password') {
-          throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
-        }
-        // Fallback: tentar atualizar direto caso o provedor permita
-        try {
-          await updatePassword(auth.currentUser, newPass);
-        } catch (upErr: any) {
-          console.warn('Firebase Auth updatePassword error:', upErr.message);
-        }
-      }
+    // 1. Passo Principal: Troca de senha no Firebase Authentication
+    if (!auth.currentUser || !auth.currentUser.email) {
+      throw new Error('Sessão de autenticação não encontrada. Por favor, faça login novamente.');
     }
 
-    // Update in Firestore (sem salvar campo password)
-    const userDocRef = doc(db, 'users', profile.uid);
-    await updateDoc(userDocRef, {
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      const cred = EmailAuthProvider.credential(auth.currentUser.email, oldPass);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, newPass);
+    } catch (err: any) {
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        throw new Error('A senha atual informada está incorreta.');
+      }
+      if (err.code === 'auth/weak-password') {
+        throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+      }
+      if (err.code === 'auth/requires-recent-login') {
+        throw new Error('Por motivos de segurança, saia do sistema e faça login novamente antes de alterar a senha.');
+      }
+      throw new Error(err?.message || 'Erro ao atualizar a senha no Firebase Authentication.');
+    }
 
-    const updated = { ...profile, updatedAt: new Date().toISOString() };
+    // 2. Passo de Auditoria: Atualização isolada de updatedAt no Firestore (não bloqueante)
+    const nowIso = new Date().toISOString();
+    try {
+      const userDocRef = doc(db, 'users', profile.uid);
+      await updateDoc(userDocRef, {
+        updatedAt: nowIso,
+      });
+    } catch (firestoreErr) {
+      console.warn('Aviso: Falha não bloqueante ao registrar updatedAt no Firestore (auditoria):', firestoreErr);
+    }
+
+    // Atualiza estado local da aplicação
+    const updated = { ...profile, updatedAt: nowIso };
     delete (updated as any).password;
     setProfile(updated);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    } catch (_) {}
   };
 
   const createUser = async (email: string, pass: string, name: string, role: UserRole) => {
