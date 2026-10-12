@@ -1415,16 +1415,16 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             </div>
           )}
 
-          {/* Botão Exportar Excel */}
+          {/* Botão Exportar .CSV */}
           <button
             id="btn-export-excel"
             onClick={() => exportarRegistrosParaExcel(filteredRegistros, 'VTAL_OBRAS_Export')}
             disabled={filteredRegistros.length === 0}
             className="px-3 py-1 bg-[#002855] hover:bg-[#001e40] text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center space-x-1.5 disabled:opacity-40 cursor-pointer border border-[#002855]"
-            title="Exportar registros filtrados para Excel"
+            title="Exportar registros filtrados para .CSV"
           >
             <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Exportar Excel</span>
+            <span>Exportar .CSV</span>
           </button>
 
           {/* Botão Retrátil de Filtros */}

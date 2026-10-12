@@ -17,7 +17,7 @@ import * as XLSX from 'xlsx';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { FR_COLUMNS, FRRegistro } from '../../types';
-import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor } from '../../utils/excel';
+import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor, downloadModeloImportacaoFR } from '../../utils/excel';
 
 export const ImportacaoFR: React.FC = () => {
   const { frRegistros, importInfoFR, executarImportacaoFR, sincronizarFRLocalParaFirestore } = useData();
@@ -184,12 +184,12 @@ export const ImportacaoFR: React.FC = () => {
           </div>
 
           <button
-            onClick={handleDownloadTemplate}
-            className="inline-flex items-center space-x-2 px-3.5 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs"
-            title="Baixar planilha modelo com as 13 colunas estruturadas"
+            onClick={downloadModeloImportacaoFR}
+            className="inline-flex items-center space-x-2 px-3.5 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Baixar planilha modelo CSV com as 13 colunas estruturadas"
           >
             <Download className="w-4 h-4 text-cyan-700" />
-            <span>Baixar Modelo FR (.xlsx)</span>
+            <span>Baixar Modelo FR (.csv)</span>
           </button>
         </div>
 

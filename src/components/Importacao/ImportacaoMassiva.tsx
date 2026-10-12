@@ -167,10 +167,10 @@ export const ImportacaoMassiva: React.FC = () => {
         <button
           onClick={downloadModeloImportacaoMassiva}
           className="shrink-0 px-4 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
-          title="Baixar modelo oficial .xlsx para atualização massiva do Bloco 2"
+          title="Baixar modelo oficial .csv para atualização massiva do Bloco 2"
         >
           <Download className="w-4 h-4 text-cyan-300" />
-          <span>Baixar Modelo Massivo (.xlsx)</span>
+          <span>Baixar Modelo Massivo (.csv)</span>
         </button>
       </div>
 
@@ -193,7 +193,7 @@ export const ImportacaoMassiva: React.FC = () => {
           className="self-start sm:self-center shrink-0 px-3.5 py-2 bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center space-x-1.5 cursor-pointer"
         >
           <Download className="w-3.5 h-3.5 text-blue-700" />
-          <span>Exportar Template .xlsx</span>
+          <span>Exportar Template .csv</span>
         </button>
       </div>
 
@@ -470,7 +470,7 @@ export const ImportacaoMassiva: React.FC = () => {
                   className="px-3.5 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center space-x-2 self-start sm:self-auto cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Baixar Relatório (.xlsx)</span>
+                  <span>Baixar Relatório (.csv)</span>
                 </button>
               </div>
 

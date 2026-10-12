@@ -331,10 +331,10 @@ export const FRView: React.FC = () => {
               onClick={handleExportExcel}
               disabled={filteredData.length === 0}
               className="px-3.5 py-2 bg-gradient-to-r from-cyan-700 to-cyan-800 hover:from-cyan-800 hover:to-cyan-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
-              title="Exportar dados filtrados para Excel"
+              title="Exportar dados filtrados para .CSV"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Exportar Excel ({filteredData.length})</span>
+              <span>Exportar .CSV ({filteredData.length})</span>
             </button>
           </div>
         </div>
