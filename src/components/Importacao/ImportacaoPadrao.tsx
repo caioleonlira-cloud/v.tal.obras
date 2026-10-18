@@ -4,6 +4,7 @@ import { useData } from '../../context/DataContext';
 import {
   readExcelFile,
   downloadModeloImportacaoPadrao,
+  verificarColunasLeituraMatriz,
 } from '../../utils/excel';
 import {
   RegistroBloco1,
@@ -89,7 +90,7 @@ export const ImportacaoPadrao: React.FC = () => {
     setLoadingFile(true);
 
     try {
-      const { sheetName: loadedSheet, data } = await readExcelFile(selectedFile);
+      const { sheetName: loadedSheet, data, detectedColumns: cols } = await readExcelFile(selectedFile);
       setSheetName(loadedSheet);
 
       if (data.length === 0) {
@@ -105,8 +106,19 @@ export const ImportacaoPadrao: React.FC = () => {
         );
       }
 
+      // 2) Atualização dos registros da matriz:
+      // O sistema só pode atualizar os registros da matriz quando identificar corretamente TODAS as colunas de Leitura da aba "Registros".
+      const checkMatriz = verificarColunasLeituraMatriz(cols);
+      if (!checkMatriz.todasPresentes) {
+        throw new Error(
+          `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+            '\n• '
+          )}`
+        );
+      }
+
       // Run diff analysis against current Firestore database
-      const resultDiff = analisarImportacaoPadrao(data);
+      const resultDiff = analisarImportacaoPadrao(data, cols);
       setDiff(resultDiff);
 
       if (resultDiff.novas.length > 0) {
@@ -255,7 +267,7 @@ export const ImportacaoPadrao: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx, .xls"
+            accept=".csv, .xlsx, .xls"
             onChange={handleFileChange}
             className="hidden"
             id="file-upload-padrao"

@@ -8,11 +8,28 @@ import {
   FRRegistro,
   FR_COLUMNS,
   getRegistroRegional,
+  SegmentacaoKey,
+  COLUNAS_SEGMENTADAS_MASSIVA,
+  ColunaSegmentadaMassiva,
+  MAPA_COLUNA_SEGMENTACAO_KEY,
+  SegmentacaoDivergencia,
+  DEFAULT_SEGMENTATIONS,
 } from '../types';
 import { parseCurrencyValue, parseFRValor, formatDecimalBR, formatBRL, formatCurrency } from './currency';
 import { normalizeMesFR } from './monthUtils';
 
-export { parseCurrencyValue, parseFRValor, normalizeMesFR, formatDecimalBR, formatBRL, formatCurrency };
+export {
+  parseCurrencyValue,
+  parseFRValor,
+  normalizeMesFR,
+  formatDecimalBR,
+  formatBRL,
+  formatCurrency,
+  COLUNAS_SEGMENTADAS_MASSIVA,
+  MAPA_COLUNA_SEGMENTACAO_KEY,
+};
+export type { ColunaSegmentadaMassiva, SegmentacaoDivergencia };
+
 
 /**
  * Normaliza e valida o identificador da DC.
@@ -913,6 +930,172 @@ export function formatIntegerForCSV(val: any): string {
 
 
 /**
+ * Distância de Levenshtein entre duas strings
+ */
+export function levenshteinDistance(a: string, b: string): number {
+  const an = a ? a.length : 0;
+  const bn = b ? b.length : 0;
+  if (an === 0) return bn;
+  if (bn === 0) return an;
+  const matrix: number[][] = Array.from({ length: bn + 1 }, () => new Array(an + 1).fill(0));
+  for (let i = 0; i <= an; i++) matrix[0][i] = i;
+  for (let j = 0; j <= bn; j++) matrix[j][0] = j;
+  for (let j = 1; j <= bn; j++) {
+    for (let i = 1; i <= an; i++) {
+      if (a[i - 1] === b[j - 1]) {
+        matrix[j][i] = matrix[j - 1][i - 1];
+      } else {
+        matrix[j][i] = Math.min(
+          matrix[j - 1][i - 1] + 1, // substitution
+          matrix[j][i - 1] + 1,     // insertion
+          matrix[j - 1][i] + 1      // deletion
+        );
+      }
+    }
+  }
+  return matrix[bn][an];
+}
+
+/**
+ * Localiza a opção cadastrada na Segmentação mais parecida com o valor informado
+ * para apresentar como sugestão na mensagem de erro (sem aplicar automaticamente).
+ */
+export function findBestSuggestion(val: string, options: string[]): string | null {
+  if (!val || !Array.isArray(options) || options.length === 0) return null;
+  const cleanVal = val.trim().toUpperCase();
+  const normVal = cleanVal
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]/g, '');
+
+  let bestMatch: string | null = null;
+  let highestScore = 0;
+
+  for (const opt of options) {
+    if (!opt) continue;
+    const cleanOpt = String(opt).trim().toUpperCase();
+    const normOpt = cleanOpt
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9]/g, '');
+
+    // 1. Casamento direto normalizado (ignora pontos, hífens, espaços, acentos)
+    if (normVal && normVal === normOpt) {
+      return opt;
+    }
+
+    // 2. Pontuação por proximidade de Levenshtein
+    const maxLen = Math.max(cleanVal.length, cleanOpt.length);
+    if (maxLen === 0) continue;
+    const dist = levenshteinDistance(cleanVal, cleanOpt);
+    const score = 1 - dist / maxLen;
+
+    if (score > highestScore && score >= 0.4) {
+      highestScore = score;
+      bestMatch = opt;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
+ * Obtém as opções válidas cadastradas na Segmentação para uma coluna específica.
+ */
+export function getOpcoesSegmentacaoParaColuna(
+  coluna: ColunaSegmentadaMassiva,
+  segmentacoes?: Record<SegmentacaoKey, string[]>
+): string[] {
+  const keys = MAPA_COLUNA_SEGMENTACAO_KEY[coluna];
+  if (!keys) return [];
+  const optionsSet = new Set<string>();
+  keys.forEach((k) => {
+    const list =
+      segmentacoes && Array.isArray(segmentacoes[k]) && segmentacoes[k].length > 0
+        ? segmentacoes[k]
+        : DEFAULT_SEGMENTATIONS[k];
+    if (Array.isArray(list)) {
+      list.forEach((opt) => {
+        if (opt !== undefined && opt !== null) {
+          const trimmed = String(opt).trim();
+          if (trimmed) optionsSet.add(trimmed);
+        }
+      });
+    }
+  });
+  return Array.from(optionsSet);
+}
+
+/**
+ * 1) Validação das colunas segmentadas na importação massiva:
+ * - Colunas: Status Informe (Campo), Resp.Medição, Pendência (Implantação), Pendência (Celula Sap), Pendência (Projetos), Responsavel
+ * - Para cada célula preenchida, o valor precisa existir na aba "Segmentação" EXATAMENTE como está cadastrado
+ *   (mesma grafia, mesma pontuação, mesmos espaços e hífens). Comparação por texto exato, sem corrigir nem aproximar.
+ * - Células vazias são permitidas.
+ * - Retorna array com todas as divergências identificadas.
+ */
+export function validarColunasSegmentadas(
+  linhas: Record<string, any>[],
+  segmentacoes?: Record<SegmentacaoKey, string[]>
+): SegmentacaoDivergencia[] {
+  const divergencias: SegmentacaoDivergencia[] = [];
+
+  linhas.forEach((linha, idx) => {
+    const numLinha = typeof linha._rowNumber === 'number' ? linha._rowNumber : idx + 2;
+
+    COLUNAS_SEGMENTADAS_MASSIVA.forEach((colName) => {
+      let rawVal: any = undefined;
+      for (const k of Object.keys(linha)) {
+        if (k === '_rowNumber') continue;
+        const matched = matchCanonicalColumn(k);
+        if (matched === colName || k.trim().toLowerCase() === colName.toLowerCase()) {
+          rawVal = linha[k];
+          break;
+        }
+      }
+
+      if (rawVal === undefined || rawVal === null) return;
+      const strVal = String(rawVal).trim();
+      if (!strVal) return; // Células vazias são permitidas
+
+      const opcoesValidas = getOpcoesSegmentacaoParaColuna(colName, segmentacoes);
+
+      // Regra estrita: Comparação por texto exato, sem corrigir nem aproximar
+      const existeExato = opcoesValidas.includes(strVal);
+
+      if (!existeExato) {
+        const sugestao = findBestSuggestion(strVal, opcoesValidas);
+        divergencias.push({
+          linha: numLinha,
+          coluna: colName,
+          valorInformado: strVal,
+          mensagem: 'Valor não cadastrado na Segmentação',
+          sugestao,
+        });
+      }
+    });
+  });
+
+  return divergencias;
+}
+
+/**
+ * 2) Verificação das colunas de Leitura para atualização da Base Matriz:
+ * - Todas as 25 colunas de Leitura da aba "Registros" (BLOCO_1_KEYS) devem ser identificadas na planilha com os nomes corretos.
+ * - Retorna se todas estão presentes e a lista de ausentes/divergentes.
+ */
+export function verificarColunasLeituraMatriz(detectedColumns: string[]): {
+  todasPresentes: boolean;
+  ausentes: string[];
+} {
+  const ausentes = BLOCO_1_KEYS.filter((col) => !detectedColumns.includes(col));
+  return {
+    todasPresentes: ausentes.length === 0,
+    ausentes,
+  };
+}
+
+/**
  * Gera e dispara download de arquivo CSV com BOM UTF-8 (\uFEFF)
  */
 export function downloadCSVFile(content: string, filename: string) {
@@ -1066,6 +1249,7 @@ export async function readCSVFile(file: File): Promise<{
     const dcValue = cleanDC(cleanRow['DC']);
     if (hasAnyValue && dcValue) {
       cleanRow['DC'] = dcValue;
+      cleanRow['_rowNumber'] = r + 1;
 
       // 4) DR em Notação Científica: recupera a partir da DC
       if (cleanRow['DR'] !== undefined) {

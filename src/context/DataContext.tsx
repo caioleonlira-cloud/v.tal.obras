@@ -34,8 +34,19 @@ import {
   FRRegistro,
   ImportInfoFR,
   getRegistroRegional,
+  SegmentacaoDivergencia,
+  COLUNAS_SEGMENTADAS_MASSIVA,
+  ColunaSegmentadaMassiva,
 } from '../types';
-import { matchCanonicalColumn, exportarRelatorioHistoricoParaExcel, cleanDC, isValidDC } from '../utils/excel';
+import {
+  matchCanonicalColumn,
+  exportarRelatorioHistoricoParaExcel,
+  cleanDC,
+  isValidDC,
+  validarColunasSegmentadas,
+  verificarColunasLeituraMatriz,
+  getOpcoesSegmentacaoParaColuna,
+} from '../utils/excel';
 
 interface ImportPadraoDiff {
   novas: RegistroBloco1[];
@@ -88,7 +99,10 @@ interface DataContextType {
   limparSegmentacao: (segKey: SegmentacaoKey) => Promise<void>;
   reorderSegmentacaoOpcoes: (segKey: SegmentacaoKey, novasOpcoes: string[]) => Promise<void>;
   restaurarSegmentacoesPadrao: () => Promise<void>;
-  analisarImportacaoPadrao: (planilhaLinhas: Record<string, any>[]) => ImportPadraoDiff;
+  analisarImportacaoPadrao: (
+    planilhaLinhas: Record<string, any>[],
+    detectedColumns?: string[]
+  ) => ImportPadraoDiff;
   executarImportacaoPadrao: (
     diff: ImportPadraoDiff,
     onProgress?: (porcentagem: number, etapa: string) => void
@@ -1277,7 +1291,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // 6. Analisar Importação Padrão (Base Matriz)
-  const analisarImportacaoPadrao = (planilhaLinhas: Record<string, any>[]): ImportPadraoDiff => {
+  const analisarImportacaoPadrao = (
+    planilhaLinhas: Record<string, any>[],
+    detectedColumns?: string[]
+  ): ImportPadraoDiff => {
+    // 2) Atualização dos registros da matriz:
+    // O sistema só pode atualizar os registros da matriz quando identificar corretamente TODAS as colunas de Leitura da aba "Registros".
+    const colsInFile = new Set<string>();
+    if (detectedColumns && detectedColumns.length > 0) {
+      detectedColumns.forEach((c) => colsInFile.add(c));
+    }
+    planilhaLinhas.forEach((linha) => {
+      Object.keys(linha).forEach((k) => {
+        if (k === '_rowNumber') return;
+        const matched = matchCanonicalColumn(k);
+        if (matched) colsInFile.add(matched);
+      });
+    });
+
+    const checkMatriz = verificarColunasLeituraMatriz(Array.from(colsInFile));
+    if (!checkMatriz.todasPresentes) {
+      throw new Error(
+        `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+          '\n• '
+        )}`
+      );
+    }
+
     const dcMapAtual = new Map<string, Registro>();
     registros.forEach((r) => {
       const cleaned = cleanDC(r.DC);
@@ -1600,6 +1640,52 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     planilhaLinhas: Record<string, any>[],
     onProgress?: (porcentagem: number, etapa: string) => void
   ): Promise<ImportMassivaResult> => {
+    if (!isAdminRef.current) {
+      throw new Error(
+        'Você precisa de privilégios de Administrador para confirmar a importação massiva no banco de dados.'
+      );
+    }
+
+    // 1) Validação das colunas segmentadas na importação massiva
+    const divergencias = validarColunasSegmentadas(planilhaLinhas, segmentacoes);
+    if (divergencias.length > 0) {
+      const primeiroErro = divergencias[0];
+      const detalhe = `Linha ${primeiroErro.linha} | Coluna: "${primeiroErro.coluna}" | Valor informado: "${primeiroErro.valorInformado}" — ${primeiroErro.mensagem}${
+        primeiroErro.sugestao ? ` (Sugestão: "${primeiroErro.sugestao}")` : ''
+      }`;
+      throw new Error(
+        `Importação massiva bloqueada: foram encontradas ${divergencias.length} divergência(s) com a aba "Segmentação". Nenhum dado foi gravado.\nExemplo: ${detalhe}`
+      );
+    }
+
+    // 2) Atualização dos registros da matriz na massiva:
+    // O sistema só pode atualizar os registros da matriz quando identificar corretamente TODAS as colunas de Leitura da aba "Registros".
+    const columnsInFile = new Set<string>();
+    planilhaLinhas.forEach((linha) => {
+      Object.keys(linha).forEach((k) => {
+        if (k === '_rowNumber') return;
+        const canonical = matchCanonicalColumn(k);
+        if (canonical && canonical !== 'DC') {
+          columnsInFile.add(canonical);
+        }
+      });
+    });
+
+    const matrizColsInFile = Array.from(columnsInFile).filter((col) =>
+      (BLOCO_1_KEYS as string[]).includes(col)
+    );
+
+    if (matrizColsInFile.length > 0) {
+      const checkMatriz = verificarColunasLeituraMatriz(['DC', ...Array.from(columnsInFile)]);
+      if (!checkMatriz.todasPresentes) {
+        throw new Error(
+          `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+            '\n• '
+          )}`
+        );
+      }
+    }
+
     const dcMapAtual = new Map<string, Registro>();
     registros.forEach((r) => {
       if (r.DC) {
@@ -1626,12 +1712,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Iterate through all columns in the uploaded row
         Object.keys(linha).forEach((rawKey) => {
+          if (rawKey === '_rowNumber') return;
           const canonical = matchCanonicalColumn(rawKey);
           if (canonical && canonical !== 'DC') {
             columnsDetected.add(canonical);
             const val = linha[rawKey];
             if (val !== undefined && val !== null) {
-              camposParaAtualizar[canonical] = typeof val === 'string' ? val.trim() : String(val).trim();
+              const strVal = typeof val === 'string' ? val.trim() : String(val).trim();
+
+              // Se a coluna for uma das 6 com segmentação:
+              if ((COLUNAS_SEGMENTADAS_MASSIVA as readonly string[]).includes(canonical)) {
+                // Célula vazia: não altera o preenchimento existente daquele campo
+                if (!strVal) return;
+                // Valor divergente: não deve alterar o preenchimento existente
+                const opcoesValidas = getOpcoesSegmentacaoParaColuna(
+                  canonical as ColunaSegmentadaMassiva,
+                  segmentacoes
+                );
+                if (!opcoesValidas.includes(strVal)) return;
+              }
+
+              camposParaAtualizar[canonical] = strVal;
             }
           }
         });

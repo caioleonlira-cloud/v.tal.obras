@@ -155,6 +155,39 @@ export const BLOCO_2_SEGMENTATION_MAP: Record<string, SegmentacaoKey | 'date' | 
   'OBS (Medição)': 'text',
 };
 
+/**
+ * Colunas que possuem validação estrita contra a aba Segmentação na Importação Massiva.
+ * Somente estas 6 colunas são validadas contra a Segmentação.
+ */
+export const COLUNAS_SEGMENTADAS_MASSIVA = [
+  'Status Informe (Campo)',
+  'Resp.Medição',
+  'Pendência (Implantação)',
+  'Pendência (Celula Sap)',
+  'Pendência (Projetos)',
+  'Responsavel',
+] as const;
+
+export type ColunaSegmentadaMassiva = (typeof COLUNAS_SEGMENTADAS_MASSIVA)[number];
+
+export const MAPA_COLUNA_SEGMENTACAO_KEY: Record<ColunaSegmentadaMassiva, SegmentacaoKey[]> = {
+  'Status Informe (Campo)': ['STATUS DE OBRA'],
+  'Resp.Medição': ['Resp.Medição (Sul)', 'Resp.Medição'],
+  'Pendência (Implantação)': ['IMPLANTAÇÃO'],
+  'Pendência (Celula Sap)': ['CELULA SAP'],
+  'Pendência (Projetos)': ['PROJETOS'],
+  'Responsavel': ['RESP.'],
+};
+
+export interface SegmentacaoDivergencia {
+  linha: number;
+  coluna: string;
+  valorInformado: string;
+  mensagem: string;
+  sugestao?: string | null;
+}
+
+
 export const DEFAULT_SEGMENTATIONS: Record<SegmentacaoKey, string[]> = {
   'STATUS DE OBRA': [
     'AVALIAR',
