@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   collection,
   doc,
@@ -46,6 +46,7 @@ import {
   validarColunasSegmentadas,
   verificarColunasLeituraMatriz,
   getOpcoesSegmentacaoParaColuna,
+  getSafeFRDocId,
 } from '../utils/excel';
 
 interface ImportPadraoDiff {
@@ -115,10 +116,13 @@ interface DataContextType {
     dados: Omit<FRRegistro, 'id'>[],
     fileName: string,
     onProgress?: (porcentagem: number, etapa: string) => void
-  ) => Promise<{ total: number; erro?: string }>;
+  ) => Promise<{ total: number; totalImportados?: number; totalIgnorados?: number; erro?: string }>;
   sincronizarFRLocalParaFirestore: (
     onProgress?: (porcentagem: number, etapa: string) => void
   ) => Promise<{ success: boolean; total?: number; erro?: string }>;
+  apagarTodaBaseFR: (
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => Promise<{ success: boolean; apagados?: number; restantes?: number; erro?: string }>;
   popularDadosExemplo: () => Promise<void>;
 }
 
@@ -174,7 +178,11 @@ function getLocalStoredFR(): FRRegistro[] {
 function saveLocalFR(list: FRRegistro[]) {
   try {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_FR_KEY, JSON.stringify(list));
+      if (!list || list.length === 0) {
+        localStorage.removeItem(LOCAL_STORAGE_FR_KEY);
+      } else {
+        localStorage.setItem(LOCAL_STORAGE_FR_KEY, JSON.stringify(list));
+      }
     }
   } catch (e) {}
 }
@@ -368,6 +376,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [frRegistros, setFrRegistros] = useState<FRRegistro[]>([]);
+  const frRegistrosRef = useRef<FRRegistro[]>(frRegistros);
+  useEffect(() => {
+    frRegistrosRef.current = frRegistros;
+  }, [frRegistros]);
   const [segmentacoes, setSegmentacoes] = useState<Record<SegmentacaoKey, string[]>>(DEFAULT_SEGMENTATIONS);
   const [lastImportInfo, setLastImportInfo] = useState<ImportMetadata | null>(null);
   const [importInfoFR, setImportInfoFR] = useState<ImportInfoFR | null>(null);
@@ -698,10 +710,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Nuvem tem dados atualizados: atualiza o estado e armazena no cache local
           setFrRegistros(list);
           saveLocalFR(list);
-        } else if (!hasReceivedInitialSnapshot && cachedFR && cachedFR.length > 0) {
-          // A nuvem está vazia, mas esta máquina possui uma base local recém-importada:
-          // aciona sincronização automática transparente para a nuvem
-          autoSyncLocalToRemote(cachedFR);
         } else {
           setFrRegistros([]);
           saveLocalFR([]);
@@ -723,8 +731,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               if (list.length > 0) {
                 setFrRegistros(list);
                 saveLocalFR(list);
-              } else if (cachedFR && cachedFR.length > 0) {
-                autoSyncLocalToRemote(cachedFR);
+              } else {
+                setFrRegistros([]);
+                saveLocalFR([]);
               }
             })
             .catch((e2) => console.warn('Falha também no fallback getDocs de FR:', e2?.message))
@@ -2153,13 +2162,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 11. Executar Importação de FR (Substituição Completa da Base e Gravação Direta no Firebase)
+  // 11. Executar Importação Incremental de FR (Grava apenas novos FRs e ignora duplicados)
   const executarImportacaoFR = async (
     dados: Omit<FRRegistro, 'id'>[],
     fileName: string,
     onProgress?: (porcentagem: number, etapa: string) => void
-  ): Promise<{ total: number; erro?: string }> => {
-    const totalNew = dados.length;
+  ): Promise<{ total: number; totalImportados?: number; totalIgnorados?: number; erro?: string }> => {
     onProgress?.(10, 'Iniciando conexão direta com o Firebase...');
 
     try {
@@ -2169,7 +2177,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isFirebaseConfigured) {
         const frCol = collection(db, 'fr_registros');
 
-        // Verificação prévia: usuário precisa ter role 'ADM' no documento users/{uid} no Firestore
+        // Verificação prévia: usuário precisa ter role 'ADM' no Firestore
         onProgress?.(15, 'Validando permissão de Administrador no Firestore...');
         let currentAuthUser = auth.currentUser;
         if (!currentAuthUser && typeof (auth as any).authStateReady === 'function') {
@@ -2184,7 +2192,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
         }
 
-        // Renova o token do Firebase Auth para garantir validade ativa da sessão
+        // Renova o token do Firebase Auth
         try {
           await currentAuthUser.getIdToken(true);
         } catch (tokenErr) {
@@ -2199,7 +2207,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userDocRef = doc(db, 'users', realAuthUid);
           let userDocSnap = await getDoc(userDocRef);
 
-          // Se for o administrador do sistema e o documento em users/{uid} ainda não existir ou não tiver role ADM, inicializa-o no Firestore
           if ((!userDocSnap.exists() || userDocSnap.data()?.role !== 'ADM') && isMaster) {
             try {
               await setDoc(
@@ -2225,7 +2232,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!isAdm) {
             return {
               total: 0,
-              erro: `permission-denied: Permissão insuficiente. Para substituir e excluir a base de FR, o seu usuário (${currentEmail || realAuthUid}) precisa ter perfil de Administrador (role: 'ADM') configurado no documento users/${realAuthUid} no Firestore. Operação cancelada; nenhum dado foi alterado no banco de dados.`,
+              erro: `permission-denied: Permissão insuficiente. Para importar a base de FR, o seu usuário (${currentEmail || realAuthUid}) precisa ter perfil de Administrador (role: 'ADM') no Firestore.`,
             };
           }
         } catch (permErr: any) {
@@ -2235,49 +2242,102 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const msg = permErr?.message || 'Erro ao validar perfil de administrador no Firestore';
             return {
               total: 0,
-              erro: `${code}: ${msg}. Falha ao verificar perfil em users/${realAuthUid}. Os dados foram salvos apenas localmente.`,
+              erro: `${code}: ${msg}. Falha ao verificar perfil em users/${realAuthUid}.`,
             };
           }
         }
 
-        // 1. Consulta dos documentos anteriores para substituição limpa (sem tocá-los ainda)
-        onProgress?.(20, 'Consultando base anterior no Firebase...');
-        let existingDocs: any[] = [];
-        try {
-          const existingSnap = await getDocs(frCol);
-          existingDocs = existingSnap.docs;
-        } catch (getErr: any) {
-          console.warn('Tentativa inicial de leitura de fr_registros falhou, tentando novamente com renovação de token...', getErr);
+        // 1. Identificar registros existentes usando a lista em memória (frRegistros)
+        onProgress?.(20, 'Verificando registros existentes na base...');
+        let currentExistingFRs = frRegistrosRef.current;
+        // Se a lista em memória estiver vazia, faz uma checagem remota rápida
+        if (currentExistingFRs.length === 0) {
           try {
-            await currentAuthUser.getIdToken(true);
-            const retrySnap = await getDocs(frCol);
-            existingDocs = retrySnap.docs;
-          } catch (retryErr: any) {
-            console.warn('Consulta remota de documentos prévios falhou; utilizando referências locais para limpeza posterior se existirem:', retryErr);
-            if (frRegistros && frRegistros.length > 0) {
-              existingDocs = frRegistros
-                .filter((r) => r.id && !r.id.startsWith('fr_local_'))
-                .map((r) => ({ ref: doc(db, 'fr_registros', r.id) } as any));
+            const snap = await getDocs(frCol);
+            if (!snap.empty) {
+              const list: FRRegistro[] = [];
+              snap.forEach((d) => list.push({ id: d.id, ...d.data() } as FRRegistro));
+              currentExistingFRs = list;
+              setFrRegistros(list);
+              saveLocalFR(list);
             }
+          } catch (e) {
+            console.warn('Checagem de registros existentes:', e);
           }
         }
 
-        // 2. TUDO OU NADA: Grava TODOS os novos registros em lotes primeiro (com novos IDs)
-        const newlyCreatedRefs: any[] = [];
-        const createdList: FRRegistro[] = [];
-        const BATCH_SIZE_INSERT = 150;
-        const totalInsertBatches = Math.ceil(dados.length / BATCH_SIZE_INSERT);
-        let insertSuccessBatches = 0;
-        let insertFailedBatches = 0;
-        let insertLastError: any = null;
+        const existingFrSet = new Set<string>();
+        currentExistingFRs.forEach((r) => {
+          if (r.FR) existingFrSet.add(String(r.FR).trim().toUpperCase());
+          if (r.id) existingFrSet.add(String(r.id).trim().toUpperCase());
+        });
 
-        for (let i = 0; i < dados.length; i += BATCH_SIZE_INSERT) {
-          const slice = dados.slice(i, i + BATCH_SIZE_INSERT);
-          const currentBatchNum = Math.floor(i / BATCH_SIZE_INSERT) + 1;
-          const pct = 25 + Math.round(((i + slice.length) / dados.length) * 50);
+        // 2. Filtro incremental: apenas FRs válidos, inéditos e deduplicados dentro do próprio CSV
+        const seenInCsv = new Set<string>();
+        const toInsert: Omit<FRRegistro, 'id'>[] = [];
+        let totalIgnorados = 0;
+
+        for (const item of dados) {
+          const rawFr = String(item.FR || '').trim();
+          if (!rawFr) {
+            totalIgnorados++;
+            continue;
+          }
+          const frUpper = rawFr.toUpperCase();
+          if (existingFrSet.has(frUpper)) {
+            totalIgnorados++;
+            continue;
+          }
+          if (seenInCsv.has(frUpper)) {
+            totalIgnorados++;
+            continue;
+          }
+          seenInCsv.add(frUpper);
+          toInsert.push(item);
+        }
+
+        // Se nenhum registro novo foi identificado
+        if (toInsert.length === 0) {
+          const metaInfo: ImportInfoFR = {
+            fileName,
+            importedAt: nowIso,
+            importedBy: updatedBy,
+            totalLinhas: dados.length,
+            totalImportado: 0,
+            totalIgnorado: totalIgnorados,
+          };
+          try {
+            await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo, { merge: true });
+          } catch (e) {}
+          setImportInfoFR(metaInfo);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(metaInfo));
+          } catch (e) {}
+
+          onProgress?.(100, `Importação concluída: 0 novos registros gravados, ${totalIgnorados} ignorados (já existentes).`);
+          return {
+            total: 0,
+            totalImportados: 0,
+            totalIgnorados,
+          };
+        }
+
+        // 3. Gravação incremental em lotes de até 150 documentos
+        const newlyCreatedRefs: any[] = [];
+        const newlyCreatedList: FRRegistro[] = [];
+        const BATCH_SIZE = 150;
+        const totalBatches = Math.ceil(toInsert.length / BATCH_SIZE);
+        let successBatches = 0;
+        let failedBatches = 0;
+        let lastBatchError: any = null;
+
+        for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+          const slice = toInsert.slice(i, i + BATCH_SIZE);
+          const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+          const pct = 25 + Math.round(((i + slice.length) / toInsert.length) * 65);
           onProgress?.(
             pct,
-            `Gravando novos registros (lote ${currentBatchNum} de ${totalInsertBatches})...`
+            `Gravando novos registros (lote ${batchNum} de ${totalBatches})...`
           );
 
           const batch = writeBatch(db);
@@ -2285,16 +2345,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const batchItems: FRRegistro[] = [];
 
           for (const item of slice) {
-            const newDocRef = doc(frCol);
+            const docId = getSafeFRDocId(item.FR);
+            const docRef = doc(frCol, docId);
             const sanitized = sanitizeRecord(item);
-            batch.set(newDocRef, {
-              ...sanitized,
-              _updatedAt: nowIso,
-              _updatedBy: updatedBy,
-            });
-            batchRefs.push(newDocRef);
+            batch.set(
+              docRef,
+              {
+                ...sanitized,
+                _updatedAt: nowIso,
+                _updatedBy: updatedBy,
+              },
+              { merge: true }
+            );
+            batchRefs.push(docRef);
             batchItems.push({
-              id: newDocRef.id,
+              id: docId,
               ...item,
               _updatedAt: nowIso,
               _updatedBy: updatedBy,
@@ -2302,21 +2367,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           try {
-            await commitBatchWithTimeout(batch, 25000, `gravação lote ${currentBatchNum} FR`);
-            insertSuccessBatches++;
+            await commitBatchWithTimeout(batch, 25000, `gravação lote ${batchNum} FR`);
+            successBatches++;
             newlyCreatedRefs.push(...batchRefs);
-            createdList.push(...batchItems);
+            newlyCreatedList.push(...batchItems);
           } catch (batchErr: any) {
-            insertFailedBatches++;
-            insertLastError = batchErr;
-            console.error(`Falha de gravação no lote ${currentBatchNum} de FR:`, batchErr);
-            break; // Interrompe imediatamente para não comprometer o banco
+            failedBatches++;
+            lastBatchError = batchErr;
+            console.error(`Falha no lote ${batchNum} de FR:`, batchErr);
+            break;
           }
         }
 
-        // 3. Se qualquer lote falhar, cancela, faz rollback dos novos documentos e PRESERVA a base anterior intacta
-        if (insertFailedBatches > 0) {
-          onProgress?.(78, 'Falha na gravação detectada. Desfazendo alterações e restaurando estado seguro...');
+        // 4. Se algum lote falhar, interrompe e faz rollback APENAS dos documentos novos desta tentativa
+        if (failedBatches > 0) {
+          onProgress?.(90, 'Interrompendo e desfazendo registros parciais desta importação...');
           if (newlyCreatedRefs.length > 0) {
             const BATCH_SIZE_RB = 150;
             for (let i = 0; i < newlyCreatedRefs.length; i += BATCH_SIZE_RB) {
@@ -2326,117 +2391,255 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 rbBatch.delete(r);
               }
               try {
-                await commitBatchWithTimeout(rbBatch, 20000, 'rollback lote FR');
+                await commitBatchWithTimeout(rbBatch, 20000, 'rollback lote parcial FR');
               } catch (rbErr) {
-                console.warn('Aviso no rollback de inserção parcial:', rbErr);
+                console.warn('Aviso no rollback parcial:', rbErr);
               }
             }
           }
 
-          const errCode = insertLastError?.code || 'write-failed';
-          const errMsg = insertLastError?.message || 'Erro ao gravar novos registros no Firestore';
+          const errCode = lastBatchError?.code || 'write-failed';
+          const errMsg = lastBatchError?.message || 'Erro ao gravar registros no Firestore';
           return {
             total: 0,
-            erro: `Importação cancelada (${errCode}: ${errMsg}). Os registros gravados nesta tentativa foram desfeitos (rollback) e a base anterior de FR foi PRESERVADA INTACTA no Firestore.`,
+            totalImportados: 0,
+            totalIgnorados,
+            erro: `Importação interrompida no lote ${successBatches + 1} (${errCode}: ${errMsg}). Os registros gravados nesta tentativa foram revertidos e a base existente de FR foi preservada intacta.`,
           };
         }
 
-        // 4. Só depois de confirmar que TODOS os novos lotes foram gravados com sucesso, removemos os documentos antigos
-        if (existingDocs.length > 0) {
-          const BATCH_SIZE_DEL = 150;
-          const totalDelBatches = Math.ceil(existingDocs.length / BATCH_SIZE_DEL);
-          let delCount = 0;
-
-          for (let i = 0; i < existingDocs.length; i += BATCH_SIZE_DEL) {
-            const slice = existingDocs.slice(i, i + BATCH_SIZE_DEL);
-            delCount += slice.length;
-            const pct = 75 + Math.round((delCount / existingDocs.length) * 20);
-            onProgress?.(pct, `Substituindo base anterior: limpando registros obsoletos (${delCount}/${existingDocs.length})...`);
-
-            const batch = writeBatch(db);
-            for (const d of slice) {
-              batch.delete(d.ref);
-            }
-            try {
-              await commitBatchWithTimeout(batch, 25000, 'remoção base anterior FR');
-            } catch (delErr: any) {
-              console.warn('Aviso ao remover registro obsoleto anterior:', delErr?.message);
-            }
-          }
-        }
-
-        // 4. Salvar metadados da importação no Firebase
+        // 5. Sucesso: nenhum documento antigo é apagado. Atualiza metadados e estado incrementalmente
         const metaInfo: ImportInfoFR = {
           fileName,
           importedAt: nowIso,
           importedBy: updatedBy,
-          totalLinhas: totalNew,
+          totalLinhas: dados.length,
+          totalImportado: newlyCreatedList.length,
+          totalIgnorado: totalIgnorados,
         };
         try {
-          await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
+          await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo, { merge: true });
         } catch (metaErr: any) {
           console.warn('Aviso ao gravar metadados de FR:', metaErr?.message);
         }
 
-        // Atualiza estado e cache local
-        setFrRegistros(createdList);
-        saveLocalFR(createdList);
+        // Soma os novos aos existentes, sem substituir
+        const mergedList = [...currentExistingFRs, ...newlyCreatedList];
+        setFrRegistros(mergedList);
+        saveLocalFR(mergedList);
         setImportInfoFR(metaInfo);
         try {
           localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(metaInfo));
         } catch (e) {}
+
+        onProgress?.(100, `Importação concluída: ${newlyCreatedList.length} novos registros gravados, ${totalIgnorados} ignorados (já existentes).`);
+        return {
+          total: newlyCreatedList.length,
+          totalImportados: newlyCreatedList.length,
+          totalIgnorados,
+        };
       } else {
-        // Fallback local se Firebase não estiver inicializado
-        const localList: FRRegistro[] = dados.map((item, idx) => ({
-          id: `fr_local_${idx}_${Date.now()}`,
+        // Fallback local se Firebase não estiver configurado
+        const existingFrSet = new Set<string>();
+        frRegistrosRef.current.forEach((r) => {
+          if (r.FR) existingFrSet.add(String(r.FR).trim().toUpperCase());
+          if (r.id) existingFrSet.add(String(r.id).trim().toUpperCase());
+        });
+
+        const seenInCsv = new Set<string>();
+        const toInsert: Omit<FRRegistro, 'id'>[] = [];
+        let totalIgnorados = 0;
+
+        for (const item of dados) {
+          const rawFr = String(item.FR || '').trim();
+          if (!rawFr) {
+            totalIgnorados++;
+            continue;
+          }
+          const frUpper = rawFr.toUpperCase();
+          if (existingFrSet.has(frUpper)) {
+            totalIgnorados++;
+            continue;
+          }
+          if (seenInCsv.has(frUpper)) {
+            totalIgnorados++;
+            continue;
+          }
+          seenInCsv.add(frUpper);
+          toInsert.push(item);
+        }
+
+        const localList: FRRegistro[] = toInsert.map((item) => ({
+          id: getSafeFRDocId(item.FR),
           ...item,
           _updatedAt: nowIso,
           _updatedBy: updatedBy,
         }));
+
+        const mergedLocal = [...frRegistrosRef.current, ...localList];
         const metaInfo: ImportInfoFR = {
           fileName,
           importedAt: nowIso,
           importedBy: updatedBy,
-          totalLinhas: totalNew,
-        };
-        setFrRegistros(localList);
-        saveLocalFR(localList);
-        setImportInfoFR(metaInfo);
-      }
-
-      onProgress?.(100, 'Registros gravados no Firebase com sucesso!');
-      return { total: totalNew };
-    } catch (err: any) {
-      console.error('Erro na gravação direta de FR no Firebase:', err);
-      if (dados && dados.length > 0) {
-        const fallbackNowIso = new Date().toISOString();
-        const fallbackUpdatedBy = user?.email || auth?.currentUser?.email || 'ADM';
-        const localList: FRRegistro[] = dados.map((item, idx) => ({
-          id: `fr_local_${idx}_${Date.now()}`,
-          ...item,
-          _updatedAt: fallbackNowIso,
-          _updatedBy: fallbackUpdatedBy,
-        }));
-        const metaInfo: ImportInfoFR = {
-          fileName,
-          importedAt: fallbackNowIso,
-          importedBy: fallbackUpdatedBy,
           totalLinhas: dados.length,
+          totalImportado: localList.length,
+          totalIgnorado: totalIgnorados,
         };
-        setFrRegistros(localList);
-        saveLocalFR(localList);
+        setFrRegistros(mergedLocal);
+        saveLocalFR(mergedLocal);
         setImportInfoFR(metaInfo);
-        const code = err?.code || 'permission-denied';
-        const msg = err?.message || 'Erro de comunicação com o Firestore';
+        onProgress?.(100, `Importação concluída: ${localList.length} novos registros gravados, ${totalIgnorados} ignorados.`);
         return {
-          total: 0,
-          erro: `${code}: ${msg}. Atenção: Os dados foram salvos temporariamente apenas na memória local deste navegador e NÃO foram gravados no servidor Firestore.`,
+          total: localList.length,
+          totalImportados: localList.length,
+          totalIgnorados,
         };
       }
+    } catch (err: any) {
+      console.error('Erro na gravação de FR:', err);
       return { total: 0, erro: `${err?.code || 'error'}: ${err?.message || 'Falha ao processar arquivo.'}` };
     }
   };
 
+  // 12. Apagar Toda a Base de FR (Exclusão Completa em Lotes pelo ADM)
+  const apagarTodaBaseFR = async (
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ): Promise<{ success: boolean; apagados?: number; restantes?: number; erro?: string }> => {
+    onProgress?.(5, 'Validando permissão de Administrador...');
+
+    if (isFirebaseConfigured) {
+      let currentAuthUser = auth.currentUser;
+      if (!currentAuthUser && typeof (auth as any).authStateReady === 'function') {
+        await (auth as any).authStateReady().catch(() => {});
+        currentAuthUser = auth.currentUser;
+      }
+
+      if (!currentAuthUser) {
+        return {
+          success: false,
+          erro: 'permission-denied: Sessão de autenticação não encontrada no Firebase. Faça login novamente.',
+        };
+      }
+
+      try {
+        await currentAuthUser.getIdToken(true);
+      } catch (e) {}
+
+      const realAuthUid = currentAuthUser.uid;
+      const currentEmail = (currentAuthUser.email || user?.email || profile?.email || '').trim().toLowerCase();
+      const isMaster = isSystemAdminEmail(currentEmail) || isSystemAdminEmail(user?.email);
+      const isAdm = checkIsAdmin() || isMaster || profile?.role === 'ADM' || isAdmin;
+
+      if (!isAdm) {
+        return {
+          success: false,
+          erro: 'permission-denied: Apenas Administradores têm permissão para apagar a base de FR.',
+        };
+      }
+
+      onProgress?.(15, 'Consultando todos os registros de FR no Firebase...');
+      const frCol = collection(db, 'fr_registros');
+      let allDocs: any[] = [];
+      try {
+        const snap = await getDocs(frCol);
+        allDocs = snap.docs;
+      } catch (getErr: any) {
+        try {
+          await currentAuthUser.getIdToken(true);
+          const snap2 = await getDocs(frCol);
+          allDocs = snap2.docs;
+        } catch (getErr2: any) {
+          return {
+            success: false,
+            erro: `Falha ao consultar documentos para exclusão: ${getErr2?.message || 'Erro de conexão com o Firestore.'}`,
+          };
+        }
+      }
+
+      const totalToDelete = allDocs.length;
+      if (totalToDelete === 0) {
+        setFrRegistros([]);
+        saveLocalFR([]);
+        setImportInfoFR(null);
+        try {
+          localStorage.removeItem(LOCAL_STORAGE_FR_KEY);
+          localStorage.removeItem(LOCAL_STORAGE_FR_META_KEY);
+          await deleteDoc(doc(db, 'metadata', 'importInfoFR'));
+        } catch (e) {}
+        onProgress?.(100, 'A base de FR já está vazia.');
+        return { success: true, apagados: 0, restantes: 0 };
+      }
+
+      const BATCH_SIZE = 150;
+      const totalBatches = Math.ceil(totalToDelete / BATCH_SIZE);
+      let deletedCount = 0;
+      let lastErr: any = null;
+
+      for (let i = 0; i < totalToDelete; i += BATCH_SIZE) {
+        const slice = allDocs.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const batch = writeBatch(db);
+        for (const d of slice) {
+          batch.delete(d.ref);
+        }
+
+        try {
+          await commitBatchWithTimeout(batch, 25000, `exclusão lote ${batchNum} de ${totalBatches} FR`);
+          deletedCount += slice.length;
+        } catch (delErr: any) {
+          lastErr = delErr;
+          console.error(`Falha ao apagar lote ${batchNum} de FR:`, delErr);
+          break; // Interrompe para reportar o progresso
+        }
+
+        const pct = 20 + Math.round((deletedCount / totalToDelete) * 75);
+        onProgress?.(pct, `Apagando registros (${deletedCount} de ${totalToDelete})...`);
+      }
+
+      if (deletedCount < totalToDelete) {
+        const remaining = totalToDelete - deletedCount;
+        const remainingIds = new Set(allDocs.slice(deletedCount).map((d) => d.id));
+        const updatedLocal = frRegistrosRef.current.filter((r) => remainingIds.has(r.id));
+        setFrRegistros(updatedLocal);
+        saveLocalFR(updatedLocal);
+        return {
+          success: false,
+          apagados: deletedCount,
+          restantes: remaining,
+          erro: `A exclusão foi interrompida: ${deletedCount} registros foram apagados, mas restam ${remaining} no banco de dados. (${lastErr?.message || 'Falha no lote'})`,
+        };
+      }
+
+      // Limpeza completa bem-sucedida
+      try {
+        await deleteDoc(doc(db, 'metadata', 'importInfoFR'));
+      } catch (e) {}
+
+      setFrRegistros([]);
+      saveLocalFR([]);
+      setImportInfoFR(null);
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_FR_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_FR_META_KEY);
+      } catch (e) {}
+
+      onProgress?.(100, 'Base de FR completamente apagada com sucesso!');
+      return { success: true, apagados: deletedCount, restantes: 0 };
+    } else {
+      const prevTotal = frRegistros.length;
+      setFrRegistros([]);
+      saveLocalFR([]);
+      setImportInfoFR(null);
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_FR_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_FR_META_KEY);
+      } catch (e) {}
+      onProgress?.(100, 'Base de FR local apagada com sucesso!');
+      return { success: true, apagados: prevTotal, restantes: 0 };
+    }
+  };
+
+  // 13. Sincronizar FR Local para Firestore (Não destrutivo: apenas envia registros pendentes)
   const sincronizarFRLocalParaFirestore = useCallback(
     async (
       onProgress?: (porcentagem: number, etapa: string) => void
@@ -2444,7 +2647,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!isFirebaseConfigured) {
         return { success: false, erro: 'Firebase não está configurado.' };
       }
-      const localData = frRegistros && frRegistros.length > 0 ? frRegistros : getLocalStoredFR();
+      const localData = frRegistrosRef.current.length > 0 ? frRegistrosRef.current : getLocalStoredFR();
       if (!localData || localData.length === 0) {
         return { success: false, erro: 'Nenhum registro de FR encontrado localmente para sincronizar.' };
       }
@@ -2463,15 +2666,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!currentAuthUser) {
           return {
             success: false,
-            erro: 'permission-denied: Sessão de autenticação não encontrada no Firebase Authentication. Faça login novamente para sincronizar os dados com o servidor.',
+            erro: 'permission-denied: Sessão de autenticação não encontrada. Faça login novamente.',
           };
         }
 
         try {
           await currentAuthUser.getIdToken(true);
-        } catch (tokenErr) {
-          console.warn('Aviso ao atualizar token do Firebase Auth:', tokenErr);
-        }
+        } catch (tokenErr) {}
 
         const realAuthUid = currentAuthUser.uid;
         const currentEmail = (currentAuthUser.email || user?.email || profile?.email || '').trim().toLowerCase();
@@ -2481,157 +2682,55 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!isAdm) {
           return {
             success: false,
-            erro: `permission-denied: Permissão insuficiente. Para sincronizar a base de FR no Firestore, o seu usuário (${currentEmail || realAuthUid}) precisa ter perfil de Administrador (role: 'ADM').`,
+            erro: `permission-denied: Permissão insuficiente. Para sincronizar a base de FR no Firestore, o seu usuário precisa ter perfil de Administrador.`,
           };
         }
 
-        onProgress?.(5, 'Consultando base remota no Firebase...');
-        let existingDocs: any[] = [];
-        try {
-          const existingSnap = await getDocs(frCol);
-          existingDocs = existingSnap.docs;
-        } catch (getErr: any) {
-          console.warn('Tentativa inicial de leitura de fr_registros no sync falhou, tentando novamente com renovação de token...', getErr);
-          try {
-            await currentAuthUser.getIdToken(true);
-            const retrySnap = await getDocs(frCol);
-            existingDocs = retrySnap.docs;
-          } catch (retryErr: any) {
-            console.warn('Consulta remota prévia no sync falhou, usando referências locais se existirem:', retryErr);
-            if (frRegistros && frRegistros.length > 0) {
-              existingDocs = frRegistros
-                .filter((r) => r.id && !r.id.startsWith('fr_local_'))
-                .map((r) => ({ ref: doc(db, 'fr_registros', r.id) } as any));
-            }
-          }
-        }
-        const totalNew = localData.length;
-
-        // 1. TUDO OU NADA: Grava TODOS os registros locais no Firebase primeiro com novos IDs
-        let inserted = 0;
-        const newlyCreatedRefs: any[] = [];
-        const syncedList: FRRegistro[] = [];
+        onProgress?.(10, 'Sincronizando registros com o Firebase...');
         const BATCH_SIZE = 150;
-        const totalInsertBatches = Math.ceil(localData.length / BATCH_SIZE);
-        let insertSuccessBatches = 0;
-        let insertFailedBatches = 0;
-        let insertLastError: any = null;
+        let syncedCount = 0;
+        const syncedList: FRRegistro[] = [];
 
         for (let i = 0; i < localData.length; i += BATCH_SIZE) {
           const slice = localData.slice(i, i + BATCH_SIZE);
-          const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1;
           const batch = writeBatch(db);
-          const batchRefs: any[] = [];
-          const batchItems: FRRegistro[] = [];
 
           for (const item of slice) {
-            const newDocRef = doc(frCol);
-            const sanitized = sanitizeRecord(item);
-            batch.set(newDocRef, {
-              ...sanitized,
-              _updatedAt: item._updatedAt || nowIso,
-              _updatedBy: item._updatedBy || updatedBy,
-            });
-            batchRefs.push(newDocRef);
-            batchItems.push({
+            const docId = getSafeFRDocId(item.FR || item.id);
+            const docRef = doc(frCol, docId);
+            batch.set(
+              docRef,
+              {
+                ...sanitizeRecord(item),
+                _updatedAt: item._updatedAt || nowIso,
+                _updatedBy: item._updatedBy || updatedBy,
+              },
+              { merge: true }
+            );
+            syncedList.push({
               ...item,
-              id: newDocRef.id,
+              id: docId,
               _updatedAt: item._updatedAt || nowIso,
               _updatedBy: item._updatedBy || updatedBy,
             });
           }
 
-          try {
-            await commitBatchWithTimeout(batch, 25000, `sincronização lote ${currentBatchNum} FR (${inserted}/${totalNew})`);
-            insertSuccessBatches++;
-            newlyCreatedRefs.push(...batchRefs);
-            syncedList.push(...batchItems);
-          } catch (insErr: any) {
-            insertFailedBatches++;
-            insertLastError = insErr;
-            console.error('Falha de gravação Firestore (sincronizarFR):', insErr);
-            break; // Interrompe imediatamente se qualquer lote falhar
-          }
-
-          inserted += slice.length;
-          const pct = 15 + Math.round((inserted / totalNew) * 60);
-          onProgress?.(pct, `Enviando para o Firebase: lote ${currentBatchNum} de ${totalInsertBatches} (${inserted}/${totalNew})...`);
+          await commitBatchWithTimeout(batch, 25000, `sincronização FR (${i + 1}-${i + slice.length})`);
+          syncedCount += slice.length;
+          const pct = Math.round((syncedCount / localData.length) * 100);
+          onProgress?.(pct, `Sincronizando com o Firebase (${syncedCount} de ${localData.length})...`);
         }
-
-        // 2. Se qualquer lote falhar, cancela, faz rollback dos novos documentos e PRESERVA a base anterior
-        if (insertFailedBatches > 0) {
-          onProgress?.(78, 'Falha detectada. Desfazendo alterações parciais e restaurando estado anterior seguro...');
-          if (newlyCreatedRefs.length > 0) {
-            const BATCH_SIZE_RB = 150;
-            for (let i = 0; i < newlyCreatedRefs.length; i += BATCH_SIZE_RB) {
-              const slice = newlyCreatedRefs.slice(i, i + BATCH_SIZE_RB);
-              const rbBatch = writeBatch(db);
-              for (const r of slice) {
-                rbBatch.delete(r);
-              }
-              try {
-                await commitBatchWithTimeout(rbBatch, 20000, 'rollback lote sync FR');
-              } catch (rbErr) {
-                console.warn('Aviso no rollback sync:', rbErr);
-              }
-            }
-          }
-
-          const errCode = insertLastError?.code || 'sync-failed';
-          const errMsg = insertLastError?.message || 'Erro ao sincronizar registros de FR no Firestore';
-          return {
-            success: false,
-            erro: `Sincronização cancelada (${errCode}: ${errMsg}). Os registros gravados nesta tentativa foram desfeitos (rollback) e a base anterior de FR foi PRESERVADA INTACTA no Firestore.`,
-          };
-        }
-
-        // 3. SÓ DEPOIS que todos os novos registros foram confirmados no Firebase, remove a base antiga
-        if (existingDocs.length > 0) {
-          onProgress?.(80, `Substituindo base anterior: removendo ${existingDocs.length} registros obsoletos...`);
-          const BATCH_SIZE_DEL = 150;
-          let delCount = 0;
-
-          for (let i = 0; i < existingDocs.length; i += BATCH_SIZE_DEL) {
-            const slice = existingDocs.slice(i, i + BATCH_SIZE_DEL);
-            delCount += slice.length;
-            const pct = 80 + Math.round((delCount / existingDocs.length) * 15);
-            onProgress?.(pct, `Removendo registros anteriores obsoletos (${delCount}/${existingDocs.length})...`);
-
-            const batch = writeBatch(db);
-            for (const d of slice) {
-              batch.delete(d.ref);
-            }
-            try {
-              await commitBatchWithTimeout(batch, 25000, 'limpeza base antiga FR');
-            } catch (delErr: any) {
-              console.warn('Aviso ao remover registro obsoleto anterior no sync:', delErr?.message);
-            }
-          }
-        }
-
-        const metaInfo: ImportInfoFR = importInfoFR || {
-          fileName: 'Sincronização Base Local',
-          importedAt: nowIso,
-          importedBy: updatedBy,
-          totalLinhas: totalNew,
-        };
-        await setDoc(doc(db, 'metadata', 'importInfoFR'), metaInfo);
 
         setFrRegistros(syncedList);
         saveLocalFR(syncedList);
-        setImportInfoFR(metaInfo);
-        try {
-          localStorage.setItem(LOCAL_STORAGE_FR_META_KEY, JSON.stringify(metaInfo));
-        } catch (e) {}
-
         onProgress?.(100, 'Sincronização com o Firebase concluída com sucesso!');
-        return { success: true, total: totalNew };
+        return { success: true, total: syncedCount };
       } catch (err: any) {
         console.error('Erro ao sincronizar FR com Firebase:', err);
         return { success: false, erro: err?.message || 'Falha ao sincronizar com o Firebase.' };
       }
     },
-    [user, isFirebaseConfigured, frRegistros, importInfoFR]
+    [user, isFirebaseConfigured, isAdmin, profile]
   );
 
   return (
@@ -2672,6 +2771,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         executarImportacaoMassiva,
         executarImportacaoFR,
         sincronizarFRLocalParaFirestore,
+        apagarTodaBaseFR,
         popularDadosExemplo,
       }}
     >

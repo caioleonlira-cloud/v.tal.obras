@@ -405,7 +405,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Direita: Status Contextual com Dot Verde */}
         <div className="hidden lg:flex items-center space-x-1.5 text-slate-400 text-[11px] font-medium pl-3 shrink-0">
           <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-xs" />
-          <span>Controle de Implantação e Medições OSP</span>
+          <span>Controle de Implantação e Medições</span>
         </div>
       </div>
     </header>

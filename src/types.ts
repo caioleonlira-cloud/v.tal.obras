@@ -588,6 +588,8 @@ export interface ImportInfoFR {
   importedAt: string;
   importedBy: string;
   totalLinhas: number;
+  totalImportado?: number;
+  totalIgnorado?: number;
 }
 
 export type NavTabType =

@@ -1727,6 +1727,19 @@ export function matchFRColumn(rawHeader: string): string | null {
   return null;
 }
 
+/**
+ * Converte o código de FR em um ID seguro para documentos do Firestore,
+ * substituindo barras (/ ou \) e caracteres especiais inválidos por sublinhado (_).
+ */
+export function getSafeFRDocId(fr: string): string {
+  const raw = String(fr || '').trim();
+  const cleaned = raw
+    .replace(/[\/\\]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  return cleaned || `fr_${Date.now()}`;
+}
+
 export interface ParseFRResult {
   valid: boolean;
   missingColumns: string[];

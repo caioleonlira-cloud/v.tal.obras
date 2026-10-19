@@ -292,14 +292,6 @@ export const ImportacaoMassiva: React.FC = () => {
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={downloadModeloImportacaoMassiva}
-          className="self-start sm:self-center shrink-0 px-3.5 py-2 bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 rounded-xl text-xs font-semibold shadow-2xs transition-colors flex items-center space-x-1.5 cursor-pointer"
-        >
-          <Download className="w-3.5 h-3.5 text-blue-700" />
-          <span>Exportar Template .csv</span>
-        </button>
       </div>
 
       {!isFirebaseConfigured && (
