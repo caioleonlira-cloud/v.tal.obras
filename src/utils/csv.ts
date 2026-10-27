@@ -1728,12 +1728,24 @@ export function matchFRColumn(rawHeader: string): string | null {
 }
 
 /**
- * Converte o código de FR em um ID seguro para documentos do Firestore,
+ * Gera a chave composta única para validação de duplicidade na importação de FR:
+ * junção de "FR" e "DC MIGRADA/OPERAÇÃO".
+ */
+export function buildFRCompositeKey(fr: any, dcMigrada: any): string {
+  const cleanFr = String(fr ?? '').trim().toUpperCase();
+  const cleanOp = String(dcMigrada ?? '').trim().toUpperCase();
+  return `${cleanFr}___${cleanOp}`;
+}
+
+/**
+ * Converte a combinação de FR e DC MIGRADA/OPERAÇÃO em um ID seguro para documentos do Firestore,
  * substituindo barras (/ ou \) e caracteres especiais inválidos por sublinhado (_).
  */
-export function getSafeFRDocId(fr: string): string {
-  const raw = String(fr || '').trim();
-  const cleaned = raw
+export function getSafeFRDocId(fr: string, dcMigrada?: string): string {
+  const rawFr = String(fr || '').trim();
+  const rawOp = String(dcMigrada || '').trim();
+  const combined = rawOp ? `${rawFr}_${rawOp}` : rawFr;
+  const cleaned = combined
     .replace(/[\/\\]/g, '_')
     .replace(/\s+/g, '_')
     .replace(/[^a-zA-Z0-9_\-\.]/g, '_');

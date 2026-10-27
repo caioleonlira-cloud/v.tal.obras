@@ -19,7 +19,7 @@ import {
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { FR_COLUMNS } from '../../types';
-import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor, downloadModeloImportacaoFR } from '../../utils/excel';
+import { parseFRFile, ParseFRResult, formatCurrency, parseFRValor, downloadModeloImportacaoFR, buildFRCompositeKey } from '../../utils/excel';
 
 export const ImportacaoFR: React.FC = () => {
   const {
@@ -62,8 +62,10 @@ export const ImportacaoFR: React.FC = () => {
 
     const existingFrSet = new Set<string>();
     frRegistros.forEach((r) => {
-      if (r.FR) existingFrSet.add(String(r.FR).trim().toUpperCase());
-      if (r.id) existingFrSet.add(String(r.id).trim().toUpperCase());
+      const frVal = String(r.FR || r.id || '').trim();
+      if (frVal) {
+        existingFrSet.add(buildFRCompositeKey(frVal, r['DC MIGRADA/OPERAÇÃO']));
+      }
     });
 
     const seenInCsv = new Set<string>();
@@ -76,16 +78,16 @@ export const ImportacaoFR: React.FC = () => {
         ignorados++;
         return;
       }
-      const frUpper = rawFr.toUpperCase();
-      if (existingFrSet.has(frUpper)) {
+      const compositeKey = buildFRCompositeKey(row.FR, row['DC MIGRADA/OPERAÇÃO']);
+      if (existingFrSet.has(compositeKey)) {
         ignorados++;
         return;
       }
-      if (seenInCsv.has(frUpper)) {
+      if (seenInCsv.has(compositeKey)) {
         ignorados++;
         return;
       }
-      seenInCsv.add(frUpper);
+      seenInCsv.add(compositeKey);
       novos++;
     });
 
@@ -264,7 +266,7 @@ export const ImportacaoFR: React.FC = () => {
                 Importação Incremental da Base de FR (Faturamento / Medição)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Importação incremental de novos registros via CSV oficial usando a coluna FR como chave única. Nenhum dado existente é apagado.
+                Importação incremental de novos registros via CSV oficial usando a junção de FR e DC MIGRADA/OPERAÇÃO como chave única. Nenhum dado existente é apagado.
               </p>
             </div>
           </div>
@@ -360,7 +362,7 @@ export const ImportacaoFR: React.FC = () => {
             </p>
             <p className="flex items-start space-x-2">
               <span className="text-cyan-700 font-bold">•</span>
-              <span><strong>Chave única = coluna FR:</strong> Se o FR já existir na base, a linha é ignorada. Apenas casos inéditos são gravados.</span>
+              <span><strong>Chave única = junção de FR e DC MIGRADA/OPERAÇÃO:</strong> Se a combinação de FR e DC MIGRADA/OPERAÇÃO já existir na base, a linha é ignorada. Apenas casos inéditos são gravados.</span>
             </p>
           </div>
           <div className="space-y-1.5">
@@ -549,7 +551,7 @@ export const ImportacaoFR: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-emerald-700 mt-1">
-                  Registros inéditos cujo FR ainda não existe no sistema.
+                  Registros inéditos cuja junção de FR e DC MIGRADA/OPERAÇÃO ainda não existe no sistema.
                 </p>
               </div>
 
@@ -565,7 +567,7 @@ export const ImportacaoFR: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-[11px] text-amber-700 mt-1">
-                  FRs já cadastrados na base ou duplicados que serão ignorados.
+                  Combinações de FR e DC MIGRADA/OPERAÇÃO já cadastradas ou duplicadas que serão ignoradas.
                 </p>
               </div>
             </div>
@@ -620,7 +622,7 @@ export const ImportacaoFR: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <HelpCircle className="w-5 h-5 text-slate-500 shrink-0" />
                   <span>
-                    <strong>Nenhum registro novo para importar.</strong> Todos os registros desta planilha já constam na base de FR ou possuem código de FR duplicado/vazio.
+                    <strong>Nenhum registro novo para importar.</strong> Todos os registros desta planilha já constam na base de FR (mesma junção de FR e DC MIGRADA/OPERAÇÃO) ou possuem FR vazio.
                   </span>
                 </div>
                 <button

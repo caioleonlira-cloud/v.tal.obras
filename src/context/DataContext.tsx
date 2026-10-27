@@ -47,6 +47,7 @@ import {
   verificarColunasLeituraMatriz,
   getOpcoesSegmentacaoParaColuna,
   getSafeFRDocId,
+  buildFRCompositeKey,
 } from '../utils/excel';
 
 interface ImportPadraoDiff {
@@ -2268,11 +2269,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const existingFrSet = new Set<string>();
         currentExistingFRs.forEach((r) => {
-          if (r.FR) existingFrSet.add(String(r.FR).trim().toUpperCase());
-          if (r.id) existingFrSet.add(String(r.id).trim().toUpperCase());
+          const frVal = String(r.FR || r.id || '').trim();
+          if (frVal) {
+            existingFrSet.add(buildFRCompositeKey(frVal, r['DC MIGRADA/OPERAÇÃO']));
+          }
         });
 
-        // 2. Filtro incremental: apenas FRs válidos, inéditos e deduplicados dentro do próprio CSV
+        // 2. Filtro incremental: apenas combinações (FR + DC MIGRADA/OPERAÇÃO) válidas, inéditas e deduplicadas dentro do próprio CSV
         const seenInCsv = new Set<string>();
         const toInsert: Omit<FRRegistro, 'id'>[] = [];
         let totalIgnorados = 0;
@@ -2283,16 +2286,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             totalIgnorados++;
             continue;
           }
-          const frUpper = rawFr.toUpperCase();
-          if (existingFrSet.has(frUpper)) {
+          const compositeKey = buildFRCompositeKey(item.FR, item['DC MIGRADA/OPERAÇÃO']);
+          if (existingFrSet.has(compositeKey)) {
             totalIgnorados++;
             continue;
           }
-          if (seenInCsv.has(frUpper)) {
+          if (seenInCsv.has(compositeKey)) {
             totalIgnorados++;
             continue;
           }
-          seenInCsv.add(frUpper);
+          seenInCsv.add(compositeKey);
           toInsert.push(item);
         }
 
@@ -2345,7 +2348,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const batchItems: FRRegistro[] = [];
 
           for (const item of slice) {
-            const docId = getSafeFRDocId(item.FR);
+            const docId = getSafeFRDocId(item.FR, item['DC MIGRADA/OPERAÇÃO']);
             const docRef = doc(frCol, docId);
             const sanitized = sanitizeRecord(item);
             batch.set(
@@ -2442,8 +2445,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Fallback local se Firebase não estiver configurado
         const existingFrSet = new Set<string>();
         frRegistrosRef.current.forEach((r) => {
-          if (r.FR) existingFrSet.add(String(r.FR).trim().toUpperCase());
-          if (r.id) existingFrSet.add(String(r.id).trim().toUpperCase());
+          const frVal = String(r.FR || r.id || '').trim();
+          if (frVal) {
+            existingFrSet.add(buildFRCompositeKey(frVal, r['DC MIGRADA/OPERAÇÃO']));
+          }
         });
 
         const seenInCsv = new Set<string>();
@@ -2456,21 +2461,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             totalIgnorados++;
             continue;
           }
-          const frUpper = rawFr.toUpperCase();
-          if (existingFrSet.has(frUpper)) {
+          const compositeKey = buildFRCompositeKey(item.FR, item['DC MIGRADA/OPERAÇÃO']);
+          if (existingFrSet.has(compositeKey)) {
             totalIgnorados++;
             continue;
           }
-          if (seenInCsv.has(frUpper)) {
+          if (seenInCsv.has(compositeKey)) {
             totalIgnorados++;
             continue;
           }
-          seenInCsv.add(frUpper);
+          seenInCsv.add(compositeKey);
           toInsert.push(item);
         }
 
         const localList: FRRegistro[] = toInsert.map((item) => ({
-          id: getSafeFRDocId(item.FR),
+          id: getSafeFRDocId(item.FR, item['DC MIGRADA/OPERAÇÃO']),
           ...item,
           _updatedAt: nowIso,
           _updatedBy: updatedBy,
@@ -2696,7 +2701,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const batch = writeBatch(db);
 
           for (const item of slice) {
-            const docId = getSafeFRDocId(item.FR || item.id);
+            const docId = getSafeFRDocId(item.FR || item.id, item['DC MIGRADA/OPERAÇÃO']);
             const docRef = doc(frCol, docId);
             batch.set(
               docRef,
