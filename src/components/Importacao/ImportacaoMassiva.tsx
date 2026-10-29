@@ -145,7 +145,7 @@ export const ImportacaoMassiva: React.FC = () => {
       if (matrizColsInFile.length > 0) {
         const checkMatriz = verificarColunasLeituraMatriz(cols);
         if (!checkMatriz.todasPresentes) {
-          const errMatriz = `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+          const errMatriz = `Não é possível atualizar os registros da matriz: todas as 26 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
             '\n• '
           )}`;
           setMatrizMissingColumns(checkMatriz.ausentes);
@@ -452,7 +452,7 @@ export const ImportacaoMassiva: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-amber-800 mt-1 max-w-3xl leading-relaxed">
-                  O sistema só pode atualizar os registros da matriz quando identificar corretamente <strong>TODAS as 25 colunas de Leitura da aba &quot;Registros&quot;</strong>. A atualização é tudo ou nada: ou todas as colunas de Leitura são identificadas e atualiza, ou não atualiza nada.
+                  O sistema só pode atualizar os registros da matriz quando identificar corretamente <strong>TODAS as 26 colunas de Leitura da aba &quot;Registros&quot;</strong>. A atualização é tudo ou nada: ou todas as colunas de Leitura são identificadas e atualiza, ou não atualiza nada.
                 </p>
                 {file && (
                   <p className="text-xs text-slate-500 mt-1">

@@ -1642,10 +1642,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
     };
   }, [filteredRegistros]);
 
-  // TELEMONT aggregate table shows when all 3 regionals are in view (either unfiltered or when 3+ regionals selected)
-  // If a single regional is filtered, it hides leaving only that filtered regional
+  // Quantidade de regionais distintas cadastradas na base inteira (excluindo 'TELEMONT')
+  const totalRegionaisNaBase = useMemo(() => {
+    const regSet = new Set<string>();
+    registros.forEach((r) => {
+      const reg = (getRegistroRegional(r) || r.REG || '').trim().toUpperCase();
+      if (reg && reg !== 'TELEMONT' && reg !== 'SEM REGIONAL' && reg !== 'N/D') {
+        regSet.add(reg);
+      }
+    });
+    return regSet.size;
+  }, [registros]);
+
+  // A tabela consolidada TELEMONT só aparece quando a base tiver mais de 1 regional (hoje tem só RCO, então fica oculta)
+  // Reaparece automaticamente quando a base da aba Registros tiver mais de uma regional
   const showTelemontTable =
-    (filterRegional.length === 0 || filterRegional.length >= 3) &&
+    totalRegionaisNaBase > 1 &&
+    (filterRegional.length === 0 || filterRegional.length >= 2) &&
     telemontGroup.items.length > 0;
 
 

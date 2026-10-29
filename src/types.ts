@@ -24,6 +24,7 @@ export interface RegistroBloco1 {
   'Status da DC (Atual)': string;
   'Plan. Estruturante': string;
   'Mês Input'?: string;
+  'R$ Produção BI.'?: string | number;
 }
 
 export interface RegistroBloco2 {
@@ -125,6 +126,7 @@ export const BLOCO_1_KEYS: (keyof RegistroBloco1)[] = [
   'Status da DC (Atual)',
   'Plan. Estruturante',
   'Mês Input',
+  'R$ Produção BI.',
 ];
 
 export const BLOCO_2_KEYS: (keyof RegistroBloco2)[] = [
@@ -344,6 +346,20 @@ export function getRegistroTipoDC(r: Partial<Registro> | any): string {
 export function getRegistroMesInput(r: Partial<Registro> | any): string {
   if (!r) return '';
   return (r['Mês Input'] || r['Mes Input'] || '').trim();
+}
+
+export function getRegistroProducaoBI(r: Partial<Registro> | any): string {
+  if (!r) return '0,00';
+  const val =
+    r['R$ Produção BI.'] ??
+    r['R$ Produção BI'] ??
+    r['R$ Producao BI.'] ??
+    r['R$ Producao BI'] ??
+    r['Produção BI.'] ??
+    r['Produção BI'] ??
+    r['Producao BI'];
+  if (val === undefined || val === null || val === '') return '0,00';
+  return String(val).trim();
 }
 
 export function getRegistroRegional(r: Partial<Registro> | any): string {

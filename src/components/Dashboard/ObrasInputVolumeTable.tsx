@@ -3,10 +3,12 @@ import {
   Registro,
   RegistrosFilterPayload,
   getRegistroMesInput,
+  getRegistroProducaoBI,
   normalizeResponsavel,
   sortResponsaveis,
 } from '../../types';
 import { parseMesAnoSortKey, isValidMesInput } from '../../utils/monthUtils';
+import { parseCurrencyValue, formatBRL } from '../../utils/currency';
 import { CalendarRange, ExternalLink, AlertTriangle } from 'lucide-react';
 
 interface ObrasInputVolumeTableProps {
@@ -31,10 +33,11 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
   } = useMemo(() => {
     const setMes = new Set<string>();
     const setResp = new Set<string>();
-    const m = new Map<string, Map<string, number>>();
-    const tLinha = new Map<string, number>();
-    const tColuna = new Map<string, number>();
-    let grandTotal = 0;
+    const m = new Map<string, Map<string, { count: number; valor: number }>>();
+    const tLinha = new Map<string, { count: number; valor: number }>();
+    const tColuna = new Map<string, { count: number; valor: number }>();
+    let grandTotalCount = 0;
+    let grandTotalValor = 0;
     let hasBlank = false;
     let maxCount = 0;
 
@@ -54,20 +57,29 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
         setResp.add(respKey);
       }
 
+      const valBI = parseCurrencyValue(getRegistroProducaoBI(r));
+
       if (!m.has(respKey)) {
         m.set(respKey, new Map());
       }
       const respMap = m.get(respKey)!;
-      const count = (respMap.get(mes) || 0) + 1;
-      respMap.set(mes, count);
+      const prevCell = respMap.get(mes) || { count: 0, valor: 0 };
+      const newCount = prevCell.count + 1;
+      const newValor = prevCell.valor + valBI;
+      respMap.set(mes, { count: newCount, valor: newValor });
 
-      if (count > maxCount) {
-        maxCount = count;
+      if (newCount > maxCount) {
+        maxCount = newCount;
       }
 
-      tLinha.set(respKey, (tLinha.get(respKey) || 0) + 1);
-      tColuna.set(mes, (tColuna.get(mes) || 0) + 1);
-      grandTotal += 1;
+      const prevLinha = tLinha.get(respKey) || { count: 0, valor: 0 };
+      tLinha.set(respKey, { count: prevLinha.count + 1, valor: prevLinha.valor + valBI });
+
+      const prevColuna = tColuna.get(mes) || { count: 0, valor: 0 };
+      tColuna.set(mes, { count: prevColuna.count + 1, valor: prevColuna.valor + valBI });
+
+      grandTotalCount += 1;
+      grandTotalValor += valBI;
     });
 
     // Colunas de mês em ordem CRONOLÓGICA (nunca alfabética)
@@ -84,7 +96,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
       sortedResp.push('(EM BRANCO)');
     }
 
-    const blankTotal = tLinha.get('(EM BRANCO)') || 0;
+    const blankCount = tLinha.get('(EM BRANCO)')?.count || 0;
 
     return {
       responsaveis: sortedResp,
@@ -92,9 +104,9 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
       matriz: m,
       totaisLinha: tLinha,
       totaisColuna: tColuna,
-      totalGeral: grandTotal,
+      totalGeral: { count: grandTotalCount, valor: grandTotalValor },
       temEmBranco: hasBlank,
-      totalEmBranco: blankTotal,
+      totalEmBranco: blankCount,
       maxCellCount: maxCount,
     };
   }, [registros]);
@@ -125,7 +137,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
   };
 
   const handleGrandTotalClick = () => {
-    if (!onNavigate || totalGeral === 0) return;
+    if (!onNavigate || totalGeral.count === 0) return;
     onNavigate({
       mesInput: meses,
     });
@@ -135,10 +147,11 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
   const getHeatmapStyle = (
     count: number,
     isBlankRow: boolean
-  ): { className: string; style?: React.CSSProperties } => {
+  ): { className: string; style?: React.CSSProperties; isWhiteText?: boolean } => {
     if (count === 0) {
       return {
         className: isBlankRow ? 'text-[#E0A526]/40 font-normal' : 'text-slate-300 font-normal',
+        isWhiteText: false,
       };
     }
 
@@ -151,6 +164,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
           backgroundColor: 'rgba(224, 165, 38, 0.22)',
           color: '#7A4E00',
         },
+        isWhiteText: false,
       };
     }
 
@@ -166,6 +180,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
           backgroundColor: '#1F4E8C',
           color: '#FFFFFF',
         },
+        isWhiteText: true,
       };
     }
     if (ratio >= 0.5) {
@@ -176,6 +191,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
           backgroundColor: 'rgba(31, 78, 140, 0.78)',
           color: '#FFFFFF',
         },
+        isWhiteText: true,
       };
     }
     if (ratio >= 0.3) {
@@ -186,6 +202,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
           backgroundColor: 'rgba(31, 78, 140, 0.55)',
           color: '#FFFFFF',
         },
+        isWhiteText: true,
       };
     }
     if (ratio >= 0.15) {
@@ -196,6 +213,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
           backgroundColor: 'rgba(31, 78, 140, 0.28)',
           color: '#0B2545',
         },
+        isWhiteText: false,
       };
     }
     return {
@@ -205,6 +223,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
         backgroundColor: 'rgba(31, 78, 140, 0.12)',
         color: '#0B2545',
       },
+      isWhiteText: false,
     };
   };
 
@@ -282,13 +301,13 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                     {meses.map((mes) => (
                       <th
                         key={mes}
-                        onClick={() => handleColTotalClick(mes, totaisColuna.get(mes) || 0)}
+                        onClick={() => handleColTotalClick(mes, totaisColuna.get(mes)?.count || 0)}
                         style={{
                           fontSize: 'var(--fs-dash-table-header)',
                           paddingTop: 'var(--dash-table-row-py)',
                           paddingBottom: 'var(--dash-table-row-py)',
                         }}
-                        className="px-2 text-center font-black border-r border-[#8DA9C4]/30 min-w-[60px] cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
+                        className="px-2 text-center font-black border-r border-[#8DA9C4]/30 min-w-[75px] cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
                         title={`Filtrar mês "${mes}" na aba Registros`}
                       >
                         {mes}
@@ -302,7 +321,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                         paddingTop: 'var(--dash-table-row-py)',
                         paddingBottom: 'var(--dash-table-row-py)',
                       }}
-                      className="px-2 text-center font-black text-[#0B2545] min-w-[75px] border-l border-[#8DA9C4]/40 cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
+                      className="px-2 text-center font-black text-[#0B2545] min-w-[85px] border-l border-[#8DA9C4]/40 cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
                       title="Filtrar todas as DCs com meses válidos na aba Registros"
                     >
                       Total Geral
@@ -314,7 +333,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                 <tbody className="divide-y divide-[#DCE3EC]">
                   {responsaveis.map((resp) => {
                     const respMap = matriz.get(resp);
-                    const rowTotal = totaisLinha.get(resp) || 0;
+                    const rowTotal = totaisLinha.get(resp) || { count: 0, valor: 0 };
                     const isBlank = resp === '(EM BRANCO)';
 
                     return (
@@ -348,9 +367,11 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           )}
                         </td>
 
-                        {/* Células Mensais: Mapa de Calor em Azul Médio #1F4E8C mantido */}
+                        {/* Células Mensais: Quantidade e R$ Produção BI. com Mapa de Calor */}
                         {meses.map((mes) => {
-                          const count = respMap?.get(mes) || 0;
+                          const cellData = respMap?.get(mes) || { count: 0, valor: 0 };
+                          const count = cellData.count;
+                          const valor = cellData.valor;
                           const heat = getHeatmapStyle(count, isBlank);
 
                           return (
@@ -366,14 +387,27 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                               className={`px-2 text-center tabular-nums border-r border-[#DCE3EC] transition-all ${heat.className}`}
                               title={
                                 count > 0
-                                  ? `Ver ${count} DC(s) de ${resp} em ${mes} na aba Registros`
+                                  ? `Ver ${count} DC(s) (${formatBRL(valor)}) de ${resp} em ${mes} na aba Registros`
                                   : undefined
                               }
                             >
                               {count > 0 ? (
-                                <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
-                                  {count}
-                                </span>
+                                <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
+                                  <span className="inline-block px-1 rounded group-hover:underline font-bold">
+                                    {count}
+                                  </span>
+                                  <span
+                                    className={`text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal ${
+                                      heat.isWhiteText
+                                        ? 'text-white/80'
+                                        : isBlank
+                                        ? 'text-[#7A4E00]/85'
+                                        : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {formatBRL(valor)}
+                                  </span>
+                                </div>
                               ) : (
                                 '-'
                               )}
@@ -381,9 +415,9 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           );
                         })}
 
-                        {/* Coluna do Total Geral: Fundo branco com tipografia em #0B2545 */}
+                        {/* Coluna do Total Linha: Quantidade e R$ Produção BI. */}
                         <td
-                          onClick={() => handleRowTotalClick(resp, rowTotal)}
+                          onClick={() => handleRowTotalClick(resp, rowTotal.count)}
                           style={{
                             fontSize: 'var(--fs-dash-table-cell)',
                             paddingTop: 'var(--dash-table-row-py)',
@@ -392,19 +426,32 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           className={`px-2 text-center tabular-nums font-black border-l border-[#DCE3EC] bg-white transition-colors ${
                             isBlank
                               ? 'text-[#855800] hover:bg-amber-50 cursor-pointer'
-                              : rowTotal > 0
+                              : rowTotal.count > 0
                               ? 'text-[#0B2545] hover:bg-slate-100 cursor-pointer group'
                               : 'text-slate-400'
                           }`}
                           title={
-                            rowTotal > 0
-                              ? `Ver todas as ${rowTotal} DC(s) de ${resp} na aba Registros`
+                            rowTotal.count > 0
+                              ? `Ver todas as ${rowTotal.count} DC(s) (${formatBRL(rowTotal.valor)}) de ${resp} na aba Registros`
                               : undefined
                           }
                         >
-                          <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
-                            {rowTotal > 0 ? rowTotal : '-'}
-                          </span>
+                          {rowTotal.count > 0 ? (
+                            <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
+                              <span className="inline-block px-1 rounded group-hover:underline font-black">
+                                {rowTotal.count}
+                              </span>
+                              <span
+                                className={`text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal ${
+                                  isBlank ? 'text-[#855800]/85' : 'text-slate-500'
+                                }`}
+                              >
+                                {formatBRL(rowTotal.valor)}
+                              </span>
+                            </div>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                       </tr>
                     );
@@ -425,30 +472,39 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                       Total Geral
                     </td>
                     {meses.map((mes) => {
-                      const colTotal = totaisColuna.get(mes) || 0;
+                      const colTotal = totaisColuna.get(mes) || { count: 0, valor: 0 };
                       return (
                         <td
                           key={mes}
-                          onClick={() => handleColTotalClick(mes, colTotal)}
+                          onClick={() => handleColTotalClick(mes, colTotal.count)}
                           style={{
                             fontSize: 'var(--fs-dash-table-cell)',
                             paddingTop: 'var(--dash-table-row-py)',
                             paddingBottom: 'var(--dash-table-row-py)',
                           }}
                           className={`px-2 text-center tabular-nums font-black border-r border-[#1F4E8C] transition-colors ${
-                            colTotal > 0
+                            colTotal.count > 0
                               ? 'cursor-pointer hover:bg-[#1F4E8C] text-white group'
                               : 'text-white/60'
                           }`}
                           title={
-                            colTotal > 0
-                              ? `Ver todas as ${colTotal} DC(s) de ${mes} na aba Registros`
+                            colTotal.count > 0
+                              ? `Ver todas as ${colTotal.count} DC(s) (${formatBRL(colTotal.valor)}) de ${mes} na aba Registros`
                               : undefined
                           }
                         >
-                          <span className="inline-block py-0.2 px-1 rounded group-hover:underline">
-                            {colTotal > 0 ? colTotal : '-'}
-                          </span>
+                          {colTotal.count > 0 ? (
+                            <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
+                              <span className="inline-block px-1 rounded group-hover:underline font-black">
+                                {colTotal.count}
+                              </span>
+                              <span className="text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal text-white/80">
+                                {formatBRL(colTotal.valor)}
+                              </span>
+                            </div>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                       );
                     })}
@@ -461,9 +517,18 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                         paddingBottom: 'var(--dash-table-row-py)',
                       }}
                       className="px-2 text-center tabular-nums font-black text-white border-l border-[#1F4E8C] cursor-pointer hover:bg-[#1F4E8C] hover:underline transition-colors"
-                      title={`Ver todas as ${totalGeral} DC(s) da tabela na aba Registros`}
+                      title={`Ver todas as ${totalGeral.count} DC(s) (${formatBRL(totalGeral.valor)}) da tabela na aba Registros`}
                     >
-                      {totalGeral}
+                      {totalGeral.count > 0 ? (
+                        <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
+                          <span className="font-black text-white">{totalGeral.count}</span>
+                          <span className="text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal text-white/80">
+                            {formatBRL(totalGeral.valor)}
+                          </span>
+                        </div>
+                      ) : (
+                        '-'
+                      )}
                     </td>
                   </tr>
                 </tfoot>

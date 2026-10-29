@@ -773,6 +773,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
       } else if (sortColumn === 'Mês Input') {
         valA = getRegistroMesInput(a).toLowerCase();
         valB = getRegistroMesInput(b).toLowerCase();
+      } else if (sortColumn === 'R$ Produção BI.') {
+        const numA = parseCurrencyValue((a as any)['R$ Produção BI.']);
+        const numB = parseCurrencyValue((b as any)['R$ Produção BI.']);
+        return sortDirection === 'asc' ? numA - numB : numB - numA;
       } else {
         valA = ((a as any)[sortColumn] || '').toString().toLowerCase();
         valB = ((b as any)[sortColumn] || '').toString().toLowerCase();
@@ -1670,11 +1674,11 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
               </span>
               <span className="text-slate-300 select-none">•</span>
               <span className="whitespace-nowrap">
-                Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
+                Total Medido: <strong className="text-emerald-700 font-bold">{totalMedidoTotal}</strong>
               </span>
               <span className="text-slate-300 select-none">•</span>
               <span className="whitespace-nowrap">
-                Saldo: <strong className="text-indigo-700 font-bold">{totalSaldo}</strong>
+                Faturado: <strong className="text-blue-700 font-bold">{totalFaturado}</strong>
               </span>
             </>
           )}
@@ -2090,6 +2094,26 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           >
                             {numVal > 0 ? (
                               formatBRL(numVal)
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      }
+
+                      // R$ Produção BI. (Formatado em BRL, text-right tabular-nums)
+                      if (colKey === 'R$ Produção BI.') {
+                        const numVal = parseCurrencyValue(val);
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text text-right"
+                            title={formatBRL(numVal)}
+                          >
+                            {numVal > 0 ? (
+                              formatBRL(numVal)
+                            ) : val !== '' && val !== undefined && val !== null ? (
+                              <span className="text-slate-400 font-normal">R$ 0,00</span>
                             ) : (
                               <span className="text-slate-300">—</span>
                             )}

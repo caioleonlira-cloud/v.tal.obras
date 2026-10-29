@@ -84,6 +84,7 @@ export const RegistroBloco1Details: React.FC<RegistroBloco1DetailsProps> = ({
                 'Valor Final R$',
                 'Valor Faturado',
                 'Saldo',
+                'R$ Produção BI.',
               ].includes(key);
               const displayVal = isCurrency
                 ? (rawVal !== undefined && rawVal !== null && rawVal !== '' ? formatBRL(parseCurrencyValue(rawVal)) : '—')

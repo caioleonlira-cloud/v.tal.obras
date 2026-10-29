@@ -260,6 +260,30 @@ export function matchCanonicalColumn(rawHeader: string): string | null {
   }
 
   if (
+    clean === 'R$ PRODUCAO BI.' ||
+    clean === 'R$ PRODUÇÃO BI.' ||
+    clean === 'R$ PRODUCAO BI' ||
+    clean === 'R$ PRODUÇÃO BI' ||
+    clean === 'RS PRODUCAO BI.' ||
+    clean === 'RS PRODUÇÃO BI.' ||
+    clean === 'RS PRODUCAO BI' ||
+    clean === 'RS PRODUÇÃO BI' ||
+    clean === 'PRODUCAO BI.' ||
+    clean === 'PRODUÇÃO BI.' ||
+    clean === 'PRODUCAO BI' ||
+    clean === 'PRODUÇÃO BI' ||
+    clean === 'PRODUCAO_BI' ||
+    clean === 'PRODUÇÃO_BI' ||
+    clean === 'R$_PRODUCAO_BI' ||
+    clean === 'VALOR PRODUCAO BI' ||
+    clean === 'VALOR PRODUÇÃO BI' ||
+    (clean.includes('PRODUC') && clean.includes('BI')) ||
+    (clean.includes('PRODUÇ') && clean.includes('BI'))
+  ) {
+    return 'R$ Produção BI.';
+  }
+
+  if (
     clean === 'BACKLOG INPUT' ||
     clean === 'BACKLOG INPUT?' ||
     clean === 'BACKLOG/INPUT' ||
@@ -362,6 +386,7 @@ export const NUMERIC_COLUMNS = new Set([
   'Saldo',
   'Tempo',
   'VALOR FR',
+  'R$ Produção BI.',
 ]);
 
 export const CURRENCY_COLUMNS = new Set([
@@ -370,6 +395,7 @@ export const CURRENCY_COLUMNS = new Set([
   'Valor Final R$',
   'Valor Faturado',
   'Saldo',
+  'R$ Produção BI.',
 ]);
 
 export const INTEGER_COLUMNS = new Set([
@@ -1081,7 +1107,7 @@ export function validarColunasSegmentadas(
 
 /**
  * 2) Verificação das colunas de Leitura para atualização da Base Matriz:
- * - Todas as 25 colunas de Leitura da aba "Registros" (BLOCO_1_KEYS) devem ser identificadas na planilha com os nomes corretos.
+ * - Todas as 26 colunas de Leitura da aba "Registros" (BLOCO_1_KEYS) devem ser identificadas na planilha com os nomes corretos.
  * - Retorna se todas estão presentes e a lista de ausentes/divergentes.
  */
 export function verificarColunasLeituraMatriz(detectedColumns: string[]): {
@@ -1345,6 +1371,7 @@ export function downloadModeloImportacaoPadrao() {
       'Status da DC (Atual)': 'EM EXECUÇÃO',
       'Plan. Estruturante': 'INPUT',
       'Mês Input': 'mai/2026',
+      'R$ Produção BI.': '53700,00',
     },
     {
       'DC': '121500000002/2754',
@@ -1372,6 +1399,7 @@ export function downloadModeloImportacaoPadrao() {
       'Status da DC (Atual)': 'EM ANDAMENTO',
       'Plan. Estruturante': 'BACKLOG',
       'Mês Input': 'jun/2026',
+      'R$ Produção BI.': '85400,00',
     },
     {
       'DC': '121500000003/2755',
@@ -1399,6 +1427,7 @@ export function downloadModeloImportacaoPadrao() {
       'Status da DC (Atual)': 'OBRA CONCLUÍDA',
       'Plan. Estruturante': 'INPUT',
       'Mês Input': 'jul/2026',
+      'R$ Produção BI.': '124800,00',
     },
   ];
 

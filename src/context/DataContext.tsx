@@ -1290,6 +1290,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return String(miVal).trim();
       }
     }
+    // Direct alias handling for R$ Produção BI.
+    if (canonicalKey === 'R$ Produção BI.') {
+      const prodVal =
+        row['R$ Produção BI.'] ??
+        row['R$ Produção BI'] ??
+        row['R$ Producao BI.'] ??
+        row['R$ Producao BI'] ??
+        row['Produção BI.'] ??
+        row['Produção BI'] ??
+        row['Producao BI'];
+      if (prodVal !== undefined && prodVal !== null) {
+        return String(prodVal).trim();
+      }
+    }
     // Search by key aliases in row
     for (const key of Object.keys(row)) {
       const matched = matchCanonicalColumn(key);
@@ -1322,7 +1336,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkMatriz = verificarColunasLeituraMatriz(Array.from(colsInFile));
     if (!checkMatriz.todasPresentes) {
       throw new Error(
-        `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+        `Não é possível atualizar os registros da matriz: todas as 26 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
           '\n• '
         )}`
       );
@@ -1381,6 +1395,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'Status da DC (Atual)': extractRowField(linha, 'Status da DC (Atual)'),
         'Plan. Estruturante': extractRowField(linha, 'Plan. Estruturante') || extractRowField(linha, 'Backlog/Input?'),
         'Mês Input': extractRowField(linha, 'Mês Input'),
+        'R$ Produção BI.': extractRowField(linha, 'R$ Produção BI.') || '0,00',
       };
 
       if (dcMapAtual.has(dcUpper)) {
@@ -1689,7 +1704,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const checkMatriz = verificarColunasLeituraMatriz(['DC', ...Array.from(columnsInFile)]);
       if (!checkMatriz.todasPresentes) {
         throw new Error(
-          `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+          `Não é possível atualizar os registros da matriz: todas as 26 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
             '\n• '
           )}`
         );

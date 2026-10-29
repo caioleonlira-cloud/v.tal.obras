@@ -111,7 +111,7 @@ export const ImportacaoPadrao: React.FC = () => {
       const checkMatriz = verificarColunasLeituraMatriz(cols);
       if (!checkMatriz.todasPresentes) {
         throw new Error(
-          `Não é possível atualizar os registros da matriz: todas as 25 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+          `Não é possível atualizar os registros da matriz: todas as 26 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
             '\n• '
           )}`
         );
@@ -210,7 +210,7 @@ export const ImportacaoPadrao: React.FC = () => {
         <button
           onClick={downloadModeloImportacaoPadrao}
           className="shrink-0 px-4 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
-          title="Baixar modelo oficial .csv com as 25 colunas esperadas"
+          title="Baixar modelo oficial .csv com as 26 colunas esperadas"
         >
           <Download className="w-4 h-4 text-cyan-300" />
           <span>Baixar Modelo Padrão (.csv)</span>
@@ -226,7 +226,7 @@ export const ImportacaoPadrao: React.FC = () => {
               Modelo de Planilha Padrão para Importação
             </span>
             <span className="text-slate-600 mt-0.5 block leading-relaxed">
-              O arquivo CSV deve conter as 25 colunas oficiais da Base Matriz VTAL separadas por ponto e vírgula (;). Baixe o modelo pronto preenchido com dados de exemplo para evitar divergências.
+              O arquivo CSV deve conter as 26 colunas oficiais da Base Matriz VTAL separadas por ponto e vírgula (;). Baixe o modelo pronto preenchido com dados de exemplo para evitar divergências.
             </span>
           </div>
         </div>
