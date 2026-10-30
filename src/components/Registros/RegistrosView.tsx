@@ -995,10 +995,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
   const hiddenColumnsSet = useMemo(() => new Set(hiddenColumns), [hiddenColumns]);
 
   // Colunas visíveis em cada grupo
-  const visibleBaseColumns = useMemo(
-    () => baseMatrizColumns.filter((colKey) => !hiddenColumnsSet.has(colKey)),
-    [baseMatrizColumns, hiddenColumnsSet]
-  );
+  // Quando o botão de congelamento está ativo, reordena visualmente a UF para o início (ao lado da DC)
+  const visibleBaseColumns = useMemo(() => {
+    const filtered = baseMatrizColumns.filter((colKey) => !hiddenColumnsSet.has(colKey));
+    if (freezeDcColumn && filtered.includes('UF')) {
+      return ['UF', ...filtered.filter((colKey) => colKey !== 'UF')];
+    }
+    return filtered;
+  }, [baseMatrizColumns, hiddenColumnsSet, freezeDcColumn]);
 
   const visibleEquipeColumns = useMemo(
     () => equipeEditableColumns.filter((colKey) => !hiddenColumnsSet.has(colKey)),
@@ -1164,14 +1168,14 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             backgroundColor: '#001e40',
             position: 'sticky',
             top: 0,
-            zIndex: freezeDcColumn ? 35 : 30,
+            zIndex: freezeDcColumn ? 36 : 30,
             opacity: 1,
             ...(freezeDcColumn ? { left: 84 } : {}),
           }}
           onClick={() => handleSort('DC')}
-          className={`py-1.5 px-2.5 border-r border-b border-[#001428] min-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
+          className={`py-1.5 px-2.5 border-r border-b border-[#001428] w-[130px] min-w-[130px] max-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
             freezeDcColumn
-              ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.4)] border-r-2 border-[#001428]'
+              ? 'border-r border-[#001428]'
               : ''
           }`}
         >
@@ -1195,6 +1199,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
         {/* --- GROUP 1: ALL IMPORTED BASE MATRIZ COLUMNS (Sticky Top, Read-only) --- */}
         {visibleBaseColumns.map((colKey) => {
           const isSorted = sortColumn === colKey;
+          const isStickyUF = colKey === 'UF' && freezeDcColumn;
           return (
             <th
               key={colKey}
@@ -1202,14 +1207,19 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 backgroundColor: '#002855',
                 position: 'sticky',
                 top: 0,
-                zIndex: 30,
+                zIndex: isStickyUF ? 35 : 30,
                 opacity: 1,
+                ...(isStickyUF ? { left: 214 } : {}),
               }}
               onClick={() => handleSort(colKey)}
-              className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap min-w-[110px] cursor-pointer text-center ${
-                colKey === 'REG' || colKey === 'UF' || colKey === 'AGING'
+              className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
+                colKey === 'UF'
+                  ? 'w-[75px] min-w-[75px] max-w-[75px]'
+                  : colKey === 'REG' || colKey === 'AGING'
                   ? 'min-w-[80px]'
-                  : ''
+                  : colKey === 'R$ Produção BI.'
+                  ? 'min-w-[130px]'
+                  : 'min-w-[110px]'
               }`}
             >
               <div className="flex items-center justify-center space-x-1.5 text-center">
@@ -1886,12 +1896,12 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             }`}
             title={
               freezeDcColumn
-                ? 'Coluna DC está congelada (clique para descongelar)'
-                : 'Clique para congelar a coluna DC'
+                ? 'Colunas DC e UF estão congeladas (clique para descongelar)'
+                : 'Clique para congelar as colunas DC e UF'
             }
           >
             <Pin className="w-2.5 h-2.5 text-cyan-400 rotate-45" />
-            <span>{freezeDcColumn ? 'DC Congelado' : 'Congelar DC'}</span>
+            <span>{freezeDcColumn ? 'DC + UF Congelados' : 'Congelar DC + UF'}</span>
           </button>
 
           <button
@@ -1999,7 +2009,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                           ? {
                               position: 'sticky',
                               left: 84,
-                              zIndex: 15,
+                              zIndex: 16,
                               backgroundColor: '#ffffff',
                               opacity: 1,
                             }
@@ -2007,11 +2017,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                               backgroundColor: '#ffffff',
                             }
                       }
-                      className={`py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b whitespace-nowrap select-text min-w-[130px] ${
-                        freezeDcColumn
-                          ? 'shadow-[4px_0_10px_-2px_rgba(0,0,0,0.18)] border-r-2 border-slate-300'
-                          : 'border-slate-200'
-                      }`}
+                      className="py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b border-slate-200 whitespace-nowrap select-text w-[130px] min-w-[130px] max-w-[130px]"
                     >
                       {item.DC}
                     </td>
@@ -2042,15 +2048,41 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         );
                       }
 
-                      // Regional & UF (UF é centralizada conforme solicitado)
-                      if (colKey === 'REG' || colKey === 'UF') {
-                        const cellVal = colKey === 'REG' ? (getRegistroRegional(item) || val || '') : val;
+                      // UF (Centralizada, visualmente idêntica às demais colunas)
+                      if (colKey === 'UF') {
+                        const isStickyUF = freezeDcColumn;
                         return (
                           <td
                             key={colKey}
-                            className={`py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text ${
-                              colKey === 'UF' ? 'text-center' : ''
+                            style={
+                              isStickyUF
+                                ? {
+                                    position: 'sticky',
+                                    left: 214,
+                                    zIndex: 15,
+                                    backgroundColor: '#ffffff',
+                                    opacity: 1,
+                                  }
+                                : {
+                                    backgroundColor: '#ffffff',
+                                  }
+                            }
+                            className={`py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap cursor-default select-text text-center w-[75px] min-w-[75px] max-w-[75px] ${
+                              isStickyUF ? 'bg-white' : 'bg-slate-50/30'
                             }`}
+                          >
+                            {val || <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      }
+
+                      // Regional (REG)
+                      if (colKey === 'REG') {
+                        const cellVal = getRegistroRegional(item) || val || '';
+                        return (
+                          <td
+                            key={colKey}
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap bg-slate-50/30 cursor-default select-text"
                           >
                             {cellVal || <span className="text-slate-300">—</span>}
                           </td>
@@ -2101,13 +2133,13 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                         );
                       }
 
-                      // R$ Produção BI. (Formatado em BRL, text-right tabular-nums)
+                      // R$ Produção BI. (Formatado em BRL, centralizado conforme solicitado)
                       if (colKey === 'R$ Produção BI.') {
                         const numVal = parseCurrencyValue(val);
                         return (
                           <td
                             key={colKey}
-                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text text-right"
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 text-slate-800 font-semibold tabular-nums whitespace-nowrap bg-slate-50/20 cursor-default select-text text-center"
                             title={formatBRL(numVal)}
                           >
                             {numVal > 0 ? (
