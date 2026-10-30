@@ -291,8 +291,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                     <th
                       style={{
                         fontSize: 'var(--fs-dash-table-header)',
-                        paddingTop: 'var(--dash-table-row-py)',
-                        paddingBottom: 'var(--dash-table-row-py)',
+                        paddingTop: '3.5px',
+                        paddingBottom: '3.5px',
                       }}
                       className="px-2.5 text-left font-black border-r border-[#8DA9C4]/30 min-w-[120px]"
                     >
@@ -304,10 +304,10 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                         onClick={() => handleColTotalClick(mes, totaisColuna.get(mes)?.count || 0)}
                         style={{
                           fontSize: 'var(--fs-dash-table-header)',
-                          paddingTop: 'var(--dash-table-row-py)',
-                          paddingBottom: 'var(--dash-table-row-py)',
+                          paddingTop: '3.5px',
+                          paddingBottom: '3.5px',
                         }}
-                        className="px-2 text-center font-black border-r border-[#8DA9C4]/30 min-w-[75px] cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
+                        className="px-2 text-center font-black border-r border-[#8DA9C4]/30 min-w-[80px] cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
                         title={`Filtrar mês "${mes}" na aba Registros`}
                       >
                         {mes}
@@ -318,10 +318,10 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                       onClick={handleGrandTotalClick}
                       style={{
                         fontSize: 'var(--fs-dash-table-header)',
-                        paddingTop: 'var(--dash-table-row-py)',
-                        paddingBottom: 'var(--dash-table-row-py)',
+                        paddingTop: '3.5px',
+                        paddingBottom: '3.5px',
                       }}
-                      className="px-2 text-center font-black text-[#0B2545] min-w-[85px] border-l border-[#8DA9C4]/40 cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
+                      className="px-2 text-center font-black text-[#0B2545] min-w-[90px] border-l border-[#8DA9C4]/40 cursor-pointer hover:bg-[#8DA9C4]/30 transition-colors"
                       title="Filtrar todas as DCs com meses válidos na aba Registros"
                     >
                       Total Geral
@@ -329,7 +329,7 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                   </tr>
                 </thead>
 
-                {/* Linhas de Dados: Fundo branco sem alternância de cores, com mapa de calor preservado */}
+                {/* Linhas de Dados: Menos espaçadas verticalmente com valor aumentado */}
                 <tbody className="divide-y divide-[#DCE3EC]">
                   {responsaveis.map((resp) => {
                     const respMap = matriz.get(resp);
@@ -349,8 +349,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                         <td
                           style={{
                             fontSize: 'var(--fs-dash-table-cell)',
-                            paddingTop: 'var(--dash-table-row-py)',
-                            paddingBottom: 'var(--dash-table-row-py)',
+                            paddingTop: '2px',
+                            paddingBottom: '2px',
                           }}
                           className="px-2.5 text-left font-bold text-[#0B2545] border-r border-[#DCE3EC] bg-white"
                         >
@@ -381,8 +381,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                               style={{
                                 ...heat.style,
                                 fontSize: 'var(--fs-dash-table-cell)',
-                                paddingTop: 'var(--dash-table-row-py)',
-                                paddingBottom: 'var(--dash-table-row-py)',
+                                paddingTop: '2px',
+                                paddingBottom: '2px',
                               }}
                               className={`px-2 text-center tabular-nums border-r border-[#DCE3EC] transition-all ${heat.className}`}
                               title={
@@ -392,17 +392,17 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                               }
                             >
                               {count > 0 ? (
-                                <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
-                                  <span className="inline-block px-1 rounded group-hover:underline font-bold">
+                                <div className="flex flex-col items-center justify-center py-0 leading-tight">
+                                  <span className="inline-block px-1 rounded group-hover:underline font-bold text-[12px]">
                                     {count}
                                   </span>
                                   <span
-                                    className={`text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal ${
+                                    className={`text-[11px] tabular-nums font-semibold tracking-tight ${
                                       heat.isWhiteText
-                                        ? 'text-white/80'
+                                        ? 'text-white/95'
                                         : isBlank
-                                        ? 'text-[#7A4E00]/85'
-                                        : 'text-slate-500'
+                                        ? 'text-[#7A4E00]'
+                                        : 'text-slate-600'
                                     }`}
                                   >
                                     {formatBRL(valor)}
@@ -420,8 +420,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           onClick={() => handleRowTotalClick(resp, rowTotal.count)}
                           style={{
                             fontSize: 'var(--fs-dash-table-cell)',
-                            paddingTop: 'var(--dash-table-row-py)',
-                            paddingBottom: 'var(--dash-table-row-py)',
+                            paddingTop: '2px',
+                            paddingBottom: '2px',
                           }}
                           className={`px-2 text-center tabular-nums font-black border-l border-[#DCE3EC] bg-white transition-colors ${
                             isBlank
@@ -437,13 +437,13 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           }
                         >
                           {rowTotal.count > 0 ? (
-                            <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
-                              <span className="inline-block px-1 rounded group-hover:underline font-black">
+                            <div className="flex flex-col items-center justify-center py-0 leading-tight">
+                              <span className="inline-block px-1 rounded group-hover:underline font-black text-[12px]">
                                 {rowTotal.count}
                               </span>
                               <span
-                                className={`text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal ${
-                                  isBlank ? 'text-[#855800]/85' : 'text-slate-500'
+                                className={`text-[11px] tabular-nums font-semibold tracking-tight ${
+                                  isBlank ? 'text-[#855800]' : 'text-slate-600'
                                 }`}
                               >
                                 {formatBRL(rowTotal.valor)}
@@ -464,8 +464,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                     <td
                       style={{
                         fontSize: 'var(--fs-dash-table-header)',
-                        paddingTop: 'var(--dash-table-row-py)',
-                        paddingBottom: 'var(--dash-table-row-py)',
+                        paddingTop: '3px',
+                        paddingBottom: '3px',
                       }}
                       className="px-2.5 text-left uppercase tracking-wider text-white border-r border-[#1F4E8C] font-black"
                     >
@@ -479,8 +479,8 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           onClick={() => handleColTotalClick(mes, colTotal.count)}
                           style={{
                             fontSize: 'var(--fs-dash-table-cell)',
-                            paddingTop: 'var(--dash-table-row-py)',
-                            paddingBottom: 'var(--dash-table-row-py)',
+                            paddingTop: '2px',
+                            paddingBottom: '2px',
                           }}
                           className={`px-2 text-center tabular-nums font-black border-r border-[#1F4E8C] transition-colors ${
                             colTotal.count > 0
@@ -494,11 +494,11 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                           }
                         >
                           {colTotal.count > 0 ? (
-                            <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
-                              <span className="inline-block px-1 rounded group-hover:underline font-black">
+                            <div className="flex flex-col items-center justify-center py-0 leading-tight">
+                              <span className="inline-block px-1 rounded group-hover:underline font-black text-[12px]">
                                 {colTotal.count}
                               </span>
-                              <span className="text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal text-white/80">
+                              <span className="text-[11px] tabular-nums font-medium tracking-tight text-white/95">
                                 {formatBRL(colTotal.valor)}
                               </span>
                             </div>
@@ -513,16 +513,16 @@ export const ObrasInputVolumeTable: React.FC<ObrasInputVolumeTableProps> = ({
                       onClick={handleGrandTotalClick}
                       style={{
                         fontSize: 'var(--fs-dash-table-cell)',
-                        paddingTop: 'var(--dash-table-row-py)',
-                        paddingBottom: 'var(--dash-table-row-py)',
+                        paddingTop: '2px',
+                        paddingBottom: '2px',
                       }}
                       className="px-2 text-center tabular-nums font-black text-white border-l border-[#1F4E8C] cursor-pointer hover:bg-[#1F4E8C] hover:underline transition-colors"
                       title={`Ver todas as ${totalGeral.count} DC(s) (${formatBRL(totalGeral.valor)}) da tabela na aba Registros`}
                     >
                       {totalGeral.count > 0 ? (
-                        <div className="flex flex-col items-center justify-center py-0.5 leading-tight">
-                          <span className="font-black text-white">{totalGeral.count}</span>
-                          <span className="text-[9.5px] tabular-nums mt-0.5 tracking-tight font-normal text-white/80">
+                        <div className="flex flex-col items-center justify-center py-0 leading-tight">
+                          <span className="font-black text-white text-[12px]">{totalGeral.count}</span>
+                          <span className="text-[11px] tabular-nums font-medium tracking-tight text-white/95">
                             {formatBRL(totalGeral.valor)}
                           </span>
                         </div>
