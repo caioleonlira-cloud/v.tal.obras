@@ -1173,7 +1173,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
             ...(freezeDcColumn ? { left: 84 } : {}),
           }}
           onClick={() => handleSort('DC')}
-          className={`py-1.5 px-2.5 border-r border-b border-[#001428] w-[130px] min-w-[130px] max-w-[130px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
+          className={`py-1.5 px-2.5 border-r border-b border-[#001428] w-[180px] min-w-[180px] max-w-[180px] cursor-pointer hover:bg-[#00142b] transition-colors text-center ${
             freezeDcColumn
               ? 'border-r border-[#001428]'
               : ''
@@ -1209,7 +1209,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                 top: 0,
                 zIndex: isStickyUF ? 35 : 30,
                 opacity: 1,
-                ...(isStickyUF ? { left: 214 } : {}),
+                ...(isStickyUF ? { left: 264 } : {}),
               }}
               onClick={() => handleSort(colKey)}
               className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
@@ -2017,9 +2017,10 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                               backgroundColor: '#ffffff',
                             }
                       }
-                      className="py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b border-slate-200 whitespace-nowrap select-text w-[130px] min-w-[130px] max-w-[130px]"
+                      className="py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b border-slate-200 whitespace-nowrap select-text w-[180px] min-w-[180px] max-w-[180px] overflow-hidden"
+                      title={item.DC}
                     >
-                      {item.DC}
+                      <span className="truncate block" title={item.DC}>{item.DC}</span>
                     </td>
 
                     {/* 1. ALL BASE MATRIZ (IMPORTED) VALUES - Read-only (Non-clickable) */}
@@ -2058,7 +2059,7 @@ export const RegistrosView: React.FC<RegistrosViewProps> = ({
                               isStickyUF
                                 ? {
                                     position: 'sticky',
-                                    left: 214,
+                                    left: 264,
                                     zIndex: 15,
                                     backgroundColor: '#ffffff',
                                     opacity: 1,
