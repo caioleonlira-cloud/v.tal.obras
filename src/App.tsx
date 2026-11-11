@@ -7,12 +7,13 @@ import { LoginScreen } from './components/LoginScreen';
 import { MinhaContaModal } from './components/MinhaContaModal';
 import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { RegistrosView } from './components/Registros/RegistrosView';
+import { RegistrosVivoView } from './components/Registros/RegistrosVivoView';
 import { DashboardView } from './components/Dashboard/DashboardView';
 import { FRView } from './components/FR/FRView';
 import { ImportacaoView } from './components/Importacao/ImportacaoView';
 import { SegmentacoesView } from './components/Segmentacoes/SegmentacoesView';
 import { UsuariosView } from './components/Usuarios/UsuariosView';
-import { RegistrosFilterPayload } from './types';
+import { RegistrosFilterPayload, RegistrosVivoFilterPayload } from './types';
 import { FileSpreadsheet, RefreshCw, AlertTriangle, X } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
@@ -22,6 +23,7 @@ const MainLayout: React.FC = () => {
   const [isMinhaContaOpen, setIsMinhaContaOpen] = useState(false);
   const [isFirebaseConfigOpen, setIsFirebaseConfigOpen] = useState(false);
   const [registrosInitialFilters, setRegistrosInitialFilters] = useState<RegistrosFilterPayload | null>(null);
+  const [registrosVivoInitialFilters, setRegistrosVivoInitialFilters] = useState<RegistrosVivoFilterPayload | null>(null);
 
   // Memorização da posição de rolagem vertical do Dashboard para retorno exato
   const dashboardScrollPosRef = useRef<number>(0);
@@ -130,6 +132,29 @@ const MainLayout: React.FC = () => {
     if (document.body) document.body.scrollTop = 0;
   };
 
+  const handleNavigateToRegistrosVivo = (filters: RegistrosVivoFilterPayload) => {
+    isNavigatingAwayRef.current = true;
+    const currentY =
+      window.pageYOffset ||
+      window.scrollY ||
+      document.documentElement.scrollTop ||
+      document.body.scrollTop ||
+      0;
+
+    if (currentY > 0) {
+      dashboardScrollPosRef.current = currentY;
+      try {
+        sessionStorage.setItem('vtal_dashboard_scroll_pos', String(currentY));
+      } catch (e) {}
+    }
+
+    setRegistrosVivoInitialFilters({ ...filters });
+    setActiveTab('registros_vivo');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  };
+
   const handleTabChange = (tab: NavTabType) => {
     if (activeTab === 'dashboard' && tab !== 'dashboard') {
       isNavigatingAwayRef.current = true;
@@ -172,7 +197,7 @@ const MainLayout: React.FC = () => {
         </div>
         <div className="flex items-center space-x-2 text-slate-700 text-xs font-bold">
           <RefreshCw className="w-4 h-4 animate-spin text-[#002855]" />
-          <span>Iniciando V.TAL OBRAS...</span>
+          <span>Iniciando V.TAL/VIVO OBRAS...</span>
         </div>
       </div>
     );
@@ -220,8 +245,18 @@ const MainLayout: React.FC = () => {
           />
         </div>
 
+        <div className={activeTab === 'registros_vivo' ? 'block' : 'hidden'}>
+          <RegistrosVivoView
+            initialFilters={registrosVivoInitialFilters}
+            onClearInitialFilters={() => setRegistrosVivoInitialFilters(null)}
+          />
+        </div>
+
         <div className={activeTab === 'dashboard' ? 'block' : 'hidden'}>
-          <DashboardView onNavigateToRegistros={handleNavigateToRegistros} />
+          <DashboardView
+            onNavigateToRegistros={handleNavigateToRegistros}
+            onNavigateToRegistrosVivo={handleNavigateToRegistrosVivo}
+          />
         </div>
 
         {isAdmin && (
@@ -252,7 +287,7 @@ const MainLayout: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 py-3.5 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
           <div>
-            <strong>V.TAL OBRAS</strong> — Sistema Integrado de Acompanhamento de Medições de Obras e DCs
+            <strong>V.TAL/VIVO OBRAS</strong> — Sistema Integrado de Acompanhamento de Medições de Obras e DCs
           </div>
           <div className="flex items-center space-x-4">
             <button

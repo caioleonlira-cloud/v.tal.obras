@@ -611,9 +611,177 @@ export interface ImportInfoFR {
 export type NavTabType =
   | 'dashboard'
   | 'registros'
+  | 'registros_vivo'
   | 'fr'
   | 'importacao'
   | 'segmentacoes'
   | 'usuarios';
+
+export interface RegistroVivoBloco1 {
+  'REF': string;
+  'REG': string;
+  'UF': string;
+  'Localidade': string;
+  'ID': string;
+  'Ano': string;
+  'Pedido': string;
+  'Desc.': string;
+  'Status Draft': string;
+  'Tipo de Projeto': string;
+  'Contrato': string;
+  'Data Status': string;
+  'Faixa Status': string;
+  'Status Medição Final': string;
+  'Data Medição': string;
+  'Faixa Medição': string;
+  'OSP ORÇAMENTO': string | number;
+  'OSP MEDIDO': string | number;
+  'Faturado': string | number;
+  'Produção Bi R$': string | number;
+  'Mês Input': string;
+}
+
+export interface RegistroVivoBloco2 {
+  'STATUS IMPL': string;
+  'PENDENCIA': string;
+  'RESPONSÁVEL PENDENCIA': string;
+  'PRAZO DE MEDIÇÃO': string;
+  'PRAZO PROJETO': string;
+  'RESPONSÁVEL MEDIÇÃO': string;
+  'OBS MEDIÇÃO': string;
+  'DATA TRATATIVA': string;
+  'ID NOVO/ANTIGO': string;
+}
+
+export interface RegistroVivo extends RegistroVivoBloco1, RegistroVivoBloco2 {
+  _id?: string;
+  _updatedAt?: string;
+  _updatedBy?: string;
+}
+
+export const VIVO_BLOCO_1_KEYS: (keyof RegistroVivoBloco1)[] = [
+  'REF',
+  'REG',
+  'UF',
+  'Localidade',
+  'ID',
+  'Ano',
+  'Pedido',
+  'Desc.',
+  'Status Draft',
+  'Tipo de Projeto',
+  'Contrato',
+  'Data Status',
+  'Faixa Status',
+  'Status Medição Final',
+  'Data Medição',
+  'Faixa Medição',
+  'OSP ORÇAMENTO',
+  'OSP MEDIDO',
+  'Faturado',
+  'Produção Bi R$',
+  'Mês Input',
+];
+
+export const VIVO_BLOCO_2_KEYS: (keyof RegistroVivoBloco2)[] = [
+  'STATUS IMPL',
+  'PENDENCIA',
+  'RESPONSÁVEL PENDENCIA',
+  'PRAZO DE MEDIÇÃO',
+  'PRAZO PROJETO',
+  'RESPONSÁVEL MEDIÇÃO',
+  'OBS MEDIÇÃO',
+  'DATA TRATATIVA',
+  'ID NOVO/ANTIGO',
+];
+
+export const VIVO_ALL_COLUMNS = [...VIVO_BLOCO_1_KEYS, ...VIVO_BLOCO_2_KEYS];
+
+export type SegmentacaoVivoKey =
+  | 'STATUS IMPL'
+  | 'PENDENCIA'
+  | 'RESPONSÁVEL PENDENCIA'
+  | 'RESPONSÁVEL MEDIÇÃO';
+
+export const VIVO_SEGMENTATION_KEYS: SegmentacaoVivoKey[] = [
+  'STATUS IMPL',
+  'PENDENCIA',
+  'RESPONSÁVEL PENDENCIA',
+  'RESPONSÁVEL MEDIÇÃO',
+];
+
+export const COLUNAS_SEGMENTADAS_MASSIVA_VIVO = [
+  'STATUS IMPL',
+  'PENDENCIA',
+  'RESPONSÁVEL PENDENCIA',
+  'RESPONSÁVEL MEDIÇÃO',
+] as const;
+
+export type ColunaSegmentadaMassivaVivo = (typeof COLUNAS_SEGMENTADAS_MASSIVA_VIVO)[number];
+
+export const MAPA_COLUNA_SEGMENTACAO_KEY_VIVO: Record<ColunaSegmentadaMassivaVivo, SegmentacaoVivoKey> = {
+  'STATUS IMPL': 'STATUS IMPL',
+  'PENDENCIA': 'PENDENCIA',
+  'RESPONSÁVEL PENDENCIA': 'RESPONSÁVEL PENDENCIA',
+  'RESPONSÁVEL MEDIÇÃO': 'RESPONSÁVEL MEDIÇÃO',
+};
+
+export const DEFAULT_VIVO_SEGMENTATIONS: Record<SegmentacaoVivoKey, string[]> = {
+  'STATUS IMPL': [],
+  'PENDENCIA': [],
+  'RESPONSÁVEL PENDENCIA': [],
+  'RESPONSÁVEL MEDIÇÃO': [],
+};
+
+export interface RegistrosVivoFilterPayload {
+  searchID?: string;
+  ref?: string[];
+  reg?: string[];
+  regional?: string[];
+  uf?: string[];
+  statusDraft?: string[];
+  statusMedFinal?: string[];
+  statusImpl?: string[];
+  respPendencia?: string[];
+  respMedicao?: string[];
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
+export function cleanVivoID(raw: any): string {
+  if (raw === undefined || raw === null) return '';
+  const str = String(raw)
+    .replace(/[\u200B-\u200D\uFEFF\u00A0\r\n\t]/g, '')
+    .trim();
+  if (
+    !str ||
+    str === '-' ||
+    str === '—' ||
+    str === '–' ||
+    str.toLowerCase() === 'null' ||
+    str.toLowerCase() === 'undefined' ||
+    str.toLowerCase() === 'n/a'
+  ) {
+    return '';
+  }
+  return str;
+}
+
+export function isValidVivoID(raw: any): boolean {
+  return cleanVivoID(raw).length > 0;
+}
+
+export function getSafeVivoDocId(id: string, fallbackIdx?: number): string {
+  const raw = String(id || '').trim();
+  const cleaned = raw
+    .replace(/[\/\\]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+
+  if (!cleaned || cleaned === '.' || cleaned === '..' || cleaned.startsWith('__')) {
+    return `vivo_${fallbackIdx ?? Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  }
+  return cleaned;
+}
 
 

@@ -24,6 +24,7 @@ import {
   sortResponsaveis,
 } from '../../types';
 import {
+  LayoutDashboard,
   Layers,
   CheckCircle2,
   Clock,
@@ -48,9 +49,12 @@ import {
   Layers3,
   FileSpreadsheet,
 } from 'lucide-react';
+import { DashboardVivoSection } from './DashboardVivoSection';
+import { RegistrosVivoFilterPayload } from '../../types';
 
 export interface DashboardViewProps {
   onNavigateToRegistros?: (filters: RegistrosFilterPayload) => void;
+  onNavigateToRegistrosVivo?: (filters: RegistrosVivoFilterPayload) => void;
 }
 
 const DASHBOARD_STORAGE_KEY = 'vtal_dashboard_filters';
@@ -634,8 +638,12 @@ const getMonthSortScore = (str: string): number => {
   return 999999;
 };
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegistros }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  onNavigateToRegistros,
+  onNavigateToRegistrosVivo,
+}) => {
   const { registros, frRegistros, lastImportInfo, loadingRegistros } = useData();
+  const [selectedClient, setSelectedClient] = useState<'VTAL' | 'VIVO'>('VTAL');
 
   const initialSavedFilters = useMemo(() => loadSavedDashboardFilters(), []);
 
@@ -1664,8 +1672,52 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
 
   return (
     <div className="space-y-3.5 font-sans pb-10 bg-[#F8FAFC] min-w-0 max-w-full">
-      {/* 1. Painel de Filtros (fluxo normal, rola junto com a página) */}
-      <div className="bg-white border border-slate-200 shadow-xs py-2.5 px-3.5 rounded-xl transition-all relative">
+      {/* Corporate Client Selector Toggle */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs gap-3">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-lg bg-[#002855] text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <LayoutDashboard className="w-4 h-4 text-cyan-300" />
+          </div>
+          <div>
+            <span className="text-xs font-black text-slate-800 tracking-tight block">
+              Dashboard Executivo — {selectedClient === 'VIVO' ? 'Base VIVO OBRAS' : 'Base V.TAL OBRAS'}
+            </span>
+            <span className="text-[11px] text-slate-500 font-medium block">
+              Alterne entre as visões consolidadas de cada cliente
+            </span>
+          </div>
+        </div>
+
+        <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+          <button
+            onClick={() => setSelectedClient('VTAL')}
+            className={`px-4 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+              selectedClient === 'VTAL'
+                ? 'bg-[#002855] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            V.TAL OBRAS
+          </button>
+          <button
+            onClick={() => setSelectedClient('VIVO')}
+            className={`px-4 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
+              selectedClient === 'VIVO'
+                ? 'bg-[#002855] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            VIVO OBRAS
+          </button>
+        </div>
+      </div>
+
+      {selectedClient === 'VIVO' ? (
+        <DashboardVivoSection onNavigateToRegistrosVivo={onNavigateToRegistrosVivo} />
+      ) : (
+        <>
+          {/* 1. Painel de Filtros (fluxo normal, rola junto com a página) */}
+          <div className="bg-white border border-slate-200 shadow-xs py-2.5 px-3.5 rounded-xl transition-all relative">
         <div className="flex flex-col gap-2">
           {/* Row 1: Quick status indicator & Search & Clear */}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2229,6 +2281,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToRegist
 
       {/* 5. QUADRO FR's GERADAS (Fixo, não afetado pelos filtros) */}
       <FRsGeradasTable frRegistros={frRegistros} />
+        </>
+      )}
     </div>
   );
 };

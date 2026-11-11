@@ -37,6 +37,20 @@ import {
   SegmentacaoDivergencia,
   COLUNAS_SEGMENTADAS_MASSIVA,
   ColunaSegmentadaMassiva,
+  RegistroVivo,
+  RegistroVivoBloco1,
+  RegistroVivoBloco2,
+  VIVO_BLOCO_1_KEYS,
+  VIVO_BLOCO_2_KEYS,
+  VIVO_ALL_COLUMNS,
+  SegmentacaoVivoKey,
+  VIVO_SEGMENTATION_KEYS,
+  COLUNAS_SEGMENTADAS_MASSIVA_VIVO,
+  ColunaSegmentadaMassivaVivo,
+  DEFAULT_VIVO_SEGMENTATIONS,
+  cleanVivoID,
+  isValidVivoID,
+  getSafeVivoDocId,
 } from '../types';
 import {
   matchCanonicalColumn,
@@ -48,9 +62,13 @@ import {
   getOpcoesSegmentacaoParaColuna,
   getSafeFRDocId,
   buildFRCompositeKey,
+  matchCanonicalVivoColumn,
+  verificarColunasLeituraMatrizVivo,
+  validarColunasSegmentadasVivo,
+  detectCSVClient,
 } from '../utils/excel';
 
-interface ImportPadraoDiff {
+export interface ImportPadraoDiff {
   novas: RegistroBloco1[];
   removidas: Registro[];
   atualizadas: {
@@ -58,6 +76,17 @@ interface ImportPadraoDiff {
     antigoBloco1: Partial<RegistroBloco1>;
     novoBloco1: RegistroBloco1;
     bloco2Existente: RegistroBloco2;
+  }[];
+}
+
+export interface ImportPadraoVivoDiff {
+  novas: RegistroVivoBloco1[];
+  removidas: RegistroVivo[];
+  atualizadas: {
+    id: string;
+    antigoBloco1: Partial<RegistroVivoBloco1>;
+    novoBloco1: RegistroVivoBloco1;
+    bloco2Existente: RegistroVivoBloco2;
   }[];
 }
 
@@ -125,6 +154,34 @@ interface DataContextType {
     onProgress?: (porcentagem: number, etapa: string) => void
   ) => Promise<{ success: boolean; apagados?: number; restantes?: number; erro?: string }>;
   popularDadosExemplo: () => Promise<void>;
+
+  // --- VIVO CLIENT SUPPORT ---
+  registrosVivo: RegistroVivo[];
+  loadingRegistrosVivo: boolean;
+  segmentacoesVivo: Record<SegmentacaoVivoKey, string[]>;
+  loadingSegmentacoesVivo: boolean;
+  lastImportInfoVivo: ImportMetadata | null;
+  subscribeVivoData: () => () => void;
+  refreshRegistrosVivo: () => Promise<void>;
+  updateRegistroVivoBloco2: (id: string, bloco2: Partial<RegistroVivoBloco2>) => Promise<void>;
+  addSegmentacaoVivoOpcao: (segKey: SegmentacaoVivoKey, novaOpcao: string) => Promise<void>;
+  addMultiplasSegmentacaoVivoOpcoes: (segKey: SegmentacaoVivoKey, novasOpcoes: string[]) => Promise<void>;
+  editSegmentacaoVivoOpcao: (segKey: SegmentacaoVivoKey, index: number, novoValor: string) => Promise<void>;
+  removeSegmentacaoVivoOpcao: (segKey: SegmentacaoVivoKey, index: number) => Promise<void>;
+  limparSegmentacaoVivo: (segKey: SegmentacaoVivoKey) => Promise<void>;
+  reorderSegmentacaoVivoOpcoes: (segKey: SegmentacaoVivoKey, novasOpcoes: string[]) => Promise<void>;
+  analisarImportacaoPadraoVivo: (
+    planilhaLinhas: Record<string, any>[],
+    detectedColumns?: string[]
+  ) => ImportPadraoVivoDiff;
+  executarImportacaoPadraoVivo: (
+    diff: ImportPadraoVivoDiff,
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => Promise<void>;
+  executarImportacaoMassivaVivo: (
+    planilhaLinhas: Record<string, any>[],
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => Promise<ImportMassivaResult>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -149,6 +206,38 @@ const LOCAL_STORAGE_FR_META_KEY = 'vtal_local_fr_metadata_v5';
 const LOCAL_STORAGE_SEG_KEY = 'vtal_local_segmentacoes_backup';
 const LOCAL_STORAGE_META_KEY = 'vtal_local_import_metadata';
 const LOCAL_STORAGE_HISTORICO_KEY = 'vtal_local_historico_edicoes';
+
+const LOCAL_STORAGE_REGISTROS_VIVO_KEY = 'vtal_local_registros_vivo_backup_v1';
+const LOCAL_STORAGE_SEG_VIVO_KEY = 'vtal_local_segmentacoes_vivo_backup_v1';
+const LOCAL_STORAGE_META_VIVO_KEY = 'vtal_local_import_metadata_vivo';
+
+export function normalizeRegistroVivoData(data: any, docId: string): RegistroVivo {
+  return { _id: docId, ...data } as RegistroVivo;
+}
+
+function getLocalStoredRegistrosVivo(): RegistroVivo[] {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_REGISTROS_VIVO_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((r) => r && isValidVivoID(r.ID));
+      }
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveLocalRegistrosVivo(list: RegistroVivo[]) {
+  try {
+    if (typeof window !== 'undefined') {
+      const validOnly = list.filter((r) => r && isValidVivoID(r.ID));
+      localStorage.setItem(LOCAL_STORAGE_REGISTROS_VIVO_KEY, JSON.stringify(validOnly));
+    }
+  } catch (e) {
+    console.warn('Erro ao salvar no cache local da VIVO:', e);
+  }
+}
 
 export function normalizeRegistroData(data: any, docId: string): Registro {
   const norm = { _id: docId, ...data } as any;
@@ -394,6 +483,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [quotaExhausted, setQuotaExhausted] = useState<boolean>(false);
   const [quotaErrorMessage, setQuotaErrorMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // --- VIVO State ---
+  const [registrosVivo, setRegistrosVivo] = useState<RegistroVivo[]>([]);
+  const [loadingRegistrosVivo, setLoadingRegistrosVivo] = useState<boolean>(false);
+  const [segmentacoesVivo, setSegmentacoesVivo] = useState<Record<SegmentacaoVivoKey, string[]>>(DEFAULT_VIVO_SEGMENTATIONS);
+  const [loadingSegmentacoesVivo, setLoadingSegmentacoesVivo] = useState<boolean>(false);
+  const [lastImportInfoVivo, setLastImportInfoVivo] = useState<ImportMetadata | null>(null);
+
+  const vivoSubscribersCountRef = useRef<number>(0);
+  const vivoUnsubListenerRef = useRef<(() => void) | null>(null);
+  const isVivoSyncStartedRef = useRef<boolean>(false);
 
   const clearQuotaError = () => {
     setQuotaExhausted(false);
@@ -1068,6 +1168,88 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => unsub();
   }, [user, isAdmin]);
+
+  // 3.1 Subscribe to segmentacoes_vivo (Starts empty as requested in requirement 5)
+  useEffect(() => {
+    if (!user) {
+      setLoadingSegmentacoesVivo(false);
+      return;
+    }
+
+    try {
+      const localSeg = localStorage.getItem(LOCAL_STORAGE_SEG_VIVO_KEY);
+      if (localSeg) {
+        setSegmentacoesVivo(JSON.parse(localSeg));
+      }
+    } catch (e) {}
+
+    const segVivoCol = collection(db, 'segmentacoes_vivo');
+    const unsub = onSnapshot(
+      segVivoCol,
+      (snapshot) => {
+        const segData: Record<SegmentacaoVivoKey, string[]> = {
+          'STATUS IMPL': [],
+          'PENDENCIA': [],
+          'RESPONSÁVEL PENDENCIA': [],
+          'RESPONSÁVEL MEDIÇÃO': [],
+        };
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && Array.isArray(data.opcoes)) {
+            const k = docSnap.id as SegmentacaoVivoKey;
+            if (k in segData) {
+              segData[k] = data.opcoes;
+            }
+          }
+        });
+        setSegmentacoesVivo(segData);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(segData));
+        } catch (e) {}
+        setLoadingSegmentacoesVivo(false);
+      },
+      (err) => {
+        console.warn('Snapshot segmentacoes_vivo erro:', err?.message);
+        setLoadingSegmentacoesVivo(false);
+      }
+    );
+
+    return () => unsub();
+  }, [user]);
+
+  // 3.2 Subscribe to metadata_vivo/importInfo
+  const lastImportTimestampVivoRef = React.useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setLastImportInfoVivo(null);
+      return;
+    }
+    const metaDocRef = doc(db, 'metadata_vivo', 'importInfo');
+    const unsubMeta = onSnapshot(
+      metaDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as ImportMetadata;
+          setLastImportInfoVivo(data);
+          if (data.dataHora) {
+            if (
+              lastImportTimestampVivoRef.current &&
+              lastImportTimestampVivoRef.current !== data.dataHora &&
+              vivoSubscribersCountRef.current > 0
+            ) {
+              refreshRegistrosVivo();
+            }
+            lastImportTimestampVivoRef.current = data.dataHora;
+          }
+        }
+      },
+      (err) => {
+        console.warn('Erro ao ler metadata de importação VIVO:', err?.message);
+      }
+    );
+    return () => unsubMeta();
+  }, [user]);
 
   // 4. Update single registro Bloco 2 with audit logging
   const updateRegistroBloco2 = async (dc: string, bloco2: Partial<RegistroBloco2>) => {
@@ -2753,6 +2935,754 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [user, isFirebaseConfigured, isAdmin, profile]
   );
 
+  /* =========================================================================
+     VIVO IMPLEMENTATIONS: SYNC, SEGMENTATIONS, EDITS & IMPORTS
+     ========================================================================= */
+
+  // VIVO: start real-time sync with incremental delta logic
+  const startVivoSync = useCallback(async () => {
+    if (!user || isVivoSyncStartedRef.current) return;
+    isVivoSyncStartedRef.current = true;
+    setLoadingRegistrosVivo(true);
+
+    const cached = getLocalStoredRegistrosVivo();
+    let hasLocal = false;
+    if (cached && cached.length > 0) {
+      setRegistrosVivo(cached.map((r, idx) => normalizeRegistroVivoData(r, r._id || getSafeVivoDocId(r.ID, idx))));
+      setLoadingRegistrosVivo(false);
+      hasLocal = true;
+    }
+
+    if (!isFirebaseConfigured) {
+      setLoadingRegistrosVivo(false);
+      return;
+    }
+
+    const vivoCol = collection(db, 'registros_vivo');
+
+    try {
+      if (hasLocal) {
+        let latestUpdated = '';
+        for (const r of cached) {
+          if (r._updatedAt && r._updatedAt > latestUpdated) {
+            latestUpdated = r._updatedAt;
+          }
+        }
+        const cutoff = latestUpdated || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const deltaQuery = query(vivoCol, where('_updatedAt', '>', cutoff));
+        const deltaSnap = await getDocs(deltaQuery);
+
+        if (!deltaSnap.empty) {
+          setRegistrosVivo((prev) => {
+            const docMap = new Map<string, RegistroVivo>();
+            for (const r of prev) {
+              if (isValidVivoID(r.ID)) {
+                const key = r._id || getSafeVivoDocId(r.ID);
+                docMap.set(key, r);
+              }
+            }
+            deltaSnap.forEach((docSnap) => {
+              const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
+              if (isValidVivoID(docData.ID)) {
+                docMap.set(docSnap.id, docData);
+              }
+            });
+            const nextList = Array.from(docMap.values());
+            saveLocalRegistrosVivo(nextList);
+            return nextList;
+          });
+        }
+      } else {
+        const fullSnap = await getDocs(vivoCol);
+        const list: RegistroVivo[] = [];
+        fullSnap.forEach((docSnap) => {
+          const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
+          if (isValidVivoID(docData.ID)) {
+            list.push(docData);
+          }
+        });
+        setRegistrosVivo(list);
+        saveLocalRegistrosVivo(list);
+      }
+    } catch (err: any) {
+      console.warn('Erro na carga inicial VIVO:', err?.message);
+    } finally {
+      setLoadingRegistrosVivo(false);
+    }
+
+    // Attach single shared live listener
+    const sessionStartIso = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    try {
+      const liveQuery = query(vivoCol, where('_updatedAt', '>=', sessionStartIso));
+      const unsub = onSnapshot(
+        liveQuery,
+        (snapshot) => {
+          const changes = snapshot.docChanges();
+          if (changes.length === 0) return;
+
+          setRegistrosVivo((prev) => {
+            const docMap = new Map<string, RegistroVivo>();
+            for (const r of prev) {
+              if (isValidVivoID(r.ID)) {
+                const key = r._id || getSafeVivoDocId(r.ID);
+                docMap.set(key, r);
+              }
+            }
+            for (const change of changes) {
+              const docId = change.doc.id;
+              if (change.type === 'removed') {
+                docMap.delete(docId);
+              } else {
+                const docData = normalizeRegistroVivoData(change.doc.data(), docId);
+                if (isValidVivoID(docData.ID)) {
+                  docMap.set(docId, docData);
+                } else {
+                  docMap.delete(docId);
+                }
+              }
+            }
+            const nextList = Array.from(docMap.values());
+            saveLocalRegistrosVivo(nextList);
+            return nextList;
+          });
+        },
+        (err) => {
+          console.warn('Aviso no listener VIVO:', err?.message);
+        }
+      );
+      vivoUnsubListenerRef.current = unsub;
+    } catch (e: any) {
+      console.warn('Erro ao abrir listener VIVO:', e?.message);
+    }
+  }, [user]);
+
+  const stopVivoSync = useCallback(() => {
+    if (vivoUnsubListenerRef.current) {
+      vivoUnsubListenerRef.current();
+      vivoUnsubListenerRef.current = null;
+    }
+    isVivoSyncStartedRef.current = false;
+  }, []);
+
+  const subscribeVivoData = useCallback(() => {
+    vivoSubscribersCountRef.current++;
+    if (vivoSubscribersCountRef.current === 1) {
+      startVivoSync();
+    }
+    return () => {
+      vivoSubscribersCountRef.current = Math.max(0, vivoSubscribersCountRef.current - 1);
+      if (vivoSubscribersCountRef.current === 0) {
+        stopVivoSync();
+      }
+    };
+  }, [startVivoSync, stopVivoSync]);
+
+  const refreshRegistrosVivo = useCallback(async () => {
+    if (!user || !isFirebaseConfigured) return;
+    setLoadingRegistrosVivo(true);
+    try {
+      const snap = await getDocs(collection(db, 'registros_vivo'));
+      const list: RegistroVivo[] = [];
+      snap.forEach((d) => {
+        const docData = normalizeRegistroVivoData(d.data(), d.id);
+        if (isValidVivoID(docData.ID)) {
+          list.push(docData);
+        }
+      });
+      setRegistrosVivo(list);
+      saveLocalRegistrosVivo(list);
+    } catch (e: any) {
+      console.warn('Erro ao atualizar base VIVO:', e?.message);
+    } finally {
+      setLoadingRegistrosVivo(false);
+    }
+  }, [user]);
+
+  // VIVO: update single field (NO edit history)
+  const updateRegistroVivoBloco2 = async (id: string, bloco2: Partial<RegistroVivoBloco2>) => {
+    if (!id) return;
+    const docId = getSafeVivoDocId(id);
+    const docRef = doc(db, 'registros_vivo', docId);
+    const updatePayload: Record<string, any> = sanitizeRecord({
+      ...bloco2,
+      _updatedAt: new Date().toISOString(),
+      _updatedBy: user?.email || '',
+    });
+
+    setRegistrosVivo((prev) => {
+      const idx = prev.findIndex((r) => r.ID === id || r._id === docId);
+      if (idx !== -1) {
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          ...bloco2,
+          _updatedAt: updatePayload._updatedAt,
+          _updatedBy: updatePayload._updatedBy,
+        };
+        saveLocalRegistrosVivo(updated);
+        return updated;
+      }
+      return prev;
+    });
+
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(docRef, updatePayload, { merge: true });
+      } catch (err: any) {
+        console.error('Erro ao atualizar registro VIVO:', err);
+        throw err;
+      }
+    }
+  };
+
+  // VIVO Segmentações
+  const addSegmentacaoVivoOpcao = async (segKey: SegmentacaoVivoKey, novaOpcao: string) => {
+    if (!novaOpcao.trim()) return;
+    const cleanOpt = novaOpcao.trim().toUpperCase();
+    const current = segmentacoesVivo[segKey] || [];
+    if (current.includes(cleanOpt)) return;
+    const updated = [...current, cleanOpt];
+
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: updated };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: updated,
+      });
+    }
+  };
+
+  const addMultiplasSegmentacaoVivoOpcoes = async (segKey: SegmentacaoVivoKey, novasOpcoes: string[]) => {
+    if (!novasOpcoes || novasOpcoes.length === 0) return;
+    const current = segmentacoesVivo[segKey] || [];
+    const setOpcoes = new Set(current);
+    novasOpcoes.forEach((opt) => {
+      const clean = String(opt || '').trim().toUpperCase();
+      if (clean) setOpcoes.add(clean);
+    });
+    const updated = Array.from(setOpcoes);
+
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: updated };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: updated,
+      });
+    }
+  };
+
+  const editSegmentacaoVivoOpcao = async (segKey: SegmentacaoVivoKey, index: number, novoValor: string) => {
+    const current = segmentacoesVivo[segKey] || [];
+    if (index < 0 || index >= current.length) return;
+    const cleanVal = novoValor.trim().toUpperCase();
+    const updated = [...current];
+    updated[index] = cleanVal;
+
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: updated };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: updated,
+      });
+    }
+  };
+
+  const removeSegmentacaoVivoOpcao = async (segKey: SegmentacaoVivoKey, index: number) => {
+    const current = segmentacoesVivo[segKey] || [];
+    if (index < 0 || index >= current.length) return;
+    const updated = current.filter((_, i) => i !== index);
+
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: updated };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: updated,
+      });
+    }
+  };
+
+  const limparSegmentacaoVivo = async (segKey: SegmentacaoVivoKey) => {
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: [] };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: [],
+      });
+    }
+  };
+
+  const reorderSegmentacaoVivoOpcoes = async (segKey: SegmentacaoVivoKey, novasOpcoes: string[]) => {
+    setSegmentacoesVivo((prev) => {
+      const next = { ...prev, [segKey]: novasOpcoes };
+      try {
+        localStorage.setItem(LOCAL_STORAGE_SEG_VIVO_KEY, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    if (isFirebaseConfigured) {
+      await setDoc(doc(db, 'segmentacoes_vivo', segKey), {
+        id: segKey,
+        nome: segKey,
+        opcoes: novasOpcoes,
+      });
+    }
+  };
+
+  // VIVO: Analisar Importação Padrão
+  const analisarImportacaoPadraoVivo = (
+    planilhaLinhas: Record<string, any>[],
+    detectedColumns?: string[]
+  ): ImportPadraoVivoDiff => {
+    const colsInFile = new Set<string>();
+    if (detectedColumns && detectedColumns.length > 0) {
+      detectedColumns.forEach((c) => colsInFile.add(c));
+    }
+    planilhaLinhas.forEach((linha) => {
+      Object.keys(linha).forEach((k) => {
+        if (k === '_rowNumber') return;
+        const matched = matchCanonicalVivoColumn(k);
+        if (matched) colsInFile.add(matched);
+      });
+    });
+
+    const checkMatriz = verificarColunasLeituraMatrizVivo(Array.from(colsInFile));
+    if (!checkMatriz.todasPresentes) {
+      throw new Error(
+        `Não é possível atualizar a Base Matriz VIVO: todas as 21 colunas de Leitura devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+          '\n• '
+        )}`
+      );
+    }
+
+    const idMapAtual = new Map<string, RegistroVivo>();
+    registrosVivo.forEach((r) => {
+      const cleaned = cleanVivoID(r.ID);
+      if (cleaned) {
+        idMapAtual.set(cleaned.toUpperCase(), r);
+      }
+    });
+
+    const novas: RegistroVivoBloco1[] = [];
+    const atualizadas: {
+      id: string;
+      antigoBloco1: Partial<RegistroVivoBloco1>;
+      novoBloco1: RegistroVivoBloco1;
+      bloco2Existente: RegistroVivoBloco2;
+    }[] = [];
+
+    const planIdsEncontrados = new Set<string>();
+
+    const extractVivoField = (row: Record<string, any>, key: string): string => {
+      if (row[key] !== undefined && row[key] !== null) return String(row[key]).trim();
+      for (const k of Object.keys(row)) {
+        const m = matchCanonicalVivoColumn(k);
+        if (m === key && row[k] !== undefined && row[k] !== null) {
+          return String(row[k]).trim();
+        }
+      }
+      return '';
+    };
+
+    planilhaLinhas.forEach((linha) => {
+      const rawId = extractVivoField(linha, 'ID');
+      const idVal = cleanVivoID(rawId);
+      if (!idVal) return;
+
+      const idUpper = idVal.toUpperCase();
+      planIdsEncontrados.add(idUpper);
+
+      const bloco1: RegistroVivoBloco1 = {
+        'REF': extractVivoField(linha, 'REF'),
+        'REG': extractVivoField(linha, 'REG') || 'RCO',
+        'UF': extractVivoField(linha, 'UF').toUpperCase(),
+        'Localidade': extractVivoField(linha, 'Localidade'),
+        'ID': idVal,
+        'Ano': extractVivoField(linha, 'Ano'),
+        'Pedido': extractVivoField(linha, 'Pedido'),
+        'Desc.': extractVivoField(linha, 'Desc.'),
+        'Status Draft': extractVivoField(linha, 'Status Draft'),
+        'Tipo de Projeto': extractVivoField(linha, 'Tipo de Projeto'),
+        'Contrato': extractVivoField(linha, 'Contrato'),
+        'Data Status': extractVivoField(linha, 'Data Status'),
+        'Faixa Status': extractVivoField(linha, 'Faixa Status'),
+        'Status Medição Final': extractVivoField(linha, 'Status Medição Final'),
+        'Data Medição': extractVivoField(linha, 'Data Medição'),
+        'Faixa Medição': extractVivoField(linha, 'Faixa Medição'),
+        'OSP ORÇAMENTO': extractVivoField(linha, 'OSP ORÇAMENTO') || '0,00',
+        'OSP MEDIDO': extractVivoField(linha, 'OSP MEDIDO') || '0,00',
+        'Faturado': extractVivoField(linha, 'Faturado') || '0,00',
+        'Produção Bi R$': extractVivoField(linha, 'Produção Bi R$') || '0,00',
+        'Mês Input': extractVivoField(linha, 'Mês Input'),
+      };
+
+      if (idMapAtual.has(idUpper)) {
+        const existente = idMapAtual.get(idUpper)!;
+        const bloco2: RegistroVivoBloco2 = {
+          'STATUS IMPL': existente['STATUS IMPL'] || '',
+          'PENDENCIA': existente['PENDENCIA'] || '',
+          'RESPONSÁVEL PENDENCIA': existente['RESPONSÁVEL PENDENCIA'] || '',
+          'PRAZO DE MEDIÇÃO': existente['PRAZO DE MEDIÇÃO'] || '',
+          'PRAZO PROJETO': existente['PRAZO PROJETO'] || '',
+          'RESPONSÁVEL MEDIÇÃO': existente['RESPONSÁVEL MEDIÇÃO'] || '',
+          'OBS MEDIÇÃO': existente['OBS MEDIÇÃO'] || '',
+          'DATA TRATATIVA': existente['DATA TRATATIVA'] || '',
+          'ID NOVO/ANTIGO': existente['ID NOVO/ANTIGO'] || '',
+        };
+        atualizadas.push({
+          id: existente.ID || idVal,
+          antigoBloco1: existente,
+          novoBloco1: bloco1,
+          bloco2Existente: bloco2,
+        });
+      } else {
+        novas.push(bloco1);
+      }
+    });
+
+    const removidas: RegistroVivo[] = [];
+    registrosVivo.forEach((r) => {
+      const cleaned = cleanVivoID(r.ID);
+      if (cleaned) {
+        if (!planIdsEncontrados.has(cleaned.toUpperCase())) {
+          removidas.push(r);
+        }
+      } else {
+        removidas.push(r);
+      }
+    });
+
+    return {
+      novas,
+      removidas,
+      atualizadas,
+    };
+  };
+
+  // VIVO: Executar Importação Padrão
+  const executarImportacaoPadraoVivo = async (
+    diff: ImportPadraoVivoDiff,
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ) => {
+    if (!checkIsAdmin()) {
+      throw new Error('Acesso restrito: Apenas administradores possuem permissão para importar planilhas.');
+    }
+
+    const agoraIso = new Date().toISOString();
+    const currentUserEmail = user?.email || auth?.currentUser?.email || 'admin';
+    const vivoCol = collection(db, 'registros_vivo');
+
+    const totalOps = diff.novas.length + diff.atualizadas.length + diff.removidas.length;
+    let completedOps = 0;
+
+    const BATCH_SIZE = 400;
+    const ops: Array<{ type: 'set' | 'delete'; docId: string; data?: any }> = [];
+
+    diff.novas.forEach((nova) => {
+      const docId = getSafeVivoDocId(nova.ID);
+      ops.push({
+        type: 'set',
+        docId,
+        data: sanitizeRecord({
+          ...nova,
+          'STATUS IMPL': '',
+          'PENDENCIA': '',
+          'RESPONSÁVEL PENDENCIA': '',
+          'PRAZO DE MEDIÇÃO': '',
+          'PRAZO PROJETO': '',
+          'RESPONSÁVEL MEDIÇÃO': '',
+          'OBS MEDIÇÃO': '',
+          'DATA TRATATIVA': '',
+          'ID NOVO/ANTIGO': '',
+          _updatedAt: agoraIso,
+          _updatedBy: currentUserEmail,
+        }),
+      });
+    });
+
+    diff.atualizadas.forEach((item) => {
+      const docId = getSafeVivoDocId(item.id);
+      ops.push({
+        type: 'set',
+        docId,
+        data: sanitizeRecord({
+          ...item.novoBloco1,
+          ...item.bloco2Existente,
+          _updatedAt: agoraIso,
+          _updatedBy: currentUserEmail,
+        }),
+      });
+    });
+
+    diff.removidas.forEach((r) => {
+      const docId = r._id || getSafeVivoDocId(r.ID);
+      ops.push({
+        type: 'delete',
+        docId,
+      });
+    });
+
+    if (isFirebaseConfigured) {
+      for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+        const chunk = ops.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((op) => {
+          const docRef = doc(vivoCol, op.docId);
+          if (op.type === 'set') {
+            batch.set(docRef, op.data, { merge: true });
+          } else {
+            batch.delete(docRef);
+          }
+        });
+        await commitBatchWithTimeout(batch, 30000, `importação padrão VIVO lote ${Math.floor(i / BATCH_SIZE) + 1}`);
+        completedOps += chunk.length;
+        const pct = totalOps > 0 ? Math.round((completedOps / totalOps) * 90) : 90;
+        onProgress?.(pct, `Gravando registros VIVO no banco (${completedOps} de ${totalOps})...`);
+      }
+
+      const metaPayload: ImportMetadata = {
+        dataHora: agoraIso,
+        dataHoraFormatada: new Date().toLocaleString('pt-BR'),
+        totalRegistros: diff.novas.length + diff.atualizadas.length,
+        tipo: 'padrao',
+        usuario: currentUserEmail,
+        novas: diff.novas.length,
+        atualizadas: diff.atualizadas.length,
+        removidas: diff.removidas.length,
+      };
+      await setDoc(doc(db, 'metadata_vivo', 'importInfo'), metaPayload);
+      setLastImportInfoVivo(metaPayload);
+    }
+
+    setRegistrosVivo((prev) => {
+      const docMap = new Map<string, RegistroVivo>();
+      prev.forEach((r) => {
+        const k = r._id || getSafeVivoDocId(r.ID);
+        docMap.set(k, r);
+      });
+      diff.removidas.forEach((r) => {
+        const k = r._id || getSafeVivoDocId(r.ID);
+        docMap.delete(k);
+      });
+      diff.atualizadas.forEach((item) => {
+        const k = getSafeVivoDocId(item.id);
+        docMap.set(k, {
+          _id: k,
+          ...item.novoBloco1,
+          ...item.bloco2Existente,
+          _updatedAt: agoraIso,
+          _updatedBy: currentUserEmail,
+        });
+      });
+      diff.novas.forEach((nova) => {
+        const k = getSafeVivoDocId(nova.ID);
+        docMap.set(k, {
+          _id: k,
+          ...nova,
+          'STATUS IMPL': '',
+          'PENDENCIA': '',
+          'RESPONSÁVEL PENDENCIA': '',
+          'PRAZO DE MEDIÇÃO': '',
+          'PRAZO PROJETO': '',
+          'RESPONSÁVEL MEDIÇÃO': '',
+          'OBS MEDIÇÃO': '',
+          'DATA TRATATIVA': '',
+          'ID NOVO/ANTIGO': '',
+          _updatedAt: agoraIso,
+          _updatedBy: currentUserEmail,
+        });
+      });
+      const nextList = Array.from(docMap.values());
+      saveLocalRegistrosVivo(nextList);
+      return nextList;
+    });
+
+    onProgress?.(100, 'Importação da Base Matriz VIVO concluída com sucesso!');
+  };
+
+  // VIVO: Executar Importação Massiva
+  const executarImportacaoMassivaVivo = async (
+    planilhaLinhas: Record<string, any>[],
+    onProgress?: (porcentagem: number, etapa: string) => void
+  ): Promise<ImportMassivaResult> => {
+    if (!checkIsAdmin()) {
+      throw new Error('Acesso restrito: Apenas administradores possuem permissão para importar planilhas.');
+    }
+
+    const divergencias = validarColunasSegmentadasVivo(planilhaLinhas, segmentacoesVivo);
+    if (divergencias.length > 0) {
+      const detalhes = divergencias
+        .map(
+          (d) =>
+            `• Linha ${d.linha}: Coluna "${d.coluna}" — Valor "${d.valorInformado}" (${d.mensagem}${
+              d.sugestao ? ` — Sugestão: "${d.sugestao}"` : ''
+            })`
+        )
+        .join('\n');
+      throw new Error(
+        `Importação bloqueada: Foram encontradas ${divergencias.length} divergências com a aba Segmentação da VIVO. Corrija os valores na planilha para prosseguir:\n\n${detalhes}`
+      );
+    }
+
+    const idMap = new Map<string, RegistroVivo>();
+    registrosVivo.forEach((r) => {
+      const clean = cleanVivoID(r.ID);
+      if (clean) idMap.set(clean.toUpperCase(), r);
+    });
+
+    const notFoundRows: { dc: string; rowData: any }[] = [];
+    const rowsToUpdate: { id: string; rowData: any; changes: Partial<RegistroVivoBloco2> }[] = [];
+    const affectedCols = new Set<string>();
+
+    const agoraIso = new Date().toISOString();
+    const currentUserEmail = user?.email || auth?.currentUser?.email || 'admin';
+
+    const extractVivoField = (row: Record<string, any>, key: string): string => {
+      if (row[key] !== undefined && row[key] !== null) return String(row[key]).trim();
+      for (const k of Object.keys(row)) {
+        const m = matchCanonicalVivoColumn(k);
+        if (m === key && row[k] !== undefined && row[k] !== null) {
+          return String(row[k]).trim();
+        }
+      }
+      return '';
+    };
+
+    planilhaLinhas.forEach((linha) => {
+      const rawId = extractVivoField(linha, 'ID');
+      const idVal = cleanVivoID(rawId);
+      if (!idVal) return;
+
+      const existing = idMap.get(idVal.toUpperCase());
+      if (!existing) {
+        notFoundRows.push({ dc: idVal, rowData: linha });
+        return;
+      }
+
+      const changes: Partial<RegistroVivoBloco2> = {};
+      let hasChanges = false;
+
+      VIVO_BLOCO_2_KEYS.forEach((colKey) => {
+        let valInRow: any = undefined;
+        for (const k of Object.keys(linha)) {
+          if (k === '_rowNumber') continue;
+          const matched = matchCanonicalVivoColumn(k);
+          if (matched === colKey || k.trim().toLowerCase() === colKey.toLowerCase()) {
+            valInRow = linha[k];
+            break;
+          }
+        }
+
+        if (valInRow !== undefined && valInRow !== null) {
+          const strVal = String(valInRow).trim();
+          const oldVal = (existing as any)[colKey] || '';
+          if (strVal !== oldVal) {
+            (changes as any)[colKey] = strVal;
+            hasChanges = true;
+            affectedCols.add(colKey);
+          }
+        }
+      });
+
+      if (hasChanges) {
+        rowsToUpdate.push({ id: existing.ID, rowData: linha, changes });
+      }
+    });
+
+    if (rowsToUpdate.length > 0 && isFirebaseConfigured) {
+      const vivoCol = collection(db, 'registros_vivo');
+      const BATCH_SIZE = 400;
+
+      for (let i = 0; i < rowsToUpdate.length; i += BATCH_SIZE) {
+        const chunk = rowsToUpdate.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((item) => {
+          const docId = getSafeVivoDocId(item.id);
+          const docRef = doc(vivoCol, docId);
+          batch.set(
+            docRef,
+            sanitizeRecord({
+              ...item.changes,
+              _updatedAt: agoraIso,
+              _updatedBy: currentUserEmail,
+            }),
+            { merge: true }
+          );
+        });
+        await commitBatchWithTimeout(batch, 30000, `importação massiva VIVO lote ${Math.floor(i / BATCH_SIZE) + 1}`);
+        const pct = Math.round(((i + chunk.length) / rowsToUpdate.length) * 100);
+        onProgress?.(pct, `Atualizando registros VIVO (${i + chunk.length} de ${rowsToUpdate.length})...`);
+      }
+    }
+
+    setRegistrosVivo((prev) => {
+      const updateMap = new Map<string, Partial<RegistroVivoBloco2>>();
+      rowsToUpdate.forEach((item) => updateMap.set(item.id.toUpperCase(), item.changes));
+
+      const next = prev.map((r) => {
+        const changes = updateMap.get(r.ID.toUpperCase());
+        if (changes) {
+          return {
+            ...r,
+            ...changes,
+            _updatedAt: agoraIso,
+            _updatedBy: currentUserEmail,
+          };
+        }
+        return r;
+      });
+      saveLocalRegistrosVivo(next);
+      return next;
+    });
+
+    return {
+      totalRows: planilhaLinhas.length,
+      updatedRows: rowsToUpdate.length,
+      notFoundRows,
+      updatedColumns: Array.from(affectedCols),
+    };
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -2793,6 +3723,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sincronizarFRLocalParaFirestore,
         apagarTodaBaseFR,
         popularDadosExemplo,
+
+        // VIVO
+        registrosVivo,
+        loadingRegistrosVivo,
+        segmentacoesVivo,
+        loadingSegmentacoesVivo,
+        lastImportInfoVivo,
+        subscribeVivoData,
+        refreshRegistrosVivo,
+        updateRegistroVivoBloco2,
+        addSegmentacaoVivoOpcao,
+        addMultiplasSegmentacaoVivoOpcoes,
+        editSegmentacaoVivoOpcao,
+        removeSegmentacaoVivoOpcao,
+        limparSegmentacaoVivo,
+        reorderSegmentacaoVivoOpcoes,
+        analisarImportacaoPadraoVivo,
+        executarImportacaoPadraoVivo,
+        executarImportacaoMassivaVivo,
       }}
     >
       {children}

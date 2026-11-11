@@ -118,6 +118,63 @@
         "_updatedAt": { "type": "string" },
         "_updatedBy": { "type": "string" }
       }
+    },
+    "registros_vivo": {
+      "title": "Registros de Obras VIVO (IDs)",
+      "description": "Armazena as informações de medição e acompanhamento das obras da VIVO.",
+      "properties": {
+        "ID": { "type": "string", "description": "Identificador único da obra VIVO" },
+        "REF": { "type": "string" },
+        "REG": { "type": "string" },
+        "UF": { "type": "string" },
+        "Localidade": { "type": "string" },
+        "Ano": { "type": "string" },
+        "Pedido": { "type": "string" },
+        "Desc.": { "type": "string" },
+        "Status Draft": { "type": "string" },
+        "Tipo de Projeto": { "type": "string" },
+        "Contrato": { "type": "string" },
+        "Data Status": { "type": "string" },
+        "Faixa Status": { "type": "string" },
+        "Status Medição Final": { "type": "string" },
+        "Data Medição": { "type": "string" },
+        "Faixa Medição": { "type": "string" },
+        "OSP ORÇAMENTO": { "type": "string" },
+        "OSP MEDIDO": { "type": "string" },
+        "Faturado": { "type": "string" },
+        "Produção Bi R$": { "type": "string" },
+        "Mês Input": { "type": "string" },
+        "STATUS IMPL": { "type": "string" },
+        "PENDENCIA": { "type": "string" },
+        "RESPONSÁVEL PENDENCIA": { "type": "string" },
+        "PRAZO DE MEDIÇÃO": { "type": "string" },
+        "PRAZO PROJETO": { "type": "string" },
+        "RESPONSÁVEL MEDIÇÃO": { "type": "string" },
+        "OBS MEDIÇÃO": { "type": "string" },
+        "DATA TRATATIVA": { "type": "string" },
+        "ID NOVO/ANTIGO": { "type": "string" },
+        "_updatedAt": { "type": "string" },
+        "_updatedBy": { "type": "string" }
+      },
+      "required": ["ID"]
+    },
+    "segmentacoes_vivo": {
+      "title": "Listas de Segmentação VIVO",
+      "description": "Armazena as opções de dropdown para os campos editáveis da VIVO.",
+      "properties": {
+        "nome": { "type": "string" },
+        "opcoes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["nome", "opcoes"]
+    },
+    "metadata_vivo": {
+      "title": "Metadados de Importação VIVO",
+      "description": "Metadados de importações de planilhas para a base VIVO.",
+      "properties": {
+        "dataHora": { "type": "string" },
+        "totalRegistros": { "type": "number" },
+        "tipo": { "type": "string" }
+      }
     }
   }
 }

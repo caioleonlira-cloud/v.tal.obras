@@ -94,6 +94,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 9. Coleções exclusivas do cliente VIVO
+    match /registros_vivo/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /segmentacoes_vivo/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /metadata_vivo/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Bloqueio global por padrão para qualquer outra coleção não declarada
     match /{document=**} {
       allow read, write: if false;

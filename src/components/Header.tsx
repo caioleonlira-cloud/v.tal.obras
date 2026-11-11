@@ -23,6 +23,7 @@ import {
 
 export type NavTabType =
   | 'registros'
+  | 'registros_vivo'
   | 'dashboard'
   | 'fr'
   | 'importacao'
@@ -43,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenFirebaseConfig,
 }) => {
   const { profile, user, logout, isAdmin } = useAuth();
-  const { registros, frRegistros, loadingRegistros, loadingFRs, refreshRegistros, refreshFRs, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
+  const { registros, registrosVivo, frRegistros, loadingRegistros, loadingRegistrosVivo, loadingFRs, refreshRegistros, refreshRegistrosVivo, refreshFRs, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
 
   // Presença online em tempo real (Firestore event-based, exclusivo ADM)
   const {
@@ -108,9 +109,15 @@ export const Header: React.FC<HeaderProps> = ({
             TELEMONT
           </div>
 
-          {/* Badge V.TAL */}
-          <div className="px-1.5 py-0.5 rounded bg-white text-[#0a1f44] font-black text-[10px] tracking-tight uppercase shadow-xs">
-            V.TAL
+          {/* Badges V.TAL / VIVO (Mesmo tamanho, cor de fundo, tipografia e borda) */}
+          <div className="flex items-center space-x-1">
+            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-white text-[#0a1f44] font-black text-[10px] tracking-tight uppercase shadow-xs min-w-[42px] h-[20px] text-center">
+              V.TAL
+            </span>
+            <span className="text-slate-400 font-bold text-xs select-none">/</span>
+            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded bg-white text-[#0a1f44] font-black text-[10px] tracking-tight uppercase shadow-xs min-w-[42px] h-[20px] text-center">
+              VIVO
+            </span>
           </div>
 
           {/* Nome do Sistema e Subtítulo */}
@@ -212,13 +219,14 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={() => {
               refreshRegistros();
+              refreshRegistrosVivo();
               refreshFRs();
             }}
-            title="Recarregar base de dados (Obras e FR)"
+            title="Recarregar base de dados (V.TAL, VIVO e FR)"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer border border-white/10"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${loadingRegistros || loadingFRs ? 'animate-spin text-cyan-400' : ''}`}
+              className={`w-3.5 h-3.5 ${loadingRegistros || loadingRegistrosVivo || loadingFRs ? 'animate-spin text-cyan-400' : ''}`}
             />
           </button>
 
@@ -283,7 +291,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Dashboard</span>
           </button>
 
-          {/* 2. Registro (Ativo com badge) */}
+          {/* 2. Registro - (V.TAL OBRAS) */}
           <button
             type="button"
             onClick={() => setActiveTab('registros')}
@@ -294,7 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Registro</span>
+            <span>Registro - (V.TAL OBRAS)</span>
             <span
               className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 ${
                 activeTab === 'registros'
@@ -303,6 +311,29 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               {registros.length.toLocaleString('pt-BR')}
+            </span>
+          </button>
+
+          {/* 3. Registro - (VIVO OBRAS) - Todos os usuários enxergam */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('registros_vivo')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'registros_vivo'
+                ? 'bg-[#1a56db] text-white shadow-xs'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Registro - (VIVO OBRAS)</span>
+            <span
+              className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 ${
+                activeTab === 'registros_vivo'
+                  ? 'bg-[#0a1f44] text-cyan-300 border border-cyan-400/30'
+                  : 'bg-white/15 text-slate-300'
+              }`}
+            >
+              {registrosVivo.length.toLocaleString('pt-BR')}
             </span>
           </button>
 

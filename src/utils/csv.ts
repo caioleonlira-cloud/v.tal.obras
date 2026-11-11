@@ -14,6 +14,20 @@ import {
   MAPA_COLUNA_SEGMENTACAO_KEY,
   SegmentacaoDivergencia,
   DEFAULT_SEGMENTATIONS,
+  RegistroVivo,
+  RegistroVivoBloco1,
+  RegistroVivoBloco2,
+  VIVO_BLOCO_1_KEYS,
+  VIVO_BLOCO_2_KEYS,
+  VIVO_ALL_COLUMNS,
+  SegmentacaoVivoKey,
+  VIVO_SEGMENTATION_KEYS,
+  COLUNAS_SEGMENTADAS_MASSIVA_VIVO,
+  ColunaSegmentadaMassivaVivo,
+  MAPA_COLUNA_SEGMENTACAO_KEY_VIVO,
+  cleanVivoID,
+  isValidVivoID,
+  getSafeVivoDocId,
 } from '../types';
 import { parseCurrencyValue, parseFRValor, formatDecimalBR, formatBRL, formatCurrency } from './currency';
 import { normalizeMesFR } from './monthUtils';
@@ -27,8 +41,10 @@ export {
   formatCurrency,
   COLUNAS_SEGMENTADAS_MASSIVA,
   MAPA_COLUNA_SEGMENTACAO_KEY,
+  COLUNAS_SEGMENTADAS_MASSIVA_VIVO,
+  MAPA_COLUNA_SEGMENTACAO_KEY_VIVO,
 };
-export type { ColunaSegmentadaMassiva, SegmentacaoDivergencia };
+export type { ColunaSegmentadaMassiva, SegmentacaoDivergencia, ColunaSegmentadaMassivaVivo };
 
 
 /**
@@ -1917,3 +1933,597 @@ export async function parseFRFile(file: File): Promise<ParseFRResult> {
     };
   }
 }
+
+/* =========================================================================
+   VIVO: CANONICAL MATCHING, VALIDATION, PARSING & TEMPLATES
+   ========================================================================= */
+
+const VIVO_NUMERIC_COLUMNS = new Set([
+  'OSP ORÇAMENTO',
+  'OSP MEDIDO',
+  'Faturado',
+  'Produção Bi R$',
+]);
+
+const VIVO_DATE_COLUMNS = new Set([
+  'Data Status',
+  'Data Medição',
+  'PRAZO DE MEDIÇÃO',
+  'PRAZO PROJETO',
+  'DATA TRATATIVA',
+]);
+
+/**
+ * Mapeia cabeçalho bruto para nome canônico da VIVO
+ */
+export function matchCanonicalVivoColumn(rawHeader: string): string | null {
+  if (!rawHeader) return null;
+  const rawTrimmed = String(rawHeader).trim();
+  if (!rawTrimmed) return null;
+
+  const directMatch = VIVO_ALL_COLUMNS.find(
+    (col) => col.toLowerCase() === rawTrimmed.toLowerCase()
+  );
+  if (directMatch) return directMatch;
+
+  const clean = rawTrimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[º°ª#?:.\-_/\\()\[\]{}|;,+*!&]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+
+  // 1. ID (Identificador VIVO)
+  if (
+    clean === 'ID' ||
+    clean === 'ID OBRA' ||
+    clean === 'ID PROJETO' ||
+    clean === 'CODIGO ID' ||
+    clean === 'NUMERO ID' ||
+    clean === 'N ID' ||
+    clean === 'NO ID' ||
+    clean === 'NR ID' ||
+    clean === 'ID DA OBRA' ||
+    clean === 'IDENTIFICADOR' ||
+    clean === 'IDENTIFICADOR ID'
+  ) {
+    return 'ID';
+  }
+
+  // 2. Base: Leitura
+  if (clean === 'REF' || clean === 'REFERENCIA' || clean === 'REF.' || clean.startsWith('REF ')) return 'REF';
+  if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
+  if (clean === 'UF' || clean === 'ESTADO' || clean === 'SIGLA UF') return 'UF';
+  if (clean === 'LOCALIDADE' || clean === 'CIDADE' || clean === 'MUNICIPIO') return 'Localidade';
+  if (clean === 'ANO' || clean === 'EXERCICIO') return 'Ano';
+  if (clean === 'PEDIDO' || clean === 'N PEDIDO' || clean === 'NUM PEDIDO' || clean === 'NUMERO PEDIDO' || clean === 'ORDEM') return 'Pedido';
+  if (clean === 'DESC' || clean === 'DESC.' || clean === 'DESCRICAO' || clean === 'DESCRICAO DO PROJETO') return 'Desc.';
+  if (clean === 'STATUS DRAFT' || clean === 'DRAFT' || clean === 'STATUS DO DRAFT') return 'Status Draft';
+  if (clean === 'TIPO DE PROJETO' || clean === 'TIPO PROJETO' || clean === 'TIPO DO PROJETO') return 'Tipo de Projeto';
+  if (clean === 'CONTRATO' || clean === 'NUMERO CONTRATO' || clean === 'N CONTRATO') return 'Contrato';
+  if (clean === 'DATA STATUS' || clean === 'DT STATUS' || clean === 'DATA DO STATUS') return 'Data Status';
+  if (clean === 'FAIXA STATUS' || clean === 'FAIXA DO STATUS') return 'Faixa Status';
+  if (
+    clean === 'STATUS MEDICAO FINAL' ||
+    clean === 'STATUS MED FINAL' ||
+    clean === 'MEDICAO FINAL STATUS' ||
+    clean === 'STATUS DA MEDICAO FINAL'
+  ) return 'Status Medição Final';
+  if (clean === 'DATA MEDICAO' || clean === 'DT MEDICAO' || clean === 'DATA DA MEDICAO') return 'Data Medição';
+  if (clean === 'FAIXA MEDICAO' || clean === 'FAIXA DA MEDICAO') return 'Faixa Medição';
+  if (
+    clean === 'OSP ORCAMENTO' ||
+    clean === 'OSP ORCAMENTO R$' ||
+    clean === 'ORCAMENTO OSP' ||
+    clean === 'ORCAMENTO' ||
+    clean === 'VALOR ORCAMENTO'
+  ) return 'OSP ORÇAMENTO';
+  if (
+    clean === 'OSP MEDIDO' ||
+    clean === 'OSP MEDIDO R$' ||
+    clean === 'MEDIDO OSP' ||
+    clean === 'MEDIDO' ||
+    clean === 'VALOR MEDIDO'
+  ) return 'OSP MEDIDO';
+  if (
+    clean === 'FATURADO' ||
+    clean === 'VALOR FATURADO' ||
+    clean === 'FATURAMENTO' ||
+    clean === 'FATURADO R$'
+  ) return 'Faturado';
+  if (
+    clean.includes('PRODUCAO BI') ||
+    clean.includes('PRODUCAO BI R$') ||
+    clean.includes('PROD BI') ||
+    clean === 'R$ PRODUCAO BI' ||
+    clean === 'R$ PRODUCAO BI.'
+  ) return 'Produção Bi R$';
+  if (
+    clean === 'MES INPUT' ||
+    clean === 'MES DE INPUT' ||
+    clean === 'INPUT MES' ||
+    clean.includes('MES INPUT')
+  ) return 'Mês Input';
+
+  // 3. Equipe: Edição
+  if (
+    clean === 'STATUS IMPL' ||
+    clean === 'STATUS IMPLANTACAO' ||
+    clean === 'STATUS DA IMPLANTACAO' ||
+    clean.startsWith('STATUS IMPL')
+  ) return 'STATUS IMPL';
+  if (clean === 'PENDENCIA' || clean === 'TIPO PENDENCIA' || clean === 'PENDENCIAS') return 'PENDENCIA';
+  if (
+    clean === 'RESPONSAVEL PENDENCIA' ||
+    clean === 'RESP PENDENCIA' ||
+    clean === 'RESPONSAVEL PELA PENDENCIA'
+  ) return 'RESPONSÁVEL PENDENCIA';
+  if (
+    clean === 'PRAZO DE MEDICAO' ||
+    clean === 'PRAZO MEDICAO' ||
+    clean === 'PRAZO DA MEDICAO'
+  ) return 'PRAZO DE MEDIÇÃO';
+  if (clean === 'PRAZO PROJETO' || clean === 'PRAZO DO PROJETO') return 'PRAZO PROJETO';
+  if (
+    clean === 'RESPONSAVEL MEDICAO' ||
+    clean === 'RESP MEDICAO' ||
+    clean === 'RESPONSAVEL PELA MEDICAO'
+  ) return 'RESPONSÁVEL MEDIÇÃO';
+  if (
+    clean === 'OBS MEDICAO' ||
+    clean === 'OBSERVACAO MEDICAO' ||
+    clean === 'OBS DA MEDICAO' ||
+    clean === 'OBSERVACOES MEDICAO'
+  ) return 'OBS MEDIÇÃO';
+  if (clean === 'DATA TRATATIVA' || clean === 'DT TRATATIVA' || clean === 'TRATATIVA DATA') return 'DATA TRATATIVA';
+  if (
+    clean === 'ID NOVO ANTIGO' ||
+    clean === 'ID NOVO/ANTIGO' ||
+    clean === 'ID ANTIGO NOVO' ||
+    clean === 'ID NOVO OU ANTIGO'
+  ) return 'ID NOVO/ANTIGO';
+
+  return null;
+}
+
+/**
+ * Reconhece automaticamente para qual base a planilha vai:
+ * - Se o cabeçalho tiver a coluna "DC" é V.TAL.
+ * - Se tiver a coluna "ID" é VIVO.
+ * - Se não bater com nenhum dos dois, retorna "UNKNOWN".
+ */
+export function detectCSVClient(rawHeaders: string[]): 'VTAL' | 'VIVO' | 'UNKNOWN' {
+  if (!Array.isArray(rawHeaders) || rawHeaders.length === 0) return 'UNKNOWN';
+
+  let hasDC = false;
+  let hasID = false;
+
+  for (const h of rawHeaders) {
+    if (!h) continue;
+    const clean = String(h)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[º°ª#?:.\-_/\\()\[\]{}|;,+*!&]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+
+    // DC detection
+    if (
+      clean === 'DC' ||
+      clean === 'NUMERO DC' ||
+      clean === 'N DC' ||
+      clean === 'CODIGO DC' ||
+      clean === 'COD DC'
+    ) {
+      hasDC = true;
+    }
+
+    // ID detection
+    if (
+      clean === 'ID' ||
+      clean === 'ID OBRA' ||
+      clean === 'ID PROJETO' ||
+      clean === 'CODIGO ID' ||
+      clean === 'NUMERO ID' ||
+      clean === 'N ID'
+    ) {
+      hasID = true;
+    }
+  }
+
+  if (hasDC && !hasID) return 'VTAL';
+  if (hasID && !hasDC) return 'VIVO';
+
+  if (hasDC && hasID) {
+    // If both tokens appear, check client-specific columns
+    const hasVtalSpecific = rawHeaders.some((h) => {
+      const c = String(h).toUpperCase();
+      return c.includes('DR') || c.includes('CARTEIRA') || c.includes('DC SIMULA');
+    });
+    if (hasVtalSpecific) return 'VTAL';
+    return 'VIVO';
+  }
+
+  return 'UNKNOWN';
+}
+
+/**
+ * Lê os primeiros bytes de um arquivo para detectar o cliente (VTAL ou VIVO)
+ */
+export async function detectFileClient(file: File): Promise<'VTAL' | 'VIVO' | 'UNKNOWN'> {
+  try {
+    const textSample = await file.slice(0, 8192).text();
+    const lines = textSample.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0);
+    for (const line of lines.slice(0, 5)) {
+      const delimiter = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+      const tokens = line.split(delimiter).map((t) => t.replace(/^["']|["']$/g, '').trim());
+      const detected = detectCSVClient(tokens);
+      if (detected !== 'UNKNOWN') return detected;
+    }
+  } catch (err) {
+    // ignore
+  }
+  return 'UNKNOWN';
+}
+
+/**
+ * Verifica as 21 colunas de Leitura para atualização da Base Matriz VIVO
+ */
+export function verificarColunasLeituraMatrizVivo(detectedColumns: string[]): {
+  todasPresentes: boolean;
+  ausentes: string[];
+} {
+  const ausentes = VIVO_BLOCO_1_KEYS.filter((col) => !detectedColumns.includes(col));
+  return {
+    todasPresentes: ausentes.length === 0,
+    ausentes,
+  };
+}
+
+/**
+ * Obtém as opções válidas cadastradas na Segmentação da VIVO para uma coluna específica.
+ */
+export function getOpcoesSegmentacaoVivoParaColuna(
+  coluna: ColunaSegmentadaMassivaVivo,
+  segmentacoesVivo?: Record<SegmentacaoVivoKey, string[]>
+): string[] {
+  const key = MAPA_COLUNA_SEGMENTACAO_KEY_VIVO[coluna];
+  if (!key) return [];
+  const list = segmentacoesVivo?.[key];
+  if (Array.isArray(list)) {
+    return list.map((opt) => String(opt || '').trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/**
+ * Validação das colunas segmentadas na importação massiva da VIVO:
+ * - Colunas: STATUS IMPL, PENDENCIA, RESPONSÁVEL PENDENCIA, RESPONSÁVEL MEDIÇÃO
+ * - Comparação por texto exato, sem aproximar. Células vazias são permitidas.
+ */
+export function validarColunasSegmentadasVivo(
+  linhas: Record<string, any>[],
+  segmentacoesVivo?: Record<SegmentacaoVivoKey, string[]>
+): SegmentacaoDivergencia[] {
+  const divergencias: SegmentacaoDivergencia[] = [];
+
+  linhas.forEach((linha, idx) => {
+    const numLinha = typeof linha._rowNumber === 'number' ? linha._rowNumber : idx + 2;
+
+    COLUNAS_SEGMENTADAS_MASSIVA_VIVO.forEach((colName) => {
+      let rawVal: any = undefined;
+      for (const k of Object.keys(linha)) {
+        if (k === '_rowNumber') continue;
+        const matched = matchCanonicalVivoColumn(k);
+        if (matched === colName || k.trim().toLowerCase() === colName.toLowerCase()) {
+          rawVal = linha[k];
+          break;
+        }
+      }
+
+      if (rawVal === undefined || rawVal === null) return;
+      const strVal = String(rawVal).trim();
+      if (!strVal) return; // Vazio é permitido
+
+      const opcoesValidas = getOpcoesSegmentacaoVivoParaColuna(colName, segmentacoesVivo);
+      const existeExato = opcoesValidas.includes(strVal);
+
+      if (!existeExato) {
+        const sugestao = findBestSuggestion(strVal, opcoesValidas);
+        divergencias.push({
+          linha: numLinha,
+          coluna: colName,
+          valorInformado: strVal,
+          mensagem: 'Valor não cadastrado na Segmentação da VIVO',
+          sugestao,
+        });
+      }
+    });
+  });
+
+  return divergencias;
+}
+
+/**
+ * Lê e analisa arquivo CSV para VIVO (Padrão ou Massiva)
+ */
+export async function readCSVFileVivo(file: File): Promise<{
+  sheetName: string;
+  data: Record<string, any>[];
+  detectedColumns: string[];
+  rawHeaders: string[];
+}> {
+  const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv');
+  if (!isCsv) {
+    throw new Error('Formato inválido. Envie um arquivo .csv (use o modelo da VIVO)');
+  }
+
+  const rawText = await readTextFileWithEncodingFallback(file);
+  const cleanText = rawText.replace(/^\uFEFF/, '').trim();
+  if (!cleanText) {
+    throw new Error('O arquivo CSV selecionado está vazio.');
+  }
+
+  const parsed = Papa.parse<string[]>(cleanText, {
+    header: false,
+    skipEmptyLines: 'greedy',
+    delimitersToGuess: [';', ',', '\t', '|'],
+  });
+
+  const rows2D = parsed.data;
+  if (!rows2D || rows2D.length === 0) {
+    throw new Error('O arquivo CSV está vazio ou sem linhas de dados.');
+  }
+
+  // Localiza cabeçalho com ID
+  let bestHeaderRowIndex = 0;
+  let highestScore = -1;
+  const maxSearch = Math.min(rows2D.length, 25);
+
+  for (let r = 0; r < maxSearch; r++) {
+    const row = rows2D[r];
+    if (!Array.isArray(row) || row.length === 0) continue;
+
+    let score = 0;
+    let hasID = false;
+
+    row.forEach((cell) => {
+      const cellStr = String(cell || '').trim();
+      if (cellStr) {
+        const canonical = matchCanonicalVivoColumn(cellStr);
+        if (canonical) {
+          score += 10;
+          if (canonical === 'ID') {
+            hasID = true;
+            score += 100;
+          }
+        }
+      }
+    });
+
+    if (hasID) score += 500;
+    if (score > highestScore) {
+      highestScore = score;
+      bestHeaderRowIndex = r;
+    }
+  }
+
+  const rawHeaderRow: any[] = rows2D[bestHeaderRowIndex] || [];
+  const headerMap: Record<number, { raw: string; canonical: string }> = {};
+  const detectedColumnsSet = new Set<string>();
+  const rawHeaders: string[] = [];
+
+  rawHeaderRow.forEach((colVal, colIdx) => {
+    const raw = String(colVal || '').trim();
+    if (raw) {
+      rawHeaders.push(raw);
+      const canonical = matchCanonicalVivoColumn(raw) || raw;
+      headerMap[colIdx] = { raw, canonical };
+      if (matchCanonicalVivoColumn(raw)) {
+        detectedColumnsSet.add(canonical);
+      }
+    }
+  });
+
+  const cleanedData: Record<string, any>[] = [];
+
+  for (let r = bestHeaderRowIndex + 1; r < rows2D.length; r++) {
+    const rowData = rows2D[r];
+    if (!Array.isArray(rowData) || rowData.length === 0) continue;
+
+    const cleanRow: Record<string, any> = {};
+    let hasAnyValue = false;
+
+    Object.keys(headerMap).forEach((colIdxStr) => {
+      const colIdx = Number(colIdxStr);
+      const { canonical } = headerMap[colIdx];
+      const rawVal = rowData[colIdx];
+
+      let formattedVal = '';
+      if (rawVal !== undefined && rawVal !== null) {
+        formattedVal = String(rawVal).trim();
+      }
+
+      cleanRow[canonical] = formattedVal;
+      if (formattedVal !== '') {
+        hasAnyValue = true;
+      }
+    });
+
+    const idValue = cleanVivoID(cleanRow['ID']);
+    if (hasAnyValue && idValue) {
+      cleanRow['ID'] = idValue;
+      cleanRow['_rowNumber'] = r + 1;
+
+      Object.keys(cleanRow).forEach((colName) => {
+        const val = cleanRow[colName];
+
+        if (VIVO_DATE_COLUMNS.has(colName)) {
+          cleanRow[colName] = normalizeDateValue(val, colName, false, r + 1);
+        } else if (VIVO_NUMERIC_COLUMNS.has(colName)) {
+          const num = normalizeNumericValue(val, colName, r + 1, '');
+          cleanRow[colName] = num === '' ? '' : formatDecimalBR(num as number);
+        } else {
+          cleanRow[colName] = val !== undefined && val !== null ? String(val).trim() : '';
+        }
+      });
+
+      cleanedData.push(cleanRow);
+    }
+  }
+
+  if (cleanedData.length === 0) {
+    throw new Error(
+      'Coluna "ID" não encontrada no CSV da VIVO ou sem valores preenchidos. Verifique se o cabeçalho possui a coluna "ID".'
+    );
+  }
+
+  return {
+    sheetName: 'CSV_VIVO',
+    data: cleanedData,
+    detectedColumns: Array.from(detectedColumnsSet),
+    rawHeaders,
+  };
+}
+
+/**
+ * Baixar Modelo Padrão - VIVO (21 colunas do Bloco 1)
+ */
+export function downloadModeloImportacaoPadraoVivo() {
+  const headers = [...VIVO_BLOCO_1_KEYS];
+  const sampleRows: Record<string, string>[] = [
+    {
+      'REF': 'REF-2026-001',
+      'REG': 'RCO',
+      'UF': 'GO',
+      'Localidade': 'GOIÂNIA',
+      'ID': 'VIVO-GO-1001',
+      'Ano': '2026',
+      'Pedido': '4600123001',
+      'Desc.': 'IMPLANTAÇÃO REDE FTTH SETOR BUENO',
+      'Status Draft': 'APROVADO',
+      'Tipo de Projeto': 'FTTH EXPANSÃO',
+      'Contrato': 'CT-VIVO-2026/01',
+      'Data Status': '10/05/2026',
+      'Faixa Status': 'NO PRAZO',
+      'Status Medição Final': 'EM ANÁLISE',
+      'Data Medição': '12/05/2026',
+      'Faixa Medição': 'FAIXA 1',
+      'OSP ORÇAMENTO': '45200,00',
+      'OSP MEDIDO': '45200,00',
+      'Faturado': '0,00',
+      'Produção Bi R$': '45200,00',
+      'Mês Input': 'mai/2026',
+    },
+    {
+      'REF': 'REF-2026-002',
+      'REG': 'RSUL',
+      'UF': 'PR',
+      'Localidade': 'CURITIBA',
+      'ID': 'VIVO-PR-1002',
+      'Ano': '2026',
+      'Pedido': '4600123002',
+      'Desc.': 'AMPLIAÇÃO ROTA ÓPTICA CABRAL',
+      'Status Draft': 'EM ANÁLISE',
+      'Tipo de Projeto': 'ANEL DEDICADO',
+      'Contrato': 'CT-VIVO-2026/02',
+      'Data Status': '15/05/2026',
+      'Faixa Status': 'NO PRAZO',
+      'Status Medição Final': 'APROVADA',
+      'Data Medição': '18/05/2026',
+      'Faixa Medição': 'FAIXA 2',
+      'OSP ORÇAMENTO': '78900,00',
+      'OSP MEDIDO': '78900,00',
+      'Faturado': '78900,00',
+      'Produção Bi R$': '78900,00',
+      'Mês Input': 'jun/2026',
+    },
+  ];
+
+  const headerLine = headers.map(escapeCSVCell).join(';');
+  const dataLines = sampleRows.map((r) => headers.map((h) => escapeCSVCell(r[h] || '')).join(';'));
+  const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
+
+  downloadCSVFile(csvContent, 'Modelo_Importacao_Padrao_Base_Matriz_VIVO.csv');
+}
+
+/**
+ * Baixar Modelo Massiva - VIVO (ID + 9 colunas editáveis do Bloco 2)
+ */
+export function downloadModeloImportacaoMassivaVivo() {
+  const headers = ['ID', ...VIVO_BLOCO_2_KEYS];
+  const sampleRows: Record<string, string>[] = [
+    {
+      'ID': 'VIVO-GO-1001',
+      'STATUS IMPL': 'EM ANDAMENTO',
+      'PENDENCIA': 'DOCUMENTAÇÃO',
+      'RESPONSÁVEL PENDENCIA': 'IMPLANTAÇÃO',
+      'PRAZO DE MEDIÇÃO': '25/05/2026',
+      'PRAZO PROJETO': '20/05/2026',
+      'RESPONSÁVEL MEDIÇÃO': 'CARLOS SILVA',
+      'OBS MEDIÇÃO': 'Aguardando validação técnica de campo.',
+      'DATA TRATATIVA': '15/05/2026',
+      'ID NOVO/ANTIGO': 'ANT-GO-089',
+    },
+    {
+      'ID': 'VIVO-PR-1002',
+      'STATUS IMPL': 'CONCLUÍDO',
+      'PENDENCIA': 'OK',
+      'RESPONSÁVEL PENDENCIA': 'FINALIZADO',
+      'PRAZO DE MEDIÇÃO': '28/05/2026',
+      'PRAZO PROJETO': '25/05/2026',
+      'RESPONSÁVEL MEDIÇÃO': 'MARIA SOUZA',
+      'OBS MEDIÇÃO': 'Obra concluída e aprovada sem pendências.',
+      'DATA TRATATIVA': '18/05/2026',
+      'ID NOVO/ANTIGO': '',
+    },
+  ];
+
+  const headerLine = headers.map(escapeCSVCell).join(';');
+  const dataLines = sampleRows.map((r) => headers.map((h) => escapeCSVCell(r[h] || '')).join(';'));
+  const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
+
+  downloadCSVFile(csvContent, 'Modelo_Importacao_Massiva_Acompanhamento_VIVO.csv');
+}
+
+/**
+ * Exportar Registros VIVO para CSV/Excel (30 colunas)
+ */
+export function exportarRegistrosVivoParaCSV(
+  registros: RegistroVivo[],
+  nomeArquivo = 'VIVO_OBRAS_Export'
+) {
+  const exportHeaders = [...VIVO_ALL_COLUMNS];
+  const headerLine = exportHeaders.map(escapeCSVCell).join(';');
+
+  const dataLines = registros.map((item) => {
+    return exportHeaders
+      .map((colName) => {
+        const rawVal = (item as any)[colName];
+        if (rawVal === undefined || rawVal === null || rawVal === '') return '';
+
+        if (colName === 'ID' || colName === 'Pedido' || colName === 'REF' || colName === 'Contrato') {
+          return escapeCSVCell(String(rawVal).trim());
+        }
+        if (VIVO_DATE_COLUMNS.has(colName)) {
+          return escapeCSVCell(formatDateForCSV(rawVal));
+        }
+        if (VIVO_NUMERIC_COLUMNS.has(colName)) {
+          return escapeCSVCell(formatNumberForCSV(rawVal, true));
+        }
+        return escapeCSVCell(String(rawVal).trim());
+      })
+      .join(';');
+  });
+
+  const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
+  const dataAtual = new Date().toISOString().split('T')[0];
+  const finalFilename = `${nomeArquivo}_${dataAtual}.csv`;
+
+  downloadCSVFile(csvContent, finalFilename);
+}
+
+export const exportarRegistrosVivoParaExcel = exportarRegistrosVivoParaCSV;
+

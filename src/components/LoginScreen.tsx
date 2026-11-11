@@ -69,10 +69,10 @@ export const LoginScreen: React.FC = () => {
           </div>
         </div>
         <h1 className="mt-4 text-center text-2xl font-extrabold text-slate-900 tracking-tight">
-          V.TAL <span className="text-[#002855]">OBRAS</span>
+          V.TAL / VIVO <span className="text-[#002855]">OBRAS</span>
         </h1>
         <p className="mt-1 text-center text-xs text-slate-500 font-medium">
-          Sistema Corporativo de Medições e Controle de DCs
+          Sistema Corporativo de Medições e Controle de Obras
         </p>
       </div>
 

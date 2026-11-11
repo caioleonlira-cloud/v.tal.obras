@@ -3,13 +3,18 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import {
   readExcelFile,
+  readCSVFileVivo,
+  detectFileClient,
   downloadModeloImportacaoPadrao,
+  downloadModeloImportacaoPadraoVivo,
   verificarColunasLeituraMatriz,
+  verificarColunasLeituraMatrizVivo,
 } from '../../utils/excel';
 import {
   RegistroBloco1,
   Registro,
-  BLOCO_1_KEYS,
+  RegistroVivoBloco1,
+  RegistroVivo,
 } from '../../types';
 import { isFirebaseConfigured, missingFirebaseEnvVars } from '../../lib/firebase';
 import {
@@ -22,13 +27,10 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  ArrowRight,
-  Eye,
   Layers,
   Search,
   Check,
   X,
-  Sparkles,
 } from 'lucide-react';
 
 export const ImportacaoPadrao: React.FC = () => {
@@ -36,6 +38,8 @@ export const ImportacaoPadrao: React.FC = () => {
   const {
     analisarImportacaoPadrao,
     executarImportacaoPadrao,
+    analisarImportacaoPadraoVivo,
+    executarImportacaoPadraoVivo,
   } = useData();
 
   // File upload state
@@ -43,15 +47,28 @@ export const ImportacaoPadrao: React.FC = () => {
   const [sheetName, setSheetName] = useState<string>('');
   const [loadingFile, setLoadingFile] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [detectedClient, setDetectedClient] = useState<'VTAL' | 'VIVO' | null>(null);
 
-  // Analysis / Diff state
-  const [diff, setDiff] = useState<{
+  // Analysis / Diff state for V.TAL
+  const [diffVtal, setDiffVtal] = useState<{
     novas: RegistroBloco1[];
     removidas: Registro[];
     atualizadas: {
       dc: string;
       antigoBloco1: Partial<RegistroBloco1>;
       novoBloco1: RegistroBloco1;
+      bloco2Existente: any;
+    }[];
+  } | null>(null);
+
+  // Analysis / Diff state for VIVO
+  const [diffVivo, setDiffVivo] = useState<{
+    novas: RegistroVivoBloco1[];
+    removidas: RegistroVivo[];
+    atualizadas: {
+      id: string;
+      antigoBloco1: Partial<RegistroVivoBloco1>;
+      novoBloco1: RegistroVivoBloco1;
       bloco2Existente: any;
     }[];
   } | null>(null);
@@ -85,83 +102,114 @@ export const ImportacaoPadrao: React.FC = () => {
   const processFile = async (selectedFile: File) => {
     setFile(selectedFile);
     setParseError(null);
-    setDiff(null);
+    setDiffVtal(null);
+    setDiffVivo(null);
+    setDetectedClient(null);
     setCompleted(false);
     setLoadingFile(true);
 
     try {
-      const { sheetName: loadedSheet, data, detectedColumns: cols } = await readExcelFile(selectedFile);
-      setSheetName(loadedSheet);
-
-      if (data.length === 0) {
-        throw new Error('A planilha selecionada está vazia.');
-      }
-
-      // Check if DC column is present
-      const firstRow = data[0];
-      const hasDC = Object.keys(firstRow).some((k) => k.trim().toUpperCase() === 'DC');
-      if (!hasDC) {
+      // 1. Detect client automatically from file contents
+      const client = await detectFileClient(selectedFile);
+      if (client === 'UNKNOWN') {
         throw new Error(
-          'Coluna "DC" não encontrada na planilha. Verifique se o cabeçalho possui a coluna obrigatória "DC".'
+          'Cliente não reconhecido. O arquivo CSV deve conter a coluna "DC" no cabeçalho (para base V.TAL) ou a coluna "ID" (para base VIVO).'
         );
       }
+      setDetectedClient(client);
 
-      // 2) Atualização dos registros da matriz:
-      // O sistema só pode atualizar os registros da matriz quando identificar corretamente TODAS as colunas de Leitura da aba "Registros".
-      const checkMatriz = verificarColunasLeituraMatriz(cols);
-      if (!checkMatriz.todasPresentes) {
-        throw new Error(
-          `Não é possível atualizar os registros da matriz: todas as 26 colunas de Leitura da aba "Registros" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas de Leitura ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
-            '\n• '
-          )}`
-        );
-      }
+      if (client === 'VTAL') {
+        const { sheetName: loadedSheet, data, detectedColumns: cols } = await readExcelFile(selectedFile);
+        setSheetName(loadedSheet);
 
-      // Run diff analysis against current Firestore database
-      const resultDiff = analisarImportacaoPadrao(data, cols);
-      setDiff(resultDiff);
+        if (data.length === 0) {
+          throw new Error('A planilha selecionada está vazia.');
+        }
 
-      if (resultDiff.novas.length > 0) {
-        setActivePreviewTab('novas');
-      } else if (resultDiff.atualizadas.length > 0) {
-        setActivePreviewTab('atualizadas');
-      } else if (resultDiff.removidas.length > 0) {
-        setActivePreviewTab('removidas');
+        const checkMatriz = verificarColunasLeituraMatriz(cols);
+        if (!checkMatriz.todasPresentes) {
+          throw new Error(
+            `Não é possível atualizar os registros da matriz V.TAL: todas as 26 colunas de Leitura da aba "Registro - (V.TAL OBRAS)" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou divergentes:\n• ${checkMatriz.ausentes.join(
+              '\n• '
+            )}`
+          );
+        }
+
+        const resultDiff = analisarImportacaoPadrao(data, cols);
+        setDiffVtal(resultDiff);
+
+        if (resultDiff.novas.length > 0) {
+          setActivePreviewTab('novas');
+        } else if (resultDiff.atualizadas.length > 0) {
+          setActivePreviewTab('atualizadas');
+        } else if (resultDiff.removidas.length > 0) {
+          setActivePreviewTab('removidas');
+        }
+      } else {
+        // VIVO
+        const { sheetName: loadedSheet, data, detectedColumns: cols } = await readCSVFileVivo(selectedFile);
+        setSheetName(loadedSheet);
+
+        if (data.length === 0) {
+          throw new Error('A planilha selecionada da VIVO está vazia.');
+        }
+
+        const checkMatriz = verificarColunasLeituraMatrizVivo(cols);
+        if (!checkMatriz.todasPresentes) {
+          throw new Error(
+            `Não é possível atualizar os registros da matriz VIVO: todas as 21 colunas de Leitura da aba "Registro - (VIVO OBRAS)" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou divergentes:\n• ${checkMatriz.ausentes.join(
+              '\n• '
+            )}`
+          );
+        }
+
+        const resultDiff = analisarImportacaoPadraoVivo(data, cols);
+        setDiffVivo(resultDiff);
+
+        if (resultDiff.novas.length > 0) {
+          setActivePreviewTab('novas');
+        } else if (resultDiff.atualizadas.length > 0) {
+          setActivePreviewTab('atualizadas');
+        } else if (resultDiff.removidas.length > 0) {
+          setActivePreviewTab('removidas');
+        }
       }
     } catch (err: any) {
-      setParseError(err.message || 'Erro ao processar planilha Excel.');
+      setParseError(err.message || 'Erro ao processar planilha.');
     } finally {
       setLoadingFile(false);
     }
   };
 
   const handleExecute = async () => {
-    if (!diff) return;
     if (!isAdmin) {
       setParseError('Você precisa de privilégios de Administrador para confirmar a importação no banco de dados.');
       return;
     }
+
     setExecuting(true);
     setProgress(0);
     setProgressStep('Iniciando...');
 
     try {
-      await executarImportacaoPadrao(diff, (pct, msg) => {
-        setProgress(pct);
-        setProgressStep(msg);
-      });
-      setCompleted(true);
+      if (detectedClient === 'VTAL' && diffVtal) {
+        await executarImportacaoPadrao(diffVtal, (pct, msg) => {
+          setProgress(pct);
+          setProgressStep(msg);
+        });
+        setCompleted(true);
+      } else if (detectedClient === 'VIVO' && diffVivo) {
+        await executarImportacaoPadraoVivo(diffVivo, (pct, msg) => {
+          setProgress(pct);
+          setProgressStep(msg);
+        });
+        setCompleted(true);
+      }
     } catch (err: any) {
-      console.error('Erro detalhado durante importação padrão:', {
-        code: err?.code,
-        name: err?.name,
-        message: err?.message,
-        stack: err?.stack,
-        fullError: err,
-      });
+      console.error('Erro detalhado durante importação padrão:', err);
       const codePart = err?.code ? `[${err.code}] ` : '';
       const fullMsg = err?.message || 'Erro de comunicação com o banco de dados.';
-      setParseError(fullMsg.includes(err?.code) ? fullMsg : `${codePart}${fullMsg}`);
+      setParseError(`${codePart}${fullMsg}`);
     } finally {
       setExecuting(false);
     }
@@ -169,7 +217,9 @@ export const ImportacaoPadrao: React.FC = () => {
 
   const handleReset = () => {
     setFile(null);
-    setDiff(null);
+    setDiffVtal(null);
+    setDiffVivo(null);
+    setDetectedClient(null);
     setCompleted(false);
     setParseError(null);
     if (fileInputRef.current) {
@@ -177,18 +227,24 @@ export const ImportacaoPadrao: React.FC = () => {
     }
   };
 
-  // Preview filtering
-  const filteredNovas = (diff?.novas || []).filter(
-    (item) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase())
-  );
+  // Preview counts & items
+  const novasCount = detectedClient === 'VTAL' ? diffVtal?.novas.length || 0 : diffVivo?.novas.length || 0;
+  const atualizadasCount = detectedClient === 'VTAL' ? diffVtal?.atualizadas.length || 0 : diffVivo?.atualizadas.length || 0;
+  const removidasCount = detectedClient === 'VTAL' ? diffVtal?.removidas.length || 0 : diffVivo?.removidas.length || 0;
 
-  const filteredAtualizadas = (diff?.atualizadas || []).filter(
-    (item) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase())
-  );
+  const filteredNovas = (
+    detectedClient === 'VTAL' ? diffVtal?.novas || [] : diffVivo?.novas || []
+  ).filter((item: any) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase()));
 
-  const filteredRemovidas = (diff?.removidas || []).filter(
-    (item) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase())
-  );
+  const filteredAtualizadas = (
+    detectedClient === 'VTAL' ? diffVtal?.atualizadas || [] : diffVivo?.atualizadas || []
+  ).filter((item: any) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase()));
+
+  const filteredRemovidas = (
+    detectedClient === 'VTAL' ? diffVtal?.removidas || [] : diffVivo?.removidas || []
+  ).filter((item: any) => !previewSearch || JSON.stringify(item).toLowerCase().includes(previewSearch.toLowerCase()));
+
+  const hasDiff = !!(diffVtal || diffVivo);
 
   return (
     <div className="space-y-6">
@@ -198,23 +254,35 @@ export const ImportacaoPadrao: React.FC = () => {
           <div className="flex items-center space-x-2">
             <Layers className="w-5 h-5 text-[#002855]" />
             <h3 className="text-base font-bold text-slate-900">
-              Importação Padrão — Base Matriz (Colunas C a V)
+              Importação Padrão — Base Matriz (V.TAL e VIVO)
             </h3>
           </div>
           <p className="text-xs text-slate-600 mt-1 max-w-2xl">
-            Sincroniza a base de obras/DCs. O sistema compara a planilha com o banco de dados, insere novas DCs, atualiza os dados da matriz e remove registros que deixaram de existir.
-            <strong className="text-slate-800"> O Bloco 2 preenchido manualmente nunca é sobrescrito.</strong>
+            Sincroniza a base de obras. O sistema detecta automaticamente o cliente através do cabeçalho da planilha (coluna <strong>DC</strong> para V.TAL ou coluna <strong>ID</strong> para VIVO).
+            <strong className="text-slate-800"> O Bloco 2 preenchido pela equipe nunca é sobrescrito.</strong>
           </p>
         </div>
 
-        <button
-          onClick={downloadModeloImportacaoPadrao}
-          className="shrink-0 px-4 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-2 cursor-pointer"
-          title="Baixar modelo oficial .csv com as 26 colunas esperadas"
-        >
-          <Download className="w-4 h-4 text-cyan-300" />
-          <span>Baixar Modelo Padrão (.csv)</span>
-        </button>
+        {/* Both template download buttons */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={downloadModeloImportacaoPadrao}
+            className="px-3.5 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+            title="Baixar modelo oficial V.TAL com as 26 colunas esperadas"
+          >
+            <Download className="w-4 h-4 text-cyan-300" />
+            <span>Modelo Padrão — V.TAL</span>
+          </button>
+
+          <button
+            onClick={downloadModeloImportacaoPadraoVivo}
+            className="px-3.5 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+            title="Baixar modelo oficial VIVO com as 21 colunas esperadas"
+          >
+            <Download className="w-4 h-4 text-cyan-300" />
+            <span>Modelo Padrão — VIVO</span>
+          </button>
+        </div>
       </div>
 
       {/* Template Instructions Card */}
@@ -223,10 +291,10 @@ export const ImportacaoPadrao: React.FC = () => {
           <FileSpreadsheet className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
           <div>
             <span className="font-bold text-slate-900 block">
-              Modelo de Planilha Padrão para Importação
+              Detecção Inteligente de Cliente
             </span>
             <span className="text-slate-600 mt-0.5 block leading-relaxed">
-              O arquivo CSV deve conter as 26 colunas oficiais da Base Matriz VTAL separadas por ponto e vírgula (;). Baixe o modelo pronto preenchido com dados de exemplo para evitar divergências.
+              Planilhas com coluna <strong>DC</strong> serão sincronizadas na base <strong>V.TAL OBRAS</strong> (26 colunas). Planilhas com coluna <strong>ID</strong> serão sincronizadas na base <strong>VIVO OBRAS</strong> (21 colunas). Baixe os modelos oficiais acima para conferir os cabeçalhos.
             </span>
           </div>
         </div>
@@ -246,7 +314,7 @@ export const ImportacaoPadrao: React.FC = () => {
       )}
 
       {/* Upload Zone */}
-      {!diff && !completed && (
+      {!hasDiff && !completed && (
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
@@ -274,10 +342,10 @@ export const ImportacaoPadrao: React.FC = () => {
           </div>
 
           <h4 className="text-sm font-bold text-slate-800">
-            {loadingFile ? 'Lendo e analisando dados da planilha...' : 'Selecione ou arraste o arquivo da Base Matriz (.xlsx)'}
+            {loadingFile ? 'Lendo e identificando cliente na planilha...' : 'Selecione ou arraste o arquivo CSV da Base Matriz (V.TAL ou VIVO)'}
           </h4>
           <p className="text-xs text-slate-500 mt-1">
-            Suporta planilhas no formato Excel (.xlsx) com aba &quot;Tabela1&quot; e cabeçalhos do Bloco 1.
+            Reconhecimento automático: coluna &quot;DC&quot; direciona para V.TAL e coluna &quot;ID&quot; direciona para VIVO.
           </p>
 
           <div className="mt-5 flex justify-center gap-3">
@@ -293,14 +361,14 @@ export const ImportacaoPadrao: React.FC = () => {
           {parseError && (
             <div className="mt-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 max-w-lg mx-auto flex items-start space-x-2 text-left">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <span>{parseError}</span>
+              <span className="whitespace-pre-wrap">{parseError}</span>
             </div>
           )}
         </div>
       )}
 
       {/* Diff Analysis & Preview Screen */}
-      {diff && !completed && (
+      {hasDiff && !completed && (
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden space-y-6 p-6">
           {/* Error Banner when execution or validation fails */}
           {parseError && (
@@ -310,9 +378,6 @@ export const ImportacaoPadrao: React.FC = () => {
                 <div>
                   <h5 className="font-bold text-rose-950">Falha na Gravação no Firestore</h5>
                   <p className="mt-1 font-mono text-xs bg-rose-100/80 p-2.5 rounded-lg border border-rose-200 text-rose-950 whitespace-pre-wrap">{parseError}</p>
-                  <p className="mt-2 text-[11px] text-rose-700 font-semibold">
-                    ⚠️ Atenção: Os dados ficaram salvos temporariamente apenas na memória local deste navegador e NÃO foram sincronizados no banco de dados Firestore.
-                  </p>
                 </div>
               </div>
               <button
@@ -324,6 +389,29 @@ export const ImportacaoPadrao: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* Client Identification Banner */}
+          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/70 text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white bg-[#002855]">
+                {detectedClient === 'VIVO' ? 'VIVO' : 'VTAL'}
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider block opacity-75">
+                  Base Identificada Automaticamente
+                </span>
+                <h4 className="text-base font-extrabold">
+                  {detectedClient === 'VIVO'
+                    ? `Base VIVO OBRAS — ${novasCount + atualizadasCount} registros no arquivo`
+                    : `Base V.TAL OBRAS — ${novasCount + atualizadasCount} registros no arquivo`}
+                </h4>
+              </div>
+            </div>
+
+            <div className="text-xs font-medium">
+              Chave única: <strong className="font-mono">{detectedClient === 'VIVO' ? 'ID' : 'DC'}</strong>
+            </div>
+          </div>
 
           {/* Header & File Info */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-3">
@@ -342,7 +430,7 @@ export const ImportacaoPadrao: React.FC = () => {
             <button
               onClick={handleReset}
               disabled={executing}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 self-start sm:self-auto"
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 self-start sm:self-auto cursor-pointer"
             >
               Trocar de Arquivo
             </button>
@@ -362,14 +450,14 @@ export const ImportacaoPadrao: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-800 flex items-center space-x-1.5">
                   <Plus className="w-4 h-4 text-emerald-600" />
-                  <span>DCs Novas (Inserção)</span>
+                  <span>Obras Novas (Inserção)</span>
                 </span>
                 <span className="text-lg font-extrabold text-emerald-700">
-                  {diff.novas.length}
+                  {novasCount}
                 </span>
               </div>
               <p className="text-[11px] text-emerald-600 mt-1">
-                Serão cadastradas com o Bloco 2 vazio para posterior acompanhamento.
+                Cadastradas com o Bloco 2 vazio para posterior acompanhamento.
               </p>
             </div>
 
@@ -385,10 +473,10 @@ export const ImportacaoPadrao: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-blue-800 flex items-center space-x-1.5">
                   <RefreshCw className="w-4 h-4 text-blue-600" />
-                  <span>DCs Atualizadas</span>
+                  <span>Obras Atualizadas</span>
                 </span>
                 <span className="text-lg font-extrabold text-blue-700">
-                  {diff.atualizadas.length}
+                  {atualizadasCount}
                 </span>
               </div>
               <p className="text-[11px] text-blue-600 mt-1">
@@ -408,10 +496,10 @@ export const ImportacaoPadrao: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-red-800 flex items-center space-x-1.5">
                   <Trash2 className="w-4 h-4 text-red-600" />
-                  <span>DCs Removidas (Exclusão)</span>
+                  <span>Obras Removidas (Exclusão)</span>
                 </span>
                 <span className="text-lg font-extrabold text-red-700">
-                  {diff.removidas.length}
+                  {removidasCount}
                 </span>
               </div>
               <p className="text-[11px] text-red-600 mt-1">
@@ -429,7 +517,7 @@ export const ImportacaoPadrao: React.FC = () => {
                 placeholder="Filtrar nesta lista de prévia..."
                 value={previewSearch}
                 onChange={(e) => setPreviewSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#002855]"
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#002855]"
               />
             </div>
 
@@ -448,54 +536,77 @@ export const ImportacaoPadrao: React.FC = () => {
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-100 text-slate-700 sticky top-0">
                 <tr>
-                  <th className="py-2 px-3 font-bold">DC</th>
+                  <th className="py-2 px-3 font-bold">{detectedClient === 'VIVO' ? 'ID' : 'DC'}</th>
                   <th className="py-2 px-3 font-bold">UF</th>
                   <th className="py-2 px-3 font-bold">Localidade</th>
                   <th className="py-2 px-3 font-bold">Tipo de Projeto</th>
-                  <th className="py-2 px-3 font-bold">Status da DC (Atual)</th>
-                  <th className="py-2 px-3 font-bold">Valor Final R$</th>
+                  <th className="py-2 px-3 font-bold">
+                    {detectedClient === 'VIVO' ? 'Status Medição Final' : 'Status da DC (Atual)'}
+                  </th>
+                  <th className="py-2 px-3 font-bold">
+                    {detectedClient === 'VIVO' ? 'OSP ORÇAMENTO' : 'Valor Final R$'}
+                  </th>
                   <th className="py-2 px-3 font-bold">Descrição</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {activePreviewTab === 'novas' &&
-                  filteredNovas.slice(0, 50).map((r, i) => (
-                    <tr key={`nova_${r.DC || i}_${i}`} className="hover:bg-emerald-50/40">
-                      <td className="py-2 px-3 font-bold text-emerald-800">{r.DC}</td>
-                      <td className="py-2 px-3">{r.UF}</td>
-                      <td className="py-2 px-3">{r.Localidade}</td>
-                      <td className="py-2 px-3">{r['Tipo de Projeto']}</td>
-                      <td className="py-2 px-3">{r['Status da DC (Atual)']}</td>
-                      <td className="py-2 px-3">{r['Valor Final R$']}</td>
-                      <td className="py-2 px-3 truncate max-w-xs">{r.Descricao}</td>
-                    </tr>
-                  ))}
+                  filteredNovas.slice(0, 50).map((r: any, i: number) => {
+                    const idVal = detectedClient === 'VIVO' ? r.ID : r.DC;
+                    const descVal = detectedClient === 'VIVO' ? r['Desc.'] : r.Descricao;
+                    const statusVal = detectedClient === 'VIVO' ? r['Status Medição Final'] : r['Status da DC (Atual)'];
+                    const valorVal = detectedClient === 'VIVO' ? r['OSP ORÇAMENTO'] : r['Valor Final R$'];
+                    return (
+                      <tr key={`nova_${idVal || i}_${i}`} className="hover:bg-emerald-50/40">
+                        <td className="py-2 px-3 font-bold text-emerald-800 font-mono">{idVal}</td>
+                        <td className="py-2 px-3">{r.UF}</td>
+                        <td className="py-2 px-3">{r.Localidade}</td>
+                        <td className="py-2 px-3">{r['Tipo de Projeto']}</td>
+                        <td className="py-2 px-3">{statusVal}</td>
+                        <td className="py-2 px-3 font-mono">{valorVal}</td>
+                        <td className="py-2 px-3 truncate max-w-xs">{descVal}</td>
+                      </tr>
+                    );
+                  })}
 
                 {activePreviewTab === 'atualizadas' &&
-                  filteredAtualizadas.slice(0, 50).map((r, i) => (
-                    <tr key={`atual_${r.dc || i}_${i}`} className="hover:bg-blue-50/40">
-                      <td className="py-2 px-3 font-bold text-blue-800">{r.dc}</td>
-                      <td className="py-2 px-3">{r.novoBloco1.UF}</td>
-                      <td className="py-2 px-3">{r.novoBloco1.Localidade}</td>
-                      <td className="py-2 px-3">{r.novoBloco1['Tipo de Projeto']}</td>
-                      <td className="py-2 px-3">{r.novoBloco1['Status da DC (Atual)']}</td>
-                      <td className="py-2 px-3">{r.novoBloco1['Valor Final R$']}</td>
-                      <td className="py-2 px-3 truncate max-w-xs">{r.novoBloco1.Descricao}</td>
-                    </tr>
-                  ))}
+                  filteredAtualizadas.slice(0, 50).map((r: any, i: number) => {
+                    const idVal = detectedClient === 'VIVO' ? r.id : r.dc;
+                    const novo = r.novoBloco1 || {};
+                    const descVal = detectedClient === 'VIVO' ? novo['Desc.'] : novo.Descricao;
+                    const statusVal = detectedClient === 'VIVO' ? novo['Status Medição Final'] : novo['Status da DC (Atual)'];
+                    const valorVal = detectedClient === 'VIVO' ? novo['OSP ORÇAMENTO'] : novo['Valor Final R$'];
+                    return (
+                      <tr key={`atual_${idVal || i}_${i}`} className="hover:bg-blue-50/40">
+                        <td className="py-2 px-3 font-bold text-blue-800 font-mono">{idVal}</td>
+                        <td className="py-2 px-3">{novo.UF}</td>
+                        <td className="py-2 px-3">{novo.Localidade}</td>
+                        <td className="py-2 px-3">{novo['Tipo de Projeto']}</td>
+                        <td className="py-2 px-3">{statusVal}</td>
+                        <td className="py-2 px-3 font-mono">{valorVal}</td>
+                        <td className="py-2 px-3 truncate max-w-xs">{descVal}</td>
+                      </tr>
+                    );
+                  })}
 
                 {activePreviewTab === 'removidas' &&
-                  filteredRemovidas.slice(0, 50).map((r, i) => (
-                    <tr key={`rem_${r.DC || i}_${i}`} className="hover:bg-red-50/40">
-                      <td className="py-2 px-3 font-bold text-red-800">{r.DC}</td>
-                      <td className="py-2 px-3">{r.UF}</td>
-                      <td className="py-2 px-3">{r.Localidade}</td>
-                      <td className="py-2 px-3">{r['Tipo de Projeto']}</td>
-                      <td className="py-2 px-3">{r['Status da DC (Atual)']}</td>
-                      <td className="py-2 px-3">{r['Valor Final R$']}</td>
-                      <td className="py-2 px-3 truncate max-w-xs">{r.Descricao}</td>
-                    </tr>
-                  ))}
+                  filteredRemovidas.slice(0, 50).map((r: any, i: number) => {
+                    const idVal = detectedClient === 'VIVO' ? r.ID : r.DC;
+                    const descVal = detectedClient === 'VIVO' ? r['Desc.'] : r.Descricao;
+                    const statusVal = detectedClient === 'VIVO' ? r['Status Medição Final'] : r['Status da DC (Atual)'];
+                    const valorVal = detectedClient === 'VIVO' ? r['OSP ORÇAMENTO'] : r['Valor Final R$'];
+                    return (
+                      <tr key={`rem_${idVal || i}_${i}`} className="hover:bg-red-50/40">
+                        <td className="py-2 px-3 font-bold text-red-800 font-mono">{idVal}</td>
+                        <td className="py-2 px-3">{r.UF}</td>
+                        <td className="py-2 px-3">{r.Localidade}</td>
+                        <td className="py-2 px-3">{r['Tipo de Projeto']}</td>
+                        <td className="py-2 px-3">{statusVal}</td>
+                        <td className="py-2 px-3 font-mono">{valorVal}</td>
+                        <td className="py-2 px-3 truncate max-w-xs">{descVal}</td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -509,7 +620,7 @@ export const ImportacaoPadrao: React.FC = () => {
               </div>
               <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
                 <div
-                  className="bg-[#002855] h-2.5 rounded-full transition-all duration-300"
+                  className="h-2.5 rounded-full transition-all duration-300 bg-[#002855]"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -521,7 +632,7 @@ export const ImportacaoPadrao: React.FC = () => {
             <div className="flex items-center space-x-2 text-xs text-slate-600">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
               <span>
-                Ao confirmar, o Firestore será atualizado em lote. O Bloco 2 permanecerá seguro.
+                Ao confirmar, a coleção <strong className="font-mono">{detectedClient === 'VIVO' ? 'registros_vivo' : 'registros'}</strong> será sincronizada no Firestore.
               </span>
             </div>
 
@@ -529,7 +640,7 @@ export const ImportacaoPadrao: React.FC = () => {
               <button
                 onClick={handleReset}
                 disabled={executing}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
@@ -538,7 +649,7 @@ export const ImportacaoPadrao: React.FC = () => {
                 id="btn-confirm-import-padrao"
                 onClick={handleExecute}
                 disabled={executing}
-                className="px-5 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center space-x-2 cursor-pointer disabled:opacity-50 bg-[#002855] hover:bg-[#001e40]"
               >
                 {executing ? (
                   <>
@@ -548,7 +659,7 @@ export const ImportacaoPadrao: React.FC = () => {
                 ) : (
                   <>
                     <Check className="w-4 h-4 text-emerald-400" />
-                    <span>Confirmar e Gravar no Firestore</span>
+                    <span>Confirmar e Gravar na Base {detectedClient === 'VIVO' ? 'VIVO' : 'V.TAL'}</span>
                   </>
                 )}
               </button>
@@ -565,10 +676,11 @@ export const ImportacaoPadrao: React.FC = () => {
           </div>
 
           <h4 className="text-lg font-extrabold text-slate-900">
-            Importação da Base Matriz Concluída com Sucesso!
+            Importação da Base Matriz {detectedClient === 'VIVO' ? 'VIVO' : 'V.TAL'} Concluída com Sucesso!
           </h4>
           <p className="text-xs text-slate-600 max-w-md mx-auto">
-            Os dados da Base Matriz foram sincronizados no Firestore. Todas as alterações já estão disponíveis na aba Registros.
+            Os dados foram sincronizados no Firestore. Todas as alterações já estão disponíveis na aba{' '}
+            <strong>{detectedClient === 'VIVO' ? 'Registro - (VIVO OBRAS)' : 'Registro - (V.TAL OBRAS)'}</strong>.
           </p>
 
           <div className="pt-4 flex justify-center gap-3">
