@@ -1331,9 +1331,11 @@ export async function readCSVFile(file: File): Promise<{
         }
       });
 
-      const regResolved = getRegistroRegional(cleanRow);
-      if (regResolved) {
-        cleanRow['REG'] = regResolved;
+      if (detectedColumnsSet.has('REG')) {
+        const regResolved = getRegistroRegional(cleanRow);
+        if (regResolved && !cleanRow['REG']) {
+          cleanRow['REG'] = regResolved;
+        }
       }
       cleanedData.push(cleanRow);
     }
