@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useData } from '../../context/DataContext';
+import { useData, ExecutarImportacaoVivoResult } from '../../context/DataContext';
 import {
   readExcelFile,
   readCSVFileVivo,
@@ -10,6 +10,10 @@ import {
   verificarColunasLeituraMatriz,
   verificarColunasLeituraMatrizVivo,
 } from '../../utils/excel';
+import {
+  analisarPreImportacaoVivo,
+  VivoPreImportReport,
+} from '../../utils/csv';
 import {
   RegistroBloco1,
   Registro,
@@ -31,6 +35,8 @@ import {
   Search,
   Check,
   X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export const ImportacaoPadrao: React.FC = () => {
@@ -73,6 +79,13 @@ export const ImportacaoPadrao: React.FC = () => {
     }[];
   } | null>(null);
 
+  // Pre-import report state for VIVO (integrity check)
+  const [preImportReportVivo, setPreImportReportVivo] = useState<VivoPreImportReport | null>(null);
+  const [execResultVivo, setExecResultVivo] = useState<ExecutarImportacaoVivoResult | null>(null);
+  const [showIgnorados, setShowIgnorados] = useState(false);
+  const [showRepetidos, setShowRepetidos] = useState(false);
+  const [showColididos, setShowColididos] = useState(false);
+
   // Execution state
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -104,6 +117,11 @@ export const ImportacaoPadrao: React.FC = () => {
     setParseError(null);
     setDiffVtal(null);
     setDiffVivo(null);
+    setPreImportReportVivo(null);
+    setExecResultVivo(null);
+    setShowIgnorados(false);
+    setShowRepetidos(false);
+    setShowColididos(false);
     setDetectedClient(null);
     setCompleted(false);
     setLoadingFile(true);
@@ -163,7 +181,12 @@ export const ImportacaoPadrao: React.FC = () => {
           );
         }
 
-        const resultDiff = analisarImportacaoPadraoVivo(data, cols);
+        // 1a) Análise pré-importação e integridade VIVO
+        const repVivo = analisarPreImportacaoVivo(data);
+        setPreImportReportVivo(repVivo);
+
+        // Deduplicar em memória antes de montar novas/atualizadas
+        const resultDiff = analisarImportacaoPadraoVivo(repVivo.deduplicatedRows, cols);
         setDiffVivo(resultDiff);
 
         if (resultDiff.novas.length > 0) {
@@ -199,10 +222,11 @@ export const ImportacaoPadrao: React.FC = () => {
         });
         setCompleted(true);
       } else if (detectedClient === 'VIVO' && diffVivo) {
-        await executarImportacaoPadraoVivo(diffVivo, (pct, msg) => {
+        const resultVivo = await executarImportacaoPadraoVivo(diffVivo, (pct, msg) => {
           setProgress(pct);
           setProgressStep(msg);
         });
+        setExecResultVivo(resultVivo);
         setCompleted(true);
       }
     } catch (err: any) {
@@ -219,6 +243,11 @@ export const ImportacaoPadrao: React.FC = () => {
     setFile(null);
     setDiffVtal(null);
     setDiffVivo(null);
+    setPreImportReportVivo(null);
+    setExecResultVivo(null);
+    setShowIgnorados(false);
+    setShowRepetidos(false);
+    setShowColididos(false);
     setDetectedClient(null);
     setCompleted(false);
     setParseError(null);
@@ -412,6 +441,223 @@ export const ImportacaoPadrao: React.FC = () => {
               Chave única: <strong className="font-mono">{detectedClient === 'VIVO' ? 'ID' : 'DC'}</strong>
             </div>
           </div>
+
+          {/* 1a) Relatório antes de importar (VIVO) */}
+          {detectedClient === 'VIVO' && preImportReportVivo && (
+            <div className="p-5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 gap-2">
+                <div className="flex items-center space-x-2">
+                  <Layers className="w-5 h-5 text-[#002855]" />
+                  <h4 className="text-sm font-extrabold text-slate-900">
+                    Relatório de Integridade Pré-Importação (VIVO)
+                  </h4>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Deduplicação automática em memória (mantém a última linha de cada ID)
+                </span>
+              </div>
+
+              {/* 5 Métricas Pré-Importação */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="p-3 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase block">Linhas Lidas</span>
+                  <span className="text-lg font-black text-slate-800">{preImportReportVivo.totalLinhasLidas}</span>
+                </div>
+
+                <div
+                  onClick={() => preImportReportVivo.linhasIgnoradas.length > 0 && setShowIgnorados(!showIgnorados)}
+                  className={`p-3 rounded-xl border transition-all ${
+                    preImportReportVivo.linhasIgnoradas.length > 0
+                      ? 'bg-amber-50 border-amber-300 cursor-pointer hover:bg-amber-100/70'
+                      : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-800 uppercase block">Ignoradas (Vazio/Inválido)</span>
+                    {preImportReportVivo.linhasIgnoradas.length > 0 && (
+                      showIgnorados ? <ChevronUp className="w-3.5 h-3.5 text-amber-700" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-700" />
+                    )}
+                  </div>
+                  <span className="text-lg font-black text-amber-900">{preImportReportVivo.linhasIgnoradas.length}</span>
+                </div>
+
+                <div
+                  onClick={() => preImportReportVivo.idsRepetidos.length > 0 && setShowRepetidos(!showRepetidos)}
+                  className={`p-3 rounded-xl border transition-all ${
+                    preImportReportVivo.idsRepetidos.length > 0
+                      ? 'bg-rose-50 border-rose-300 cursor-pointer hover:bg-rose-100/70'
+                      : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-rose-800 uppercase block">IDs Repetidos</span>
+                    {preImportReportVivo.idsRepetidos.length > 0 && (
+                      showRepetidos ? <ChevronUp className="w-3.5 h-3.5 text-rose-700" /> : <ChevronDown className="w-3.5 h-3.5 text-rose-700" />
+                    )}
+                  </div>
+                  <span className="text-lg font-black text-rose-900">{preImportReportVivo.idsRepetidos.length}</span>
+                </div>
+
+                <div
+                  onClick={() => preImportReportVivo.idsColididos.length > 0 && setShowColididos(!showColididos)}
+                  className={`p-3 rounded-xl border transition-all ${
+                    preImportReportVivo.idsColididos.length > 0
+                      ? 'bg-purple-50 border-purple-300 cursor-pointer hover:bg-purple-100/70'
+                      : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-800 uppercase block">IDs Colididos (Doc)</span>
+                    {preImportReportVivo.idsColididos.length > 0 && (
+                      showColididos ? <ChevronUp className="w-3.5 h-3.5 text-purple-700" /> : <ChevronDown className="w-3.5 h-3.5 text-purple-700" />
+                    )}
+                  </div>
+                  <span className="text-lg font-black text-purple-900">{preImportReportVivo.idsColididos.length}</span>
+                </div>
+
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300">
+                  <span className="text-[11px] font-bold text-emerald-800 uppercase block">IDs Únicos a Gravar</span>
+                  <span className="text-lg font-black text-emerald-900">{preImportReportVivo.totalIdsUnicosAGravar}</span>
+                </div>
+              </div>
+
+              {/* Alerta de IDs Repetidos ou Colididos com opções Cancelar / Continuar */}
+              {(preImportReportVivo.idsRepetidos.length > 0 || preImportReportVivo.idsColididos.length > 0) && (
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start space-x-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">
+                        Atenção: A planilha contém {preImportReportVivo.idsRepetidos.length} ID(s) repetido(s) e/ou {preImportReportVivo.idsColididos.length} colisão(ões) de identificador.
+                      </span>
+                      <span className="text-amber-800 mt-0.5 block leading-relaxed">
+                        O sistema deduplicou os dados em memória mantendo a última linha de cada ID para que os totais e metadados reflitam com exatidão os {preImportReportVivo.totalIdsUnicosAGravar} IDs únicos que serão persistidos.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+                    <button
+                      onClick={handleReset}
+                      className="px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100/60 text-amber-950 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                    >
+                      Cancelar importação
+                    </button>
+                    <span className="px-3 py-1.5 bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center space-x-1 shadow-2xs">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Continuar (mantém última linha)</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Tabela de Linhas Ignoradas */}
+              {showIgnorados && preImportReportVivo.linhasIgnoradas.length > 0 && (
+                <div className="bg-white border border-amber-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-950">
+                      Linhas Ignoradas por ID Vazio ou Inválido ({preImportReportVivo.linhasIgnoradas.length})
+                    </span>
+                    <button onClick={() => setShowIgnorados(false)} className="text-slate-400 hover:text-slate-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-amber-50 sticky top-0 text-amber-900">
+                        <tr>
+                          <th className="py-1.5 px-3 font-bold w-28">Linha Planilha</th>
+                          <th className="py-1.5 px-3 font-bold">ID Informado</th>
+                          <th className="py-1.5 px-3 font-bold">Motivo do Descarte</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {preImportReportVivo.linhasIgnoradas.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-amber-50/40">
+                            <td className="py-1.5 px-3 font-mono font-bold text-amber-900">Linha {item.linha}</td>
+                            <td className="py-1.5 px-3 font-mono text-slate-700">&quot;{item.idOriginal}&quot;</td>
+                            <td className="py-1.5 px-3 text-slate-600">{item.motivo}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Tabela de IDs Repetidos */}
+              {showRepetidos && preImportReportVivo.idsRepetidos.length > 0 && (
+                <div className="bg-white border border-rose-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-rose-950">
+                      IDs Repetidos na Planilha ({preImportReportVivo.idsRepetidos.length})
+                    </span>
+                    <button onClick={() => setShowRepetidos(false)} className="text-slate-400 hover:text-slate-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-rose-50 sticky top-0 text-rose-900">
+                        <tr>
+                          <th className="py-1.5 px-3 font-bold w-28">Linha Atual</th>
+                          <th className="py-1.5 px-3 font-bold">ID Repetido</th>
+                          <th className="py-1.5 px-3 font-bold">Primeira Ocorrência</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {preImportReportVivo.idsRepetidos.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-rose-50/40">
+                            <td className="py-1.5 px-3 font-mono font-bold text-rose-900">Linha {item.linha}</td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-slate-800">{item.id}</td>
+                            <td className="py-1.5 px-3 text-slate-600">Linha {item.primeiraLinha}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Tabela de IDs Colididos */}
+              {showColididos && preImportReportVivo.idsColididos.length > 0 && (
+                <div className="bg-white border border-purple-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-950">
+                      IDs Diferentes com Mesmo Nome de Documento ({preImportReportVivo.idsColididos.length})
+                    </span>
+                    <button onClick={() => setShowColididos(false)} className="text-slate-400 hover:text-slate-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-purple-50 sticky top-0 text-purple-900">
+                        <tr>
+                          <th className="py-1.5 px-3 font-bold w-28">Linha Planilha</th>
+                          <th className="py-1.5 px-3 font-bold">ID Informado</th>
+                          <th className="py-1.5 px-3 font-bold">Documento Sanitizado</th>
+                          <th className="py-1.5 px-3 font-bold">Conflito com</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {preImportReportVivo.idsColididos.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-purple-50/40">
+                            <td className="py-1.5 px-3 font-mono font-bold text-purple-900">Linha {item.linha}</td>
+                            <td className="py-1.5 px-3 font-mono font-bold text-slate-800">{item.id}</td>
+                            <td className="py-1.5 px-3 font-mono text-slate-500">{item.docId}</td>
+                            <td className="py-1.5 px-3 text-slate-700">
+                              Linha {item.linhaConflitante} ({item.idConflitante})
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Header & File Info */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200 gap-3">
@@ -670,20 +916,89 @@ export const ImportacaoPadrao: React.FC = () => {
 
       {/* Success State */}
       {completed && (
-        <div className="bg-white p-8 rounded-2xl shadow-xs border border-emerald-200 text-center space-y-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xs border border-emerald-200 text-center space-y-6">
           <div className="w-16 h-16 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-9 h-9" />
           </div>
 
-          <h4 className="text-lg font-extrabold text-slate-900">
-            Importação da Base Matriz {detectedClient === 'VIVO' ? 'VIVO' : 'V.TAL'} Concluída com Sucesso!
-          </h4>
-          <p className="text-xs text-slate-600 max-w-md mx-auto">
-            Os dados foram sincronizados no Firestore. Todas as alterações já estão disponíveis na aba{' '}
-            <strong>{detectedClient === 'VIVO' ? 'Registro - (VIVO OBRAS)' : 'Registro - (V.TAL OBRAS)'}</strong>.
-          </p>
+          <div>
+            <h4 className="text-lg font-extrabold text-slate-900">
+              Importação da Base Matriz {detectedClient === 'VIVO' ? 'VIVO' : 'V.TAL'} Concluída com Sucesso!
+            </h4>
+            <p className="text-xs text-slate-600 max-w-md mx-auto mt-1">
+              Os dados foram sincronizados no Firestore. Todas as alterações já estão disponíveis na aba{' '}
+              <strong>{detectedClient === 'VIVO' ? 'Registro - (VIVO OBRAS)' : 'Registro - (V.TAL OBRAS)'}</strong>.
+            </p>
+          </div>
 
-          <div className="pt-4 flex justify-center gap-3">
+          {/* 1c) Conferência pós-gravação para VIVO: linhas na planilha | gravadas | ignoradas | no banco */}
+          {detectedClient === 'VIVO' && (
+            <div className="space-y-4 max-w-2xl mx-auto text-left">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <span className="text-xs font-bold text-slate-700 uppercase block">
+                  Conferência de Gravação e Integridade (Firestore)
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white p-3 rounded-lg border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block">Linhas na Planilha</span>
+                    <span className="text-base font-extrabold text-slate-900">
+                      {preImportReportVivo?.totalLinhasLidas ?? (diffVivo ? diffVivo.novas.length + diffVivo.atualizadas.length : 0)}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg border border-emerald-200">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase block">Gravadas</span>
+                    <span className="text-base font-extrabold text-emerald-800">
+                      {execResultVivo?.totalGravadas ?? (diffVivo ? diffVivo.novas.length + diffVivo.atualizadas.length : 0)}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg border border-amber-200">
+                    <span className="text-[10px] font-bold text-amber-700 uppercase block">Ignoradas</span>
+                    <span className="text-base font-extrabold text-amber-800">
+                      {preImportReportVivo?.linhasIgnoradas.length ?? 0}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg border border-blue-200">
+                    <span className="text-[10px] font-bold text-blue-700 uppercase block">No Banco (Total)</span>
+                    <span className="text-base font-extrabold text-blue-900">
+                      {execResultVivo?.totalNoBanco ?? (diffVivo ? diffVivo.novas.length + diffVivo.atualizadas.length : '—')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Alerta de Divergência caso contagem no banco difira do esperado */}
+              {execResultVivo && execResultVivo.divergenciaCount > 0 && (
+                <div className="p-4 bg-rose-50 border border-rose-300 rounded-xl space-y-3">
+                  <div className="flex items-start space-x-2.5">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h5 className="text-xs font-bold text-rose-950">
+                        Alerta de Divergência na Contagem do Banco de Dados
+                      </h5>
+                      <p className="text-[11px] text-rose-800 mt-0.5">
+                        A contagem no servidor ({execResultVivo.totalNoBanco}) divergiu da quantidade de IDs únicos gravados ({execResultVivo.totalGravadas}). Diferença de {execResultVivo.divergenciaCount} registro(s).
+                      </p>
+                    </div>
+                  </div>
+
+                  {execResultVivo.missingIds && execResultVivo.missingIds.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-rose-900 block">
+                        IDs não localizados após a gravação ({execResultVivo.missingIds.length}):
+                      </span>
+                      <div className="max-h-32 overflow-y-auto bg-white border border-rose-200 rounded-lg p-2 font-mono text-[11px] text-rose-950">
+                        {execResultVivo.missingIds.map((id, i) => (
+                          <div key={i} className="py-0.5">• {id}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="pt-2 flex justify-center gap-3">
             <button
               onClick={handleReset}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-colors cursor-pointer"

@@ -93,7 +93,7 @@ const DateInputGroup: React.FC<DateInputProps> = ({ label, value, onChange }) =>
   );
 };
 
-interface CustomDropdownSelectProps {
+export interface CustomDropdownSelectProps {
   label: string;
   value: string;
   onChange: (val: string) => void;
@@ -104,7 +104,7 @@ interface CustomDropdownSelectProps {
   onClose: () => void;
 }
 
-const CustomDropdownSelect: React.FC<CustomDropdownSelectProps> = ({
+export const CustomDropdownSelect: React.FC<CustomDropdownSelectProps> = ({
   label,
   value,
   onChange,

@@ -14,6 +14,7 @@ import {
   where,
   limit,
   orderBy,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured, missingFirebaseEnvVars } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
@@ -97,6 +98,13 @@ interface ImportMassivaResult {
   updatedColumns: string[];
 }
 
+export interface ExecutarImportacaoVivoResult {
+  totalGravadas: number;
+  totalNoBanco: number;
+  divergenciaCount: number;
+  missingIds: string[];
+}
+
 interface DataContextType {
   registros: Registro[];
   frRegistros: FRRegistro[];
@@ -177,11 +185,11 @@ interface DataContextType {
   executarImportacaoPadraoVivo: (
     diff: ImportPadraoVivoDiff,
     onProgress?: (porcentagem: number, etapa: string) => void
-  ) => Promise<void>;
+  ) => Promise<ExecutarImportacaoVivoResult>;
   executarImportacaoMassivaVivo: (
     planilhaLinhas: Record<string, any>[],
     onProgress?: (porcentagem: number, etapa: string) => void
-  ) => Promise<ImportMassivaResult>;
+  ) => Promise<ImportMassivaResult & { totalNoBanco?: number }>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -215,28 +223,22 @@ export function normalizeRegistroVivoData(data: any, docId: string): RegistroViv
   return { _id: docId, ...data } as RegistroVivo;
 }
 
-function getLocalStoredRegistrosVivo(): RegistroVivo[] {
+function clearLegacyLocalRegistrosVivo() {
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_REGISTROS_VIVO_KEY) : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((r) => r && isValidVivoID(r.ID));
-      }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(LOCAL_STORAGE_REGISTROS_VIVO_KEY);
     }
-  } catch (e) {}
+  } catch {}
+}
+
+function getLocalStoredRegistrosVivo(): RegistroVivo[] {
+  // A base completa não é mais lida do localStorage, utiliza IndexedDB do Firestore
   return [];
 }
 
-function saveLocalRegistrosVivo(list: RegistroVivo[]) {
-  try {
-    if (typeof window !== 'undefined') {
-      const validOnly = list.filter((r) => r && isValidVivoID(r.ID));
-      localStorage.setItem(LOCAL_STORAGE_REGISTROS_VIVO_KEY, JSON.stringify(validOnly));
-    }
-  } catch (e) {
-    console.warn('Erro ao salvar no cache local da VIVO:', e);
-  }
+function saveLocalRegistrosVivo(_list: RegistroVivo[]) {
+  // Conforme requisito 1d: paramos de armazenar a base VIVO no localStorage (~5MB limit).
+  // O cache persistente do Firestore em IndexedDB já cuida do armazenamento local dos documentos.
 }
 
 export function normalizeRegistroData(data: any, docId: string): Registro {
@@ -486,7 +488,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // --- VIVO State ---
   const [registrosVivo, setRegistrosVivo] = useState<RegistroVivo[]>([]);
-  const [loadingRegistrosVivo, setLoadingRegistrosVivo] = useState<boolean>(false);
+  const [loadingRegistrosVivo, setLoadingRegistrosVivo] = useState<boolean>(true);
   const [segmentacoesVivo, setSegmentacoesVivo] = useState<Record<SegmentacaoVivoKey, string[]>>(DEFAULT_VIVO_SEGMENTATIONS);
   const [loadingSegmentacoesVivo, setLoadingSegmentacoesVivo] = useState<boolean>(false);
   const [lastImportInfoVivo, setLastImportInfoVivo] = useState<ImportMetadata | null>(null);
@@ -494,6 +496,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const vivoSubscribersCountRef = useRef<number>(0);
   const vivoUnsubListenerRef = useRef<(() => void) | null>(null);
   const isVivoSyncStartedRef = useRef<boolean>(false);
+  const hasCheckedVivoCountRef = useRef<boolean>(false);
 
   const clearQuotaError = () => {
     setQuotaExhausted(false);
@@ -2939,19 +2942,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
      VIVO IMPLEMENTATIONS: SYNC, SEGMENTATIONS, EDITS & IMPORTS
      ========================================================================= */
 
-  // VIVO: start real-time sync with incremental delta logic
+  // VIVO: start real-time sync with robust version check, count verification, and IndexedDB cache
   const startVivoSync = useCallback(async () => {
     if (!user || isVivoSyncStartedRef.current) return;
     isVivoSyncStartedRef.current = true;
     setLoadingRegistrosVivo(true);
 
-    const cached = getLocalStoredRegistrosVivo();
-    let hasLocal = false;
-    if (cached && cached.length > 0) {
-      setRegistrosVivo(cached.map((r, idx) => normalizeRegistroVivoData(r, r._id || getSafeVivoDocId(r.ID, idx))));
-      setLoadingRegistrosVivo(false);
-      hasLocal = true;
-    }
+    clearLegacyLocalRegistrosVivo();
 
     if (!isFirebaseConfigured) {
       setLoadingRegistrosVivo(false);
@@ -2961,48 +2958,124 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const vivoCol = collection(db, 'registros_vivo');
 
     try {
-      if (hasLocal) {
-        let latestUpdated = '';
-        for (const r of cached) {
-          if (r._updatedAt && r._updatedAt > latestUpdated) {
-            latestUpdated = r._updatedAt;
-          }
+      // 1. Obter versão no servidor (importVersion gravado em metadata_vivo/importInfo)
+      let serverVersion = '';
+      try {
+        const metaDoc = await getDoc(doc(db, 'metadata_vivo', 'importInfo'));
+        if (metaDoc.exists()) {
+          const mData = metaDoc.data() as any;
+          serverVersion = mData.importVersion || mData.dataHora || '';
+          setLastImportInfoVivo(mData);
         }
-        const cutoff = latestUpdated || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const deltaQuery = query(vivoCol, where('_updatedAt', '>', cutoff));
-        const deltaSnap = await getDocs(deltaQuery);
+      } catch (e) {
+        console.warn('Aviso ao consultar metadata_vivo:', e);
+      }
 
-        if (!deltaSnap.empty) {
-          setRegistrosVivo((prev) => {
-            const docMap = new Map<string, RegistroVivo>();
-            for (const r of prev) {
-              if (isValidVivoID(r.ID)) {
-                const key = r._id || getSafeVivoDocId(r.ID);
-                docMap.set(key, r);
-              }
-            }
-            deltaSnap.forEach((docSnap) => {
-              const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
-              if (isValidVivoID(docData.ID)) {
-                docMap.set(docSnap.id, docData);
-              }
-            });
-            const nextList = Array.from(docMap.values());
-            saveLocalRegistrosVivo(nextList);
-            return nextList;
-          });
-        }
-      } else {
+      const localVersion = typeof window !== 'undefined' ? localStorage.getItem('vivo_loaded_import_version') : null;
+      const lastSync = typeof window !== 'undefined' ? localStorage.getItem('vivo_last_sync_timestamp') : null;
+
+      // 2. Se a versão do servidor for diferente da carregada, ou sem sincronização prévia:
+      // descarta cache local e faz carga completa uma única vez (remove apagados e garante paridade)
+      if (!localVersion || !serverVersion || localVersion !== serverVersion || !lastSync) {
         const fullSnap = await getDocs(vivoCol);
-        const list: RegistroVivo[] = [];
+        let list: RegistroVivo[] = [];
         fullSnap.forEach((docSnap) => {
           const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
           if (isValidVivoID(docData.ID)) {
             list.push(docData);
           }
         });
+
+        // Checagem de contagem com getCountFromServer (ao carregar, comparar quantidade local com o servidor)
+        if (!hasCheckedVivoCountRef.current) {
+          hasCheckedVivoCountRef.current = true;
+          try {
+            const countSnap = await getCountFromServer(vivoCol);
+            const serverCount = countSnap.data().count;
+            if (serverCount !== list.length) {
+              const retrySnap = await getDocs(vivoCol);
+              list = [];
+              retrySnap.forEach((docSnap) => {
+                const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
+                if (isValidVivoID(docData.ID)) {
+                  list.push(docData);
+                }
+              });
+            }
+          } catch (cntErr) {
+            console.warn('Aviso ao checar getCountFromServer VIVO:', cntErr);
+          }
+        }
+
+        if (serverVersion) {
+          try {
+            localStorage.setItem('vivo_loaded_import_version', serverVersion);
+          } catch {}
+        }
+        try {
+          localStorage.setItem('vivo_last_sync_timestamp', new Date().toISOString());
+        } catch {}
+
+        // Aplicar o resultado ao estado uma única vez ao fim da carga
         setRegistrosVivo(list);
-        saveLocalRegistrosVivo(list);
+      } else {
+        // Versão idêntica: leitura incremental com '>=', usando margem de segurança de 5 minutos
+        const lastSyncDate = new Date(lastSync);
+        const cutoff = new Date(lastSyncDate.getTime() - 5 * 60 * 1000).toISOString();
+        const deltaQuery = query(vivoCol, where('_updatedAt', '>=', cutoff));
+        const deltaSnap = await getDocs(deltaQuery);
+
+        // Se o estado inicial em memória estiver vazio, carrega a base persistente
+        let currentList = registrosVivo;
+        if (currentList.length === 0) {
+          const snap = await getDocs(vivoCol);
+          const list: RegistroVivo[] = [];
+          snap.forEach((d) => {
+            const docData = normalizeRegistroVivoData(d.data(), d.id);
+            if (isValidVivoID(docData.ID)) list.push(docData);
+          });
+          currentList = list;
+        }
+
+        const docMap = new Map<string, RegistroVivo>();
+        currentList.forEach((r) => {
+          if (isValidVivoID(r.ID)) {
+            docMap.set(r._id || getSafeVivoDocId(r.ID), r);
+          }
+        });
+
+        deltaSnap.forEach((docSnap) => {
+          const docData = normalizeRegistroVivoData(docSnap.data(), docSnap.id);
+          if (isValidVivoID(docData.ID)) {
+            docMap.set(docSnap.id, docData);
+          }
+        });
+
+        let finalList = Array.from(docMap.values());
+
+        // Checagem de contagem: se divergir, faz recarga completa automática uma vez só
+        if (!hasCheckedVivoCountRef.current) {
+          hasCheckedVivoCountRef.current = true;
+          try {
+            const countSnap = await getCountFromServer(vivoCol);
+            const serverCount = countSnap.data().count;
+            if (serverCount !== finalList.length) {
+              const fullSnap = await getDocs(vivoCol);
+              finalList = [];
+              fullSnap.forEach((d) => {
+                const docData = normalizeRegistroVivoData(d.data(), d.id);
+                if (isValidVivoID(docData.ID)) finalList.push(docData);
+              });
+            }
+          } catch (e) {}
+        }
+
+        try {
+          localStorage.setItem('vivo_last_sync_timestamp', new Date().toISOString());
+        } catch {}
+
+        // Aplicar o resultado ao estado uma única vez ao fim da carga
+        setRegistrosVivo(finalList);
       }
     } catch (err: any) {
       console.warn('Erro na carga inicial VIVO:', err?.message);
@@ -3010,7 +3083,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoadingRegistrosVivo(false);
     }
 
-    // Attach single shared live listener
+    // Attach single shared live listener (mesma lógica da V.TAL, escuta alterações da sessão)
     const sessionStartIso = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     try {
       const liveQuery = query(vivoCol, where('_updatedAt', '>=', sessionStartIso));
@@ -3041,9 +3114,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
               }
             }
-            const nextList = Array.from(docMap.values());
-            saveLocalRegistrosVivo(nextList);
-            return nextList;
+            return Array.from(docMap.values());
           });
         },
         (err) => {
@@ -3065,17 +3136,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const subscribeVivoData = useCallback(() => {
-    vivoSubscribersCountRef.current++;
-    if (vivoSubscribersCountRef.current === 1) {
-      startVivoSync();
-    }
+    startVivoSync();
     return () => {
-      vivoSubscribersCountRef.current = Math.max(0, vivoSubscribersCountRef.current - 1);
-      if (vivoSubscribersCountRef.current === 0) {
-        stopVivoSync();
-      }
+      // Listener compartilhado único permanece ativo durante toda a sessão (não desconecta ao alternar abas)
     };
-  }, [startVivoSync, stopVivoSync]);
+  }, [startVivoSync]);
+
+  // Iniciar sincronização da VIVO em segundo plano logo após o login (como a V.TAL)
+  useEffect(() => {
+    if (!user) {
+      setRegistrosVivo([]);
+      setLoadingRegistrosVivo(false);
+      stopVivoSync();
+      hasCheckedVivoCountRef.current = false;
+      return;
+    }
+    startVivoSync();
+  }, [user, startVivoSync, stopVivoSync]);
 
   const refreshRegistrosVivo = useCallback(async () => {
     if (!user || !isFirebaseConfigured) return;
@@ -3324,11 +3401,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return '';
     };
 
+    // Deduplica em memória mantendo a última ocorrência de cada ID antes de montar novas/atualizadas
+    const lastRowMap = new Map<string, { row: Record<string, any>; idVal: string }>();
     planilhaLinhas.forEach((linha) => {
       const rawId = extractVivoField(linha, 'ID');
       const idVal = cleanVivoID(rawId);
       if (!idVal) return;
+      lastRowMap.set(idVal.toUpperCase(), { row: linha, idVal });
+    });
 
+    Array.from(lastRowMap.values()).forEach(({ row: linha, idVal }) => {
       const idUpper = idVal.toUpperCase();
       planIdsEncontrados.add(idUpper);
 
@@ -3403,7 +3485,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const executarImportacaoPadraoVivo = async (
     diff: ImportPadraoVivoDiff,
     onProgress?: (porcentagem: number, etapa: string) => void
-  ) => {
+  ): Promise<ExecutarImportacaoVivoResult> => {
     if (!checkIsAdmin()) {
       throw new Error('Acesso restrito: Apenas administradores possuem permissão para importar planilhas.');
     }
@@ -3462,6 +3544,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     });
 
+    let totalNoBanco = diff.novas.length + diff.atualizadas.length;
+    const missingIds: string[] = [];
+
     if (isFirebaseConfigured) {
       for (let i = 0; i < ops.length; i += BATCH_SIZE) {
         const chunk = ops.slice(i, i + BATCH_SIZE);
@@ -3480,9 +3565,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         onProgress?.(pct, `Gravando registros VIVO no banco (${completedOps} de ${totalOps})...`);
       }
 
-      const metaPayload: ImportMetadata = {
+      // Grava metadata_vivo/importInfo com importVersion
+      const metaPayload: ImportMetadata & { importVersion: string } = {
         dataHora: agoraIso,
         dataHoraFormatada: new Date().toLocaleString('pt-BR'),
+        importVersion: agoraIso,
         totalRegistros: diff.novas.length + diff.atualizadas.length,
         tipo: 'padrao',
         usuario: currentUserEmail,
@@ -3491,7 +3578,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         removidas: diff.removidas.length,
       };
       await setDoc(doc(db, 'metadata_vivo', 'importInfo'), metaPayload);
-      setLastImportInfoVivo(metaPayload);
+      setLastImportInfoVivo(metaPayload as any);
+
+      try {
+        localStorage.setItem('vivo_loaded_import_version', agoraIso);
+        localStorage.setItem('vivo_last_sync_timestamp', agoraIso);
+      } catch {}
+
+      // 1c) Conferência depois de gravar com getCountFromServer
+      const expectedGravados = diff.novas.length + diff.atualizadas.length;
+      try {
+        const countSnap = await getCountFromServer(vivoCol);
+        totalNoBanco = countSnap.data().count;
+
+        if (totalNoBanco !== expectedGravados) {
+          onProgress?.(95, 'Conferindo integridade da base gravada no Firestore...');
+          const allIdsToVerify = [
+            ...diff.novas.map((n) => n.ID),
+            ...diff.atualizadas.map((a) => a.id),
+          ];
+
+          const CHUNK = 50;
+          for (let i = 0; i < allIdsToVerify.length; i += CHUNK) {
+            const chunk = allIdsToVerify.slice(i, i + CHUNK);
+            const snaps = await Promise.all(
+              chunk.map((id) => getDoc(doc(vivoCol, getSafeVivoDocId(id))))
+            );
+            snaps.forEach((s, idx) => {
+              if (!s.exists()) {
+                missingIds.push(chunk[idx]);
+              }
+            });
+          }
+        }
+      } catch (cntErr) {
+        console.warn('Aviso na conferência getCountFromServer:', cntErr);
+      }
     }
 
     setRegistrosVivo((prev) => {
@@ -3533,11 +3655,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       });
       const nextList = Array.from(docMap.values());
-      saveLocalRegistrosVivo(nextList);
       return nextList;
     });
 
     onProgress?.(100, 'Importação da Base Matriz VIVO concluída com sucesso!');
+
+    return {
+      totalGravadas: diff.novas.length + diff.atualizadas.length,
+      totalNoBanco,
+      divergenciaCount: Math.abs(totalNoBanco - (diff.novas.length + diff.atualizadas.length)),
+      missingIds,
+    };
   };
 
   // VIVO: Executar Importação Massiva

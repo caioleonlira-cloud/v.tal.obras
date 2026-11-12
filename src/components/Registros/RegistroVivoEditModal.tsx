@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { maskDateInput, isValidDateBR, dateBRToISO, dateISOToBR } from '../../utils/dateUtils';
 import { formatBRL, parseCurrencyValue } from '../../utils/currency';
+import { CustomDropdownSelect } from './RegistroBloco2Form';
 
 interface RegistroVivoEditModalProps {
   registro: RegistroVivo | null;
@@ -110,57 +111,6 @@ const DateInputGroup: React.FC<DateInputProps> = ({ label, value, onChange }) =>
   );
 };
 
-interface DropdownSelectProps {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (val: string) => void;
-  onClear: () => void;
-}
-
-const DropdownSelectGroup: React.FC<DropdownSelectProps> = ({
-  label,
-  value,
-  options,
-  onChange,
-  onClear,
-}) => {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-0.5">
-        <label className="block fs-modal-label font-semibold text-slate-700">
-          {label}
-        </label>
-        {value && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="text-[9px] text-slate-400 hover:text-red-600 flex items-center space-x-0.5 font-bold cursor-pointer transition-colors"
-            title="Limpar seleção"
-          >
-            <X className="w-2.5 h-2.5" />
-            <span>Limpar</span>
-          </button>
-        )}
-      </div>
-      <div className="relative">
-        <select
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full modal-input-field pl-2.5 pr-7 bg-white border border-slate-300 rounded-md font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#002855]/30 focus:border-[#002855] transition-colors"
-        >
-          <option value="">-- Selecione --</option>
-          {options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-};
-
 export const RegistroVivoEditModal: React.FC<RegistroVivoEditModalProps> = ({
   registro,
   isOpen,
@@ -180,6 +130,7 @@ export const RegistroVivoEditModal: React.FC<RegistroVivoEditModalProps> = ({
     'ID NOVO/ANTIGO': '',
   });
 
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -345,39 +296,47 @@ export const RegistroVivoEditModal: React.FC<RegistroVivoEditModalProps> = ({
             <form id="form-edit-bloco2-vivo" onSubmit={handleSave} className="space-y-2.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {/* 1. STATUS IMPL */}
-                <DropdownSelectGroup
+                <CustomDropdownSelect
                   label="STATUS IMPL"
                   value={formData['STATUS IMPL']}
                   options={segmentacoesVivo['STATUS IMPL'] || []}
                   onChange={(val) => handleChange('STATUS IMPL', val)}
-                  onClear={() => handleChange('STATUS IMPL', '')}
+                  isOpen={openDropdown === 'STATUS IMPL'}
+                  onToggle={() => setOpenDropdown(openDropdown === 'STATUS IMPL' ? null : 'STATUS IMPL')}
+                  onClose={() => setOpenDropdown(null)}
                 />
 
                 {/* 2. PENDENCIA */}
-                <DropdownSelectGroup
+                <CustomDropdownSelect
                   label="PENDENCIA"
                   value={formData['PENDENCIA']}
                   options={segmentacoesVivo['PENDENCIA'] || []}
                   onChange={(val) => handleChange('PENDENCIA', val)}
-                  onClear={() => handleChange('PENDENCIA', '')}
+                  isOpen={openDropdown === 'PENDENCIA'}
+                  onToggle={() => setOpenDropdown(openDropdown === 'PENDENCIA' ? null : 'PENDENCIA')}
+                  onClose={() => setOpenDropdown(null)}
                 />
 
                 {/* 3. RESPONSÁVEL PENDENCIA */}
-                <DropdownSelectGroup
+                <CustomDropdownSelect
                   label="RESPONSÁVEL PENDENCIA"
                   value={formData['RESPONSÁVEL PENDENCIA']}
                   options={segmentacoesVivo['RESPONSÁVEL PENDENCIA'] || []}
                   onChange={(val) => handleChange('RESPONSÁVEL PENDENCIA', val)}
-                  onClear={() => handleChange('RESPONSÁVEL PENDENCIA', '')}
+                  isOpen={openDropdown === 'RESPONSÁVEL PENDENCIA'}
+                  onToggle={() => setOpenDropdown(openDropdown === 'RESPONSÁVEL PENDENCIA' ? null : 'RESPONSÁVEL PENDENCIA')}
+                  onClose={() => setOpenDropdown(null)}
                 />
 
                 {/* 4. RESPONSÁVEL MEDIÇÃO */}
-                <DropdownSelectGroup
+                <CustomDropdownSelect
                   label="RESPONSÁVEL MEDIÇÃO"
                   value={formData['RESPONSÁVEL MEDIÇÃO']}
                   options={segmentacoesVivo['RESPONSÁVEL MEDIÇÃO'] || []}
                   onChange={(val) => handleChange('RESPONSÁVEL MEDIÇÃO', val)}
-                  onClear={() => handleChange('RESPONSÁVEL MEDIÇÃO', '')}
+                  isOpen={openDropdown === 'RESPONSÁVEL MEDIÇÃO'}
+                  onToggle={() => setOpenDropdown(openDropdown === 'RESPONSÁVEL MEDIÇÃO' ? null : 'RESPONSÁVEL MEDIÇÃO')}
+                  onClose={() => setOpenDropdown(null)}
                 />
 
                 {/* 5. PRAZO DE MEDIÇÃO */}

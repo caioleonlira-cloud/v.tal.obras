@@ -6,6 +6,9 @@ import {
   RegistroVivo,
   RegistrosVivoFilterPayload,
   isValidVivoID,
+  VIVO_BLANK_LABEL,
+  isVivoBlank,
+  getVivoDisplayOrBlank,
 } from '../../types';
 import {
   Search,
@@ -45,6 +48,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
 
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
+  const [filterAno, setFilterAno] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterStatusDraft, setFilterStatusDraft] = useState<string[]>([]);
@@ -67,35 +71,39 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     }
 
     if (excludeKey !== 'REF' && filterREF.length > 0) {
-      const val = (item.REF || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.REF);
       if (!filterREF.includes(val)) return false;
     }
+    if (excludeKey !== 'Ano' && filterAno.length > 0) {
+      const val = getVivoDisplayOrBlank(item.Ano);
+      if (!filterAno.includes(val)) return false;
+    }
     if (excludeKey !== 'REG' && filterREG.length > 0) {
-      const val = (item.REG || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.REG);
       if (!filterREG.includes(val)) return false;
     }
     if (excludeKey !== 'UF' && filterUF.length > 0) {
-      const val = (item.UF || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.UF);
       if (!filterUF.includes(val)) return false;
     }
     if (excludeKey !== 'Status Draft' && filterStatusDraft.length > 0) {
-      const val = (item['Status Draft'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['Status Draft']);
       if (!filterStatusDraft.includes(val)) return false;
     }
     if (excludeKey !== 'Status Medição Final' && filterStatusMedFinal.length > 0) {
-      const val = (item['Status Medição Final'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['Status Medição Final']);
       if (!filterStatusMedFinal.includes(val)) return false;
     }
     if (excludeKey !== 'STATUS IMPL' && filterStatusImpl.length > 0) {
-      const val = (item['STATUS IMPL'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['STATUS IMPL']);
       if (!filterStatusImpl.includes(val)) return false;
     }
     if (excludeKey !== 'RESPONSÁVEL PENDENCIA' && filterRespPendencia.length > 0) {
-      const val = (item['RESPONSÁVEL PENDENCIA'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['RESPONSÁVEL PENDENCIA']);
       if (!filterRespPendencia.includes(val)) return false;
     }
     if (excludeKey !== 'RESPONSÁVEL MEDIÇÃO' && filterRespMedicao.length > 0) {
-      const val = (item['RESPONSÁVEL MEDIÇÃO'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['RESPONSÁVEL MEDIÇÃO']);
       if (!filterRespMedicao.includes(val)) return false;
     }
 
@@ -106,6 +114,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const {
     refOptions,
     refCounts,
+    anoOptions,
+    anoCounts,
     regOptions,
     regCounts,
     ufOptions,
@@ -122,6 +132,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     respMedicaoCounts,
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
+    const cAno: Record<string, number> = {};
     const cReg: Record<string, number> = {};
     const cUf: Record<string, number> = {};
     const cDraft: Record<string, number> = {};
@@ -133,40 +144,54 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     registrosVivo.forEach((r) => {
       if (!r || !isValidVivoID(r.ID)) return;
 
-      const rRef = (r.REF || '').trim() || '(Em branco)';
+      const rRef = getVivoDisplayOrBlank(r.REF);
       if (matchesFilterSubset(r, 'REF')) cRef[rRef] = (cRef[rRef] || 0) + 1;
 
-      const rReg = (r.REG || '').trim() || '(Em branco)';
+      const rAno = getVivoDisplayOrBlank(r.Ano);
+      if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
+
+      const rReg = getVivoDisplayOrBlank(r.REG);
       if (matchesFilterSubset(r, 'REG')) cReg[rReg] = (cReg[rReg] || 0) + 1;
 
-      const rUf = (r.UF || '').trim() || '(Em branco)';
+      const rUf = getVivoDisplayOrBlank(r.UF);
       if (matchesFilterSubset(r, 'UF')) cUf[rUf] = (cUf[rUf] || 0) + 1;
 
-      const rDraft = (r['Status Draft'] || '').trim() || '(Em branco)';
+      const rDraft = getVivoDisplayOrBlank(r['Status Draft']);
       if (matchesFilterSubset(r, 'Status Draft')) cDraft[rDraft] = (cDraft[rDraft] || 0) + 1;
 
-      const rMedFin = (r['Status Medição Final'] || '').trim() || '(Em branco)';
+      const rMedFin = getVivoDisplayOrBlank(r['Status Medição Final']);
       if (matchesFilterSubset(r, 'Status Medição Final')) cMedFin[rMedFin] = (cMedFin[rMedFin] || 0) + 1;
 
-      const rImpl = (r['STATUS IMPL'] || '').trim() || '(Em branco)';
+      const rImpl = getVivoDisplayOrBlank(r['STATUS IMPL']);
       if (matchesFilterSubset(r, 'STATUS IMPL')) cImpl[rImpl] = (cImpl[rImpl] || 0) + 1;
 
-      const rRespPend = (r['RESPONSÁVEL PENDENCIA'] || '').trim() || '(Em branco)';
+      const rRespPend = getVivoDisplayOrBlank(r['RESPONSÁVEL PENDENCIA']);
       if (matchesFilterSubset(r, 'RESPONSÁVEL PENDENCIA')) cRespPend[rRespPend] = (cRespPend[rRespPend] || 0) + 1;
 
-      const rRespMed = (r['RESPONSÁVEL MEDIÇÃO'] || '').trim() || '(Em branco)';
+      const rRespMed = getVivoDisplayOrBlank(r['RESPONSÁVEL MEDIÇÃO']);
       if (matchesFilterSubset(r, 'RESPONSÁVEL MEDIÇÃO')) cRespMed[rRespMed] = (cRespMed[rRespMed] || 0) + 1;
     });
 
     const sortFn = (a: string, b: string) => {
-      if (a === '(Em branco)') return 1;
-      if (b === '(Em branco)') return -1;
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      return a.localeCompare(b, 'pt-BR');
+    };
+
+    const sortAnoFn = (a: string, b: string) => {
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
       return a.localeCompare(b, 'pt-BR');
     };
 
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
+      anoOptions: Object.keys(cAno).sort(sortAnoFn),
+      anoCounts: cAno,
       regOptions: Object.keys(cReg).sort(sortFn),
       regCounts: cReg,
       ufOptions: Object.keys(cUf).sort(sortFn),
@@ -186,6 +211,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterAno,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -202,6 +228,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterAno,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -218,6 +245,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const activeFiltersCount =
     (searchID ? 1 : 0) +
     filterREF.length +
+    filterAno.length +
     filterREG.length +
     filterUF.length +
     filterStatusDraft.length +
@@ -229,6 +257,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const handleClearFilters = () => {
     setSearchID('');
     setFilterREF([]);
+    setFilterAno([]);
     setFilterREG([]);
     setFilterUF([]);
     setFilterStatusDraft([]);
@@ -285,7 +314,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
       const reg = (r.REG || '').trim() || 'SEM REGIONAL';
       regCountMap[reg] = (regCountMap[reg] || 0) + 1;
 
-      const resp = (r['RESPONSÁVEL PENDENCIA'] || '').trim() || '(EM BRANCO)';
+      const resp = getVivoDisplayOrBlank(r['RESPONSÁVEL PENDENCIA']);
 
       if (!groupsMap[reg]) {
         groupsMap[reg] = {};
@@ -311,8 +340,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
       .sort((a, b) => a.localeCompare(b, 'pt-BR'))
       .map((reg) => {
         const items = Object.values(groupsMap[reg]).sort((a, b) => {
-          if (a.responsavel === '(EM BRANCO)') return 1;
-          if (b.responsavel === '(EM BRANCO)') return -1;
+          if (a.responsavel === VIVO_BLANK_LABEL) return 1;
+          if (b.responsavel === VIVO_BLANK_LABEL) return -1;
           return a.responsavel.localeCompare(b.responsavel, 'pt-BR');
         });
 
@@ -358,6 +387,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     const payload: RegistrosVivoFilterPayload = {};
     if (searchID.trim()) payload.searchID = searchID.trim();
     if (filterREF.length > 0) payload.ref = [...filterREF];
+    if (filterAno.length > 0) payload.ano = [...filterAno];
     if (filterREG.length > 0) payload.reg = [...filterREG];
     if (filterUF.length > 0) payload.uf = [...filterUF];
     if (filterStatusDraft.length > 0) payload.statusDraft = [...filterStatusDraft];
@@ -371,6 +401,168 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
 
     onNavigateToRegistrosVivo(payload);
   };
+
+  const formatBRLNoCents = (val: number): string => {
+    return `R$ ${Math.round(val).toLocaleString('pt-BR')}`;
+  };
+
+  // Ordem fixa de Responsáveis para as duas tabelas novas
+  const FIXED_HEAD_RESPONSAVEIS = [
+    'AVALIAR',
+    'MED. DRAFT APROV.',
+    'MED. OK - AG. DRAFT APROV.',
+    'MED. SEM DRAFT APROV.',
+    'CÉLULA SAP',
+    'IMPLANTAÇÃO',
+    'PROJETO',
+    'VIVO',
+    'VIVO - ACEITE DRAFT',
+    'VIVO - ENTREGUE',
+    'ID CANCELADO',
+  ];
+
+  const FIXED_TAIL_RESPONSAVEIS = [
+    'FINANCEIRO',
+    'FINALIZADO',
+  ];
+
+  const getRespCanonicalKey = (name: string): string => {
+    return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove acentos
+      .replace(/[.\-_/]/g, ' ') // normaliza pontuações e hífens
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+  };
+
+  const HEAD_PRIORITY_MAP = new Map<string, number>();
+  FIXED_HEAD_RESPONSAVEIS.forEach((item, idx) => {
+    HEAD_PRIORITY_MAP.set(getRespCanonicalKey(item), idx);
+  });
+
+  const TAIL_PRIORITY_MAP = new Map<string, number>();
+  FIXED_TAIL_RESPONSAVEIS.forEach((item, idx) => {
+    TAIL_PRIORITY_MAP.set(getRespCanonicalKey(item), idx);
+  });
+
+  // Matrix Calculations for Table A & Table B
+  const {
+    matrixAnos,
+    matrixResponsaveis,
+    matrixValuesA,
+    matrixValuesB,
+    rowTotalsA,
+    colTotalsA,
+    grandTotalA,
+    rowTotalsB,
+    colTotalsB,
+    grandTotalB,
+  } = useMemo(() => {
+    const anosSet = new Set<string>();
+    const respSet = new Set<string>();
+
+    const matA: Record<string, Record<string, number>> = {};
+    const matB: Record<string, Record<string, number>> = {};
+
+    const rTotA: Record<string, number> = {};
+    const cTotA: Record<string, number> = {};
+    let gTotA = 0;
+
+    const rTotB: Record<string, number> = {};
+    const cTotB: Record<string, number> = {};
+    let gTotB = 0;
+
+    filteredRegistrosVivo.forEach((r) => {
+      if (!r || !isValidVivoID(r.ID)) return;
+
+      const ano = getVivoDisplayOrBlank(r.Ano);
+      const resp = getVivoDisplayOrBlank(r['RESPONSÁVEL PENDENCIA']);
+
+      anosSet.add(ano);
+      respSet.add(resp);
+
+      // Tabela A: OSP MEDIDO quando > 0; se zero ou vazio, OSP ORÇAMENTO
+      const medido = parseCurrencyValue(r['OSP MEDIDO']);
+      const orcamento = parseCurrencyValue(r['OSP ORÇAMENTO']);
+      const valA = medido > 0 ? medido : orcamento;
+
+      if (!matA[ano]) matA[ano] = {};
+      matA[ano][resp] = (matA[ano][resp] || 0) + valA;
+      rTotA[ano] = (rTotA[ano] || 0) + valA;
+      cTotA[resp] = (cTotA[resp] || 0) + valA;
+      gTotA += valA;
+
+      // Tabela B: Volumetria de IDs (1 por registro)
+      if (!matB[ano]) matB[ano] = {};
+      matB[ano][resp] = (matB[ano][resp] || 0) + 1;
+      rTotB[ano] = (rTotB[ano] || 0) + 1;
+      cTotB[resp] = (cTotB[resp] || 0) + 1;
+      gTotB += 1;
+    });
+
+    const sortAno = (a: string, b: string) => {
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b, 'pt-BR');
+    };
+
+    const sortResp = (a: string, b: string) => {
+      // 14. (EM BRANCO) fica sempre por último antes do Total Geral
+      const isBlankA = a === VIVO_BLANK_LABEL || isVivoBlank(a);
+      const isBlankB = b === VIVO_BLANK_LABEL || isVivoBlank(b);
+      if (isBlankA && isBlankB) return 0;
+      if (isBlankA) return 1;
+      if (isBlankB) return -1;
+
+      const keyA = getRespCanonicalKey(a);
+      const keyB = getRespCanonicalKey(b);
+
+      const headIdxA = HEAD_PRIORITY_MAP.has(keyA) ? HEAD_PRIORITY_MAP.get(keyA)! : -1;
+      const headIdxB = HEAD_PRIORITY_MAP.has(keyB) ? HEAD_PRIORITY_MAP.get(keyB)! : -1;
+
+      const tailIdxA = TAIL_PRIORITY_MAP.has(keyA) ? TAIL_PRIORITY_MAP.get(keyA)! : -1;
+      const tailIdxB = TAIL_PRIORITY_MAP.has(keyB) ? TAIL_PRIORITY_MAP.get(keyB)! : -1;
+
+      // Grupo 1 (Head: 0..10), Grupo 2 (Novo: 500), Grupo 3 (Tail: 1000..1001)
+      const rankA = headIdxA !== -1 ? headIdxA : tailIdxA !== -1 ? 1000 + tailIdxA : 500;
+      const rankB = headIdxB !== -1 ? headIdxB : tailIdxB !== -1 ? 1000 + tailIdxB : 500;
+
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+
+      if (headIdxA !== -1) {
+        return headIdxA - headIdxB;
+      }
+
+      if (tailIdxA !== -1) {
+        return tailIdxA - tailIdxB;
+      }
+
+      // Novos responsáveis entre si: ordem alfabética
+      return a.localeCompare(b, 'pt-BR');
+    };
+
+    const sortedAnos = Array.from(anosSet).sort(sortAno);
+    const sortedResponsaveis = Array.from(respSet).sort(sortResp);
+
+    return {
+      matrixAnos: sortedAnos,
+      matrixResponsaveis: sortedResponsaveis,
+      matrixValuesA: matA,
+      matrixValuesB: matB,
+      rowTotalsA: rTotA,
+      colTotalsA: cTotA,
+      grandTotalA: gTotA,
+      rowTotalsB: rTotB,
+      colTotalsB: cTotB,
+      grandTotalB: gTotB,
+    };
+  }, [filteredRegistrosVivo]);
 
   const thStyle: React.CSSProperties = {
     fontSize: 'var(--fs-dash-table-header)',
@@ -440,7 +632,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
           {/* Row 2: Collapsible Filters */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-1.5 items-end">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5 items-end">
                 {/* Search ID/Desc */}
                 <div className="w-full min-w-0">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
@@ -475,6 +667,15 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                   optionCounts={refCounts}
                   onChange={setFilterREF}
                   placeholder="Todas"
+                />
+
+                <MultiSelectFilter
+                  label="Ano"
+                  options={anoOptions}
+                  selected={filterAno}
+                  optionCounts={anoCounts}
+                  onChange={setFilterAno}
+                  placeholder="Todos"
                 />
 
                 <MultiSelectFilter
@@ -762,10 +963,10 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-200/80 text-slate-700">
                       {group.items.map((row, idx) => {
-                        const isBlank = row.responsavel === '(EM BRANCO)';
+                        const isBlank = isVivoBlank(row.responsavel);
                         const isZebra = idx % 2 === 1;
-                        const respFilter = isBlank ? ['(EM BRANCO)'] : [row.responsavel];
-                        const respLabel = isBlank ? '(EM BRANCO)' : row.responsavel;
+                        const respFilter = isBlank ? [VIVO_BLANK_LABEL] : [row.responsavel];
+                        const respLabel = isBlank ? VIVO_BLANK_LABEL : row.responsavel;
 
                         return (
                           <tr
@@ -797,7 +998,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                                     className="inline-flex items-center gap-1 px-1 py-0.2 rounded bg-[#E0A526]/20 border border-[#E0A526]/40 text-[#855800] font-black italic"
                                   >
                                     <AlertTriangle className="w-2.5 h-2.5 text-[#E0A526]" />
-                                    (EM BRANCO)
+                                    {VIVO_BLANK_LABEL}
                                   </span>
                                 ) : (
                                   <span
@@ -1003,6 +1204,472 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                 </div>
               </div>
             ))
+          )}
+        </div>
+      </div>
+
+      {/* 4. TABELA A: Valor por Ano e Responsável (OSP Medido; se zero, OSP Orçamento) */}
+      <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="px-3.5 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
+          <div>
+            <h3
+              style={{ fontSize: 'var(--fs-dash-panel-title)' }}
+              className="font-extrabold text-slate-900 flex items-center space-x-1.5"
+            >
+              <DollarSign className="w-3.5 h-3.5 text-[#002855]" />
+              <span>Valor por Ano e Responsável (OSP Medido; se zero, OSP Orçamento)</span>
+            </h3>
+            <p
+              style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+              className="text-slate-500 mt-0.5"
+            >
+              Soma do OSP Medido quando maior que zero; se for zero ou vazio, contribui com OSP Orçamento.
+            </p>
+          </div>
+
+          <span
+            style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+            className="text-slate-500 font-medium"
+          >
+            Clique nas células para detalhar as obras na aba Registro
+          </span>
+        </div>
+
+        <div className="p-3">
+          {matrixAnos.length === 0 ? (
+            <div className="bg-slate-50/50 rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-xs">
+              Nenhum dado encontrado para os filtros selecionados.
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-w-full rounded-lg border border-slate-200 custom-scrollbar">
+              <table className="w-full text-left border-collapse font-sans text-xs">
+                <thead>
+                  <tr className="bg-[#002855] text-white text-[11px] font-bold uppercase tracking-wider select-none border-b border-[#001e40] whitespace-nowrap">
+                    {/* Coluna Ano fixa à esquerda */}
+                    <th
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 20,
+                        backgroundColor: '#002855',
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      className="px-3 text-center align-middle font-bold border-r border-[#001e40] min-w-[130px] w-[130px] whitespace-nowrap shadow-xs"
+                    >
+                      Ano
+                    </th>
+                    {matrixResponsaveis.map((resp) => (
+                      <th
+                        key={resp}
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-3 text-center align-middle font-bold border-r border-[#001e40] min-w-[130px] whitespace-nowrap"
+                        title={resp}
+                      >
+                        {resp}
+                      </th>
+                    ))}
+                    <th
+                      style={{
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      className="px-3 text-center align-middle font-black min-w-[130px] whitespace-nowrap bg-[#001e40] text-cyan-300"
+                    >
+                      Total Geral
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
+                  {matrixAnos.map((ano) => {
+                    const rowTot = rowTotalsA[ano] || 0;
+                    return (
+                      <tr key={ano} className="hover:bg-blue-50/30 transition-colors">
+                        {/* Ano (sticky left) */}
+                        <td
+                          style={{
+                            position: 'sticky',
+                            left: 0,
+                            zIndex: 10,
+                            backgroundColor: '#ffffff',
+                            whiteSpace: 'nowrap',
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => handleNavigateVivo({ ano: [ano] })}
+                          className="px-3 text-center align-middle font-extrabold text-[#002855] border-r border-slate-100 min-w-[130px] w-[130px] whitespace-nowrap shadow-2xs cursor-pointer hover:underline bg-white"
+                          title={`Filtrar obras do ano ${ano}`}
+                        >
+                          {ano}
+                        </td>
+
+                        {/* Colunas Responsáveis */}
+                        {matrixResponsaveis.map((resp) => {
+                          const val = matrixValuesA[ano]?.[resp] || 0;
+                          return (
+                            <td
+                              key={resp}
+                              style={{
+                                fontSize: 'var(--fs-dash-table-cell)',
+                                paddingTop: 'var(--dash-table-row-py)',
+                                paddingBottom: 'var(--dash-table-row-py)',
+                              }}
+                              onClick={() => {
+                                if (val > 0) {
+                                  handleNavigateVivo({ ano: [ano], respPendencia: [resp] });
+                                }
+                              }}
+                              className={`px-3 text-center align-middle tabular-nums border-r border-slate-100 min-w-[130px] whitespace-nowrap ${
+                                val > 0
+                                  ? 'cursor-pointer hover:bg-blue-100/70 font-semibold text-slate-800 hover:text-[#002855] transition-colors'
+                                  : 'text-slate-300 font-normal select-none'
+                              }`}
+                              title={
+                                val > 0
+                                  ? `Filtrar obras de ${resp} no ano ${ano}: ${formatBRLNoCents(val)}`
+                                  : undefined
+                              }
+                            >
+                              {val > 0 ? formatBRLNoCents(val) : '—'}
+                            </td>
+                          );
+                        })}
+
+                        {/* Total Geral da Linha */}
+                        <td
+                          style={{
+                            whiteSpace: 'nowrap',
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => {
+                            if (rowTot > 0) {
+                              handleNavigateVivo({ ano: [ano] });
+                            }
+                          }}
+                          className={`px-3 text-center align-middle tabular-nums font-bold min-w-[130px] whitespace-nowrap bg-slate-50 ${
+                            rowTot > 0
+                              ? 'cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors'
+                              : 'text-slate-400'
+                          }`}
+                          title={rowTot > 0 ? `Filtrar todas as obras do ano ${ano}` : undefined}
+                        >
+                          {rowTot > 0 ? formatBRLNoCents(rowTot) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-200">
+                    {/* Total Geral Cabeçalho Linha Footer (sticky left) */}
+                    <td
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 10,
+                        backgroundColor: '#f8fafc',
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      onClick={() => handleNavigateVivo({})}
+                      className="px-3 text-center align-middle font-black text-[#002855] border-r border-slate-200 uppercase tracking-wider bg-slate-50 min-w-[130px] w-[130px] whitespace-nowrap shadow-2xs cursor-pointer hover:underline"
+                      title="Clique para ver todas as obras filtradas"
+                    >
+                      Total Geral
+                    </td>
+
+                    {/* Totais de Cada Coluna Responsável */}
+                    {matrixResponsaveis.map((resp) => {
+                      const colTot = colTotalsA[resp] || 0;
+                      return (
+                        <td
+                          key={resp}
+                          style={{
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => {
+                            if (colTot > 0) {
+                              handleNavigateVivo({ respPendencia: [resp] });
+                            }
+                          }}
+                          className={`px-3 text-center align-middle tabular-nums font-bold border-r border-slate-200 min-w-[130px] whitespace-nowrap ${
+                            colTot > 0
+                              ? 'cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors'
+                              : 'text-slate-400'
+                          }`}
+                          title={colTot > 0 ? `Filtrar todas as obras de ${resp}` : undefined}
+                        >
+                          {colTot > 0 ? formatBRLNoCents(colTot) : '—'}
+                        </td>
+                      );
+                    })}
+
+                    {/* Total Geral do Footer */}
+                    <td
+                      style={{
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-cell)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      onClick={() => handleNavigateVivo({})}
+                      className="px-3 text-center align-middle tabular-nums font-black text-[#002855] bg-slate-100 min-w-[130px] whitespace-nowrap cursor-pointer hover:bg-blue-200/70 transition-colors"
+                      title="Ver todas as obras com os filtros atuais"
+                    >
+                      {formatBRLNoCents(grandTotalA)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 5. TABELA B: Volumetria de IDs por Ano e Responsável */}
+      <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="px-3.5 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
+          <div>
+            <h3
+              style={{ fontSize: 'var(--fs-dash-panel-title)' }}
+              className="font-extrabold text-slate-900 flex items-center space-x-1.5"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#002855]" />
+              <span>Volumetria de IDs por Ano e Responsável</span>
+            </h3>
+            <p
+              style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+              className="text-slate-500 mt-0.5"
+            >
+              Contagem total de obras (IDs) distribuídas por Ano e Responsável.
+            </p>
+          </div>
+
+          <span
+            style={{ fontSize: 'var(--fs-dash-panel-subtitle)' }}
+            className="text-slate-500 font-medium"
+          >
+            Clique nas células para detalhar as obras na aba Registro
+          </span>
+        </div>
+
+        <div className="p-3">
+          {matrixAnos.length === 0 ? (
+            <div className="bg-slate-50/50 rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-xs">
+              Nenhum dado encontrado para os filtros selecionados.
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-w-full rounded-lg border border-slate-200 custom-scrollbar">
+              <table className="w-full text-left border-collapse font-sans text-xs">
+                <thead>
+                  <tr className="bg-[#002855] text-white text-[11px] font-bold uppercase tracking-wider select-none border-b border-[#001e40] whitespace-nowrap">
+                    {/* Coluna Ano fixa à esquerda */}
+                    <th
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 20,
+                        backgroundColor: '#002855',
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      className="px-3 text-center align-middle font-bold border-r border-[#001e40] min-w-[130px] w-[130px] whitespace-nowrap shadow-xs"
+                    >
+                      Ano
+                    </th>
+                    {matrixResponsaveis.map((resp) => (
+                      <th
+                        key={resp}
+                        style={{
+                          fontSize: 'var(--fs-dash-table-header)',
+                          paddingTop: 'var(--dash-table-row-py)',
+                          paddingBottom: 'var(--dash-table-row-py)',
+                        }}
+                        className="px-3 text-center align-middle font-bold border-r border-[#001e40] min-w-[130px] whitespace-nowrap"
+                        title={resp}
+                      >
+                        {resp}
+                      </th>
+                    ))}
+                    <th
+                      style={{
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      className="px-3 text-center align-middle font-black min-w-[130px] whitespace-nowrap bg-[#001e40] text-cyan-300"
+                    >
+                      Total Geral
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
+                  {matrixAnos.map((ano) => {
+                    const rowTot = rowTotalsB[ano] || 0;
+                    return (
+                      <tr key={ano} className="hover:bg-blue-50/30 transition-colors">
+                        {/* Ano (sticky left) */}
+                        <td
+                          style={{
+                            position: 'sticky',
+                            left: 0,
+                            zIndex: 10,
+                            backgroundColor: '#ffffff',
+                            whiteSpace: 'nowrap',
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => handleNavigateVivo({ ano: [ano] })}
+                          className="px-3 text-center align-middle font-extrabold text-[#002855] border-r border-slate-100 min-w-[130px] w-[130px] whitespace-nowrap shadow-2xs cursor-pointer hover:underline bg-white"
+                          title={`Filtrar obras do ano ${ano}`}
+                        >
+                          {ano}
+                        </td>
+
+                        {/* Colunas Responsáveis */}
+                        {matrixResponsaveis.map((resp) => {
+                          const count = matrixValuesB[ano]?.[resp] || 0;
+                          return (
+                            <td
+                              key={resp}
+                              style={{
+                                fontSize: 'var(--fs-dash-table-cell)',
+                                paddingTop: 'var(--dash-table-row-py)',
+                                paddingBottom: 'var(--dash-table-row-py)',
+                              }}
+                              onClick={() => {
+                                if (count > 0) {
+                                  handleNavigateVivo({ ano: [ano], respPendencia: [resp] });
+                                }
+                              }}
+                              className={`px-3 text-center align-middle tabular-nums border-r border-slate-100 min-w-[130px] whitespace-nowrap ${
+                                count > 0
+                                  ? 'cursor-pointer hover:bg-blue-100/70 font-bold text-slate-800 hover:text-[#002855] transition-colors'
+                                  : 'text-slate-300 font-normal select-none'
+                              }`}
+                              title={
+                                count > 0
+                                  ? `Filtrar ${count} obra(s) de ${resp} no ano ${ano}`
+                                  : undefined
+                              }
+                            >
+                              {count > 0 ? count.toLocaleString('pt-BR') : '—'}
+                            </td>
+                          );
+                        })}
+
+                        {/* Total Geral da Linha */}
+                        <td
+                          style={{
+                            whiteSpace: 'nowrap',
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => {
+                            if (rowTot > 0) {
+                              handleNavigateVivo({ ano: [ano] });
+                            }
+                          }}
+                          className={`px-3 text-center align-middle tabular-nums font-black min-w-[130px] whitespace-nowrap bg-slate-50 ${
+                            rowTot > 0
+                              ? 'cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors'
+                              : 'text-slate-400'
+                          }`}
+                          title={rowTot > 0 ? `Filtrar todas as ${rowTot} obras do ano ${ano}` : undefined}
+                        >
+                          {rowTot > 0 ? rowTot.toLocaleString('pt-BR') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-200">
+                    {/* Total Geral Cabeçalho Linha Footer (sticky left) */}
+                    <td
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 10,
+                        backgroundColor: '#f8fafc',
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-header)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      onClick={() => handleNavigateVivo({})}
+                      className="px-3 text-center align-middle font-black text-[#002855] border-r border-slate-200 uppercase tracking-wider bg-slate-50 min-w-[130px] w-[130px] whitespace-nowrap shadow-2xs cursor-pointer hover:underline"
+                      title="Clique para ver todas as obras filtradas"
+                    >
+                      Total Geral
+                    </td>
+
+                    {/* Totais de Cada Coluna Responsável */}
+                    {matrixResponsaveis.map((resp) => {
+                      const colTot = colTotalsB[resp] || 0;
+                      return (
+                        <td
+                          key={resp}
+                          style={{
+                            fontSize: 'var(--fs-dash-table-cell)',
+                            paddingTop: 'var(--dash-table-row-py)',
+                            paddingBottom: 'var(--dash-table-row-py)',
+                          }}
+                          onClick={() => {
+                            if (colTot > 0) {
+                              handleNavigateVivo({ respPendencia: [resp] });
+                            }
+                          }}
+                          className={`px-3 text-center align-middle tabular-nums font-black border-r border-slate-200 min-w-[130px] whitespace-nowrap ${
+                            colTot > 0
+                              ? 'cursor-pointer hover:bg-blue-100/70 text-slate-900 transition-colors'
+                              : 'text-slate-400'
+                          }`}
+                          title={colTot > 0 ? `Filtrar todas as ${colTot} obras de ${resp}` : undefined}
+                        >
+                          {colTot > 0 ? colTot.toLocaleString('pt-BR') : '—'}
+                        </td>
+                      );
+                    })}
+
+                    {/* Total Geral do Footer */}
+                    <td
+                      style={{
+                        whiteSpace: 'nowrap',
+                        fontSize: 'var(--fs-dash-table-cell)',
+                        paddingTop: 'var(--dash-table-row-py)',
+                        paddingBottom: 'var(--dash-table-row-py)',
+                      }}
+                      onClick={() => handleNavigateVivo({})}
+                      className="px-3 text-center align-middle tabular-nums font-black text-[#002855] bg-slate-100 min-w-[130px] whitespace-nowrap cursor-pointer hover:bg-blue-200/70 transition-colors"
+                      title="Ver todas as obras com os filtros atuais"
+                    >
+                      {grandTotalB.toLocaleString('pt-BR')}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
         </div>
       </div>

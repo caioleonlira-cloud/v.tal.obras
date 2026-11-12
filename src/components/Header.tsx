@@ -327,13 +327,17 @@ export const Header: React.FC<HeaderProps> = ({
             <Layers className="w-3.5 h-3.5" />
             <span>Registro - (VIVO OBRAS)</span>
             <span
-              className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 ${
+              className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 inline-flex items-center justify-center min-w-[20px] ${
                 activeTab === 'registros_vivo'
                   ? 'bg-[#0a1f44] text-cyan-300 border border-cyan-400/30'
                   : 'bg-white/15 text-slate-300'
               }`}
             >
-              {registrosVivo.length.toLocaleString('pt-BR')}
+              {loadingRegistrosVivo ? (
+                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+              ) : (
+                registrosVivo.length.toLocaleString('pt-BR')
+              )}
             </span>
           </button>
 

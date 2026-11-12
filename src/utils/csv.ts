@@ -2352,12 +2352,11 @@ export async function readCSVFileVivo(file: File): Promise<{
       }
     });
 
-    const idValue = cleanVivoID(cleanRow['ID']);
-    if (hasAnyValue && idValue) {
-      cleanRow['ID'] = idValue;
+    if (hasAnyValue) {
       cleanRow['_rowNumber'] = r + 1;
 
       Object.keys(cleanRow).forEach((colName) => {
+        if (colName === '_rowNumber') return;
         const val = cleanRow[colName];
 
         if (VIVO_DATE_COLUMNS.has(colName)) {
@@ -2376,7 +2375,7 @@ export async function readCSVFileVivo(file: File): Promise<{
 
   if (cleanedData.length === 0) {
     throw new Error(
-      'Coluna "ID" não encontrada no CSV da VIVO ou sem valores preenchidos. Verifique se o cabeçalho possui a coluna "ID".'
+      'Arquivo CSV da VIVO sem dados. Verifique se o arquivo possui linhas preenchidas.'
     );
   }
 
@@ -2385,6 +2384,122 @@ export async function readCSVFileVivo(file: File): Promise<{
     data: cleanedData,
     detectedColumns: Array.from(detectedColumnsSet),
     rawHeaders,
+  };
+}
+
+export interface VivoPreImportReport {
+  totalLinhasLidas: number;
+  linhasIgnoradas: {
+    linha: number;
+    idOriginal: string;
+    motivo: string;
+  }[];
+  idsRepetidos: {
+    linha: number;
+    id: string;
+    primeiraLinha: number;
+  }[];
+  idsColididos: {
+    linha: number;
+    id: string;
+    docId: string;
+    linhaConflitante: number;
+    idConflitante: string;
+  }[];
+  totalIdsUnicosAGravar: number;
+  deduplicatedRows: Record<string, any>[];
+}
+
+/**
+ * Análise pré-importação da VIVO (Padrão e Massiva)
+ * Identifica linhas ignoradas por ID inválido, IDs repetidos e colisões de docId.
+ * Deduplica em memória mantendo a última ocorrência de cada ID.
+ */
+export function analisarPreImportacaoVivo(planilhaLinhas: Record<string, any>[]): VivoPreImportReport {
+  const totalLinhasLidas = planilhaLinhas.length;
+  const linhasIgnoradas: { linha: number; idOriginal: string; motivo: string }[] = [];
+  const idsRepetidos: { linha: number; id: string; primeiraLinha: number }[] = [];
+  const idsColididos: {
+    linha: number;
+    id: string;
+    docId: string;
+    linhaConflitante: number;
+    idConflitante: string;
+  }[] = [];
+
+  const seenIdMap = new Map<string, number>();
+  const seenDocIdMap = new Map<string, { id: string; linha: number }>();
+  const lastRowByIdMap = new Map<string, Record<string, any>>();
+
+  planilhaLinhas.forEach((row, idx) => {
+    const linhaNum = row._rowNumber ?? idx + 2;
+
+    let rawId = row['ID'];
+    if (rawId === undefined || rawId === null) {
+      for (const k of Object.keys(row)) {
+        if (k === '_rowNumber') continue;
+        if (matchCanonicalVivoColumn(k) === 'ID') {
+          rawId = row[k];
+          break;
+        }
+      }
+    }
+
+    const cleaned = cleanVivoID(rawId);
+    if (!cleaned) {
+      const displayVal = rawId !== undefined && rawId !== null ? String(rawId).trim() : '';
+      linhasIgnoradas.push({
+        linha: linhaNum,
+        idOriginal: displayVal || '(vazio)',
+        motivo: !displayVal ? 'ID vazio' : `ID inválido ("${displayVal}")`,
+      });
+      return;
+    }
+
+    const upperId = cleaned.toUpperCase();
+    const docId = getSafeVivoDocId(cleaned);
+
+    // 1. Checagem de ID repetido (iguais ignorando maiúsculas/minúsculas e espaços)
+    if (seenIdMap.has(upperId)) {
+      idsRepetidos.push({
+        linha: linhaNum,
+        id: cleaned,
+        primeiraLinha: seenIdMap.get(upperId)!,
+      });
+    } else {
+      seenIdMap.set(upperId, linhaNum);
+    }
+
+    // 2. Checagem de colisão de getSafeVivoDocId entre IDs diferentes
+    if (seenDocIdMap.has(docId)) {
+      const prev = seenDocIdMap.get(docId)!;
+      if (prev.id.toUpperCase() !== upperId) {
+        idsColididos.push({
+          linha: linhaNum,
+          id: cleaned,
+          docId,
+          linhaConflitante: prev.linha,
+          idConflitante: prev.id,
+        });
+      }
+    } else {
+      seenDocIdMap.set(docId, { id: cleaned, linha: linhaNum });
+    }
+
+    // Deduplicação em memória: mantém a última linha de cada ID
+    const rowNormalized = { ...row, ID: cleaned };
+    lastRowByIdMap.set(upperId, rowNormalized);
+  });
+
+  const deduplicatedRows = Array.from(lastRowByIdMap.values());
+
+  return {
+    totalLinhasLidas,
+    linhasIgnoradas,
+    idsRepetidos,
+    idsColididos,
+    totalIdsUnicosAGravar: deduplicatedRows.length,
+    deduplicatedRows,
   };
 }
 

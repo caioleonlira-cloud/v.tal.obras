@@ -7,6 +7,9 @@ import {
   VIVO_BLOCO_2_KEYS,
   RegistrosVivoFilterPayload,
   isValidVivoID,
+  VIVO_BLANK_LABEL,
+  isVivoBlank,
+  getVivoDisplayOrBlank,
 } from '../../types';
 import { exportarRegistrosVivoParaExcel } from '../../utils/excel';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
@@ -57,6 +60,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
 
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
+  const [filterAno, setFilterAno] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterStatusDraft, setFilterStatusDraft] = useState<string[]>([]);
@@ -101,6 +105,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     if (initialFilters) {
       if (initialFilters.searchID !== undefined) setSearchID(initialFilters.searchID);
       if (initialFilters.ref !== undefined) setFilterREF(initialFilters.ref);
+      if (initialFilters.ano !== undefined) setFilterAno(initialFilters.ano);
       if (initialFilters.reg !== undefined) setFilterREG(initialFilters.reg);
       else if (initialFilters.regional !== undefined) setFilterREG(initialFilters.regional);
       if (initialFilters.uf !== undefined) setFilterUF(initialFilters.uf);
@@ -135,35 +140,39 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     }
 
     if (excludeKey !== 'REF' && filterREF.length > 0) {
-      const val = (item.REF || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.REF);
       if (!filterREF.includes(val)) return false;
     }
+    if (excludeKey !== 'Ano' && filterAno.length > 0) {
+      const val = getVivoDisplayOrBlank(item.Ano);
+      if (!filterAno.includes(val)) return false;
+    }
     if (excludeKey !== 'REG' && filterREG.length > 0) {
-      const val = (item.REG || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.REG);
       if (!filterREG.includes(val)) return false;
     }
     if (excludeKey !== 'UF' && filterUF.length > 0) {
-      const val = (item.UF || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item.UF);
       if (!filterUF.includes(val)) return false;
     }
     if (excludeKey !== 'Status Draft' && filterStatusDraft.length > 0) {
-      const val = (item['Status Draft'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['Status Draft']);
       if (!filterStatusDraft.includes(val)) return false;
     }
     if (excludeKey !== 'Status Medição Final' && filterStatusMedFinal.length > 0) {
-      const val = (item['Status Medição Final'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['Status Medição Final']);
       if (!filterStatusMedFinal.includes(val)) return false;
     }
     if (excludeKey !== 'STATUS IMPL' && filterStatusImpl.length > 0) {
-      const val = (item['STATUS IMPL'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['STATUS IMPL']);
       if (!filterStatusImpl.includes(val)) return false;
     }
     if (excludeKey !== 'RESPONSÁVEL PENDENCIA' && filterRespPendencia.length > 0) {
-      const val = (item['RESPONSÁVEL PENDENCIA'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['RESPONSÁVEL PENDENCIA']);
       if (!filterRespPendencia.includes(val)) return false;
     }
     if (excludeKey !== 'RESPONSÁVEL MEDIÇÃO' && filterRespMedicao.length > 0) {
-      const val = (item['RESPONSÁVEL MEDIÇÃO'] || '').trim() || '(Em branco)';
+      const val = getVivoDisplayOrBlank(item['RESPONSÁVEL MEDIÇÃO']);
       if (!filterRespMedicao.includes(val)) return false;
     }
 
@@ -174,6 +183,8 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const {
     refOptions,
     refCounts,
+    anoOptions,
+    anoCounts,
     regOptions,
     regCounts,
     ufOptions,
@@ -190,6 +201,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     respMedicaoCounts,
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
+    const cAno: Record<string, number> = {};
     const cReg: Record<string, number> = {};
     const cUf: Record<string, number> = {};
     const cDraft: Record<string, number> = {};
@@ -201,40 +213,54 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     registrosVivo.forEach((r) => {
       if (!r || !isValidVivoID(r.ID)) return;
 
-      const rRef = (r.REF || '').trim() || '(Em branco)';
+      const rRef = getVivoDisplayOrBlank(r.REF);
       if (matchesFilterSubset(r, 'REF')) cRef[rRef] = (cRef[rRef] || 0) + 1;
 
-      const rReg = (r.REG || '').trim() || '(Em branco)';
+      const rAno = getVivoDisplayOrBlank(r.Ano);
+      if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
+
+      const rReg = getVivoDisplayOrBlank(r.REG);
       if (matchesFilterSubset(r, 'REG')) cReg[rReg] = (cReg[rReg] || 0) + 1;
 
-      const rUf = (r.UF || '').trim() || '(Em branco)';
+      const rUf = getVivoDisplayOrBlank(r.UF);
       if (matchesFilterSubset(r, 'UF')) cUf[rUf] = (cUf[rUf] || 0) + 1;
 
-      const rDraft = (r['Status Draft'] || '').trim() || '(Em branco)';
+      const rDraft = getVivoDisplayOrBlank(r['Status Draft']);
       if (matchesFilterSubset(r, 'Status Draft')) cDraft[rDraft] = (cDraft[rDraft] || 0) + 1;
 
-      const rMedFin = (r['Status Medição Final'] || '').trim() || '(Em branco)';
+      const rMedFin = getVivoDisplayOrBlank(r['Status Medição Final']);
       if (matchesFilterSubset(r, 'Status Medição Final')) cMedFin[rMedFin] = (cMedFin[rMedFin] || 0) + 1;
 
-      const rImpl = (r['STATUS IMPL'] || '').trim() || '(Em branco)';
+      const rImpl = getVivoDisplayOrBlank(r['STATUS IMPL']);
       if (matchesFilterSubset(r, 'STATUS IMPL')) cImpl[rImpl] = (cImpl[rImpl] || 0) + 1;
 
-      const rRespPend = (r['RESPONSÁVEL PENDENCIA'] || '').trim() || '(Em branco)';
+      const rRespPend = getVivoDisplayOrBlank(r['RESPONSÁVEL PENDENCIA']);
       if (matchesFilterSubset(r, 'RESPONSÁVEL PENDENCIA')) cRespPend[rRespPend] = (cRespPend[rRespPend] || 0) + 1;
 
-      const rRespMed = (r['RESPONSÁVEL MEDIÇÃO'] || '').trim() || '(Em branco)';
+      const rRespMed = getVivoDisplayOrBlank(r['RESPONSÁVEL MEDIÇÃO']);
       if (matchesFilterSubset(r, 'RESPONSÁVEL MEDIÇÃO')) cRespMed[rRespMed] = (cRespMed[rRespMed] || 0) + 1;
     });
 
     const sortFn = (a: string, b: string) => {
-      if (a === '(Em branco)') return 1;
-      if (b === '(Em branco)') return -1;
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      return a.localeCompare(b, 'pt-BR');
+    };
+
+    const sortAnoFn = (a: string, b: string) => {
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
       return a.localeCompare(b, 'pt-BR');
     };
 
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
+      anoOptions: Object.keys(cAno).sort(sortAnoFn),
+      anoCounts: cAno,
       regOptions: Object.keys(cReg).sort(sortFn),
       regCounts: cReg,
       ufOptions: Object.keys(cUf).sort(sortFn),
@@ -254,6 +280,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterAno,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -270,6 +297,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterAno,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -348,6 +376,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const clearAllFilters = () => {
     setSearchID('');
     setFilterREF([]);
+    setFilterAno([]);
     setFilterREG([]);
     setFilterUF([]);
     setFilterStatusDraft([]);
@@ -363,6 +392,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const activeFiltersCount =
     (searchID ? 1 : 0) +
     filterREF.length +
+    filterAno.length +
     filterREG.length +
     filterUF.length +
     filterStatusDraft.length +
@@ -390,8 +420,8 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   };
 
   // Columns partition:
-  // Base Leitura: all VIVO_BLOCO_1_KEYS
-  const baseLeituraColumns = useMemo(() => [...VIVO_BLOCO_1_KEYS], []);
+  // Base Leitura: all VIVO_BLOCO_1_KEYS except 'ID' (ID is always positioned right after Ações)
+  const baseLeituraColumns = useMemo(() => VIVO_BLOCO_1_KEYS.filter((k) => k !== 'ID'), []);
   const equipeEdicaoColumns = useMemo(() => [...VIVO_BLOCO_2_KEYS], []);
 
   // Hidden columns persistence
@@ -431,21 +461,15 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
 
   // When freezeIdUfColumn is active: ID and UF are pinned at left, remaining base columns roll
   const rollingBaseColumns = useMemo(() => {
-    if (freezeIdUfColumn) {
-      return visibleBaseColumns.filter((colKey) => colKey !== 'ID' && colKey !== 'UF');
-    }
-    return visibleBaseColumns;
-  }, [visibleBaseColumns, freezeIdUfColumn]);
+    return visibleBaseColumns.filter((colKey) => colKey !== 'UF');
+  }, [visibleBaseColumns]);
 
   const visibleEquipeColumns = useMemo(() => {
     return equipeEdicaoColumns.filter((colKey) => !hiddenColumnsSet.has(colKey));
   }, [equipeEdicaoColumns, hiddenColumnsSet]);
 
-  // Dropdown base columns excludes ID so ID cannot be accidentally hidden
-  const baseColumnsForDropdown = useMemo(
-    () => baseLeituraColumns.filter((k) => k !== 'ID'),
-    [baseLeituraColumns]
-  );
+  // Dropdown base columns is baseLeituraColumns (already excludes ID)
+  const baseColumnsForDropdown = baseLeituraColumns;
 
   const handleToggleColumn = useCallback(
     (colKey: string) => {
@@ -571,7 +595,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const topSpacerHeight = startIndex * ROW_HEIGHT;
   const bottomSpacerHeight = Math.max(0, (totalRowCount - endIndex) * ROW_HEIGHT);
 
-  const totalColsCount = 1 + visibleBaseColumns.length + visibleEquipeColumns.length;
+  const totalColsCount = 2 + visibleBaseColumns.length + visibleEquipeColumns.length;
 
   return (
     <div className="space-y-2.5 font-sans">
@@ -654,7 +678,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
         {/* 2. Painel Retrátil de Busca e Filtros (Linha Única em Telas Desktop) */}
         {isFiltersExpanded && (
           <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-1.5 items-end">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5 items-end">
               {/* Campo de Busca por ID ou Descrição */}
               <div className="w-full min-w-0">
                 <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
@@ -692,6 +716,16 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                 onChange={setFilterREF}
                 optionCounts={refCounts}
                 placeholder="Todas"
+              />
+
+              {/* 2. ANO */}
+              <MultiSelectFilter
+                label="Ano"
+                options={anoOptions}
+                selected={filterAno}
+                onChange={setFilterAno}
+                optionCounts={anoCounts}
+                placeholder="Todos"
               />
 
               {/* 2. REG */}
@@ -986,161 +1020,107 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                   Ações
                 </th>
 
-                {/* Com Congelamento ATIVO: ID e UF fixos à esquerda */}
-                {freezeIdUfColumn ? (
-                  <>
-                    {/* ID Fixo à esquerda */}
+                {/* ID Header: Sempre na coluna 2 logo após Ações (fixo se congelado, fluxo normal se descongelado) */}
+                <th
+                  style={{
+                    backgroundColor: '#001e40',
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: freezeIdUfColumn ? 36 : 30,
+                    opacity: 1,
+                    fontSize: 'var(--fs-table-header)',
+                    ...(freezeIdUfColumn ? { left: 84 } : {}),
+                  }}
+                  onClick={() => handleSort('ID')}
+                  className="py-1.5 px-2.5 border-r border-b border-[#001428] w-[110px] min-w-[110px] max-w-[110px] cursor-pointer hover:bg-[#00142b] transition-colors text-center"
+                >
+                  <div className="flex items-center justify-center space-x-1.5 text-center">
+                    <span className="flex items-center space-x-1 text-cyan-300 font-extrabold">
+                      <span>ID</span>
+                      {freezeIdUfColumn && <Pin className="w-3 h-3 text-cyan-400 rotate-45" />}
+                    </span>
+                    {sortColumn === 'ID' ? (
+                      sortDirection === 'asc' ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      ) : (
+                        <ArrowDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
+                    )}
+                  </div>
+                </th>
+
+                {/* Se congelamento ativo: UF fica fixo ao lado do ID (left = 84 + 110 = 194) */}
+                {freezeIdUfColumn && isUfVisible && (
+                  <th
+                    style={{
+                      backgroundColor: '#002855',
+                      position: 'sticky',
+                      top: 0,
+                      left: 194,
+                      zIndex: 35,
+                      opacity: 1,
+                      fontSize: 'var(--fs-table-header)',
+                    }}
+                    onClick={() => handleSort('UF')}
+                    className="py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center w-[75px] min-w-[75px] max-w-[75px]"
+                  >
+                    <div className="flex items-center justify-center space-x-1.5 text-center">
+                      <span className="truncate text-slate-100">UF</span>
+                      {sortColumn === 'UF' ? (
+                        sortDirection === 'asc' ? (
+                          <ArrowUp className="w-3 h-3 text-emerald-400 shrink-0" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 text-emerald-400 shrink-0" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-60" />
+                      )}
+                    </div>
+                  </th>
+                )}
+
+                {/* Demais Colunas Base: Leitura */}
+                {(freezeIdUfColumn ? rollingBaseColumns : visibleBaseColumns).map((colKey) => {
+                  const isSorted = sortColumn === colKey;
+                  return (
                     <th
+                      key={colKey}
                       style={{
-                        backgroundColor: '#001e40',
+                        backgroundColor: '#002855',
                         position: 'sticky',
                         top: 0,
-                        left: 84,
-                        zIndex: 36,
+                        zIndex: 30,
                         opacity: 1,
                         fontSize: 'var(--fs-table-header)',
                       }}
-                      onClick={() => handleSort('ID')}
-                      className="py-1.5 px-2.5 border-r border-b border-[#001428] w-[110px] min-w-[110px] max-w-[110px] cursor-pointer hover:bg-[#00142b] transition-colors text-center"
+                      onClick={() => handleSort(colKey)}
+                      className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
+                        colKey === 'UF'
+                          ? 'w-[75px] min-w-[75px] max-w-[75px]'
+                          : colKey === 'REG' || colKey === 'REF'
+                          ? 'min-w-[80px]'
+                          : colKey.includes('OSP') || colKey.includes('Produção') || colKey === 'Faturado'
+                          ? 'min-w-[130px]'
+                          : 'min-w-[110px]'
+                      }`}
                     >
                       <div className="flex items-center justify-center space-x-1.5 text-center">
-                        <span className="flex items-center space-x-1 text-cyan-300 font-extrabold">
-                          <span>ID</span>
-                          <Pin className="w-3 h-3 text-cyan-400 rotate-45" />
-                        </span>
-                        {sortColumn === 'ID' ? (
+                        <span className="truncate text-slate-100">{colKey}</span>
+                        {isSorted ? (
                           sortDirection === 'asc' ? (
-                            <ArrowUp className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <ArrowUp className="w-3 h-3 text-emerald-400 shrink-0" />
                           ) : (
-                            <ArrowDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <ArrowDown className="w-3 h-3 text-emerald-400 shrink-0" />
                           )
                         ) : (
-                          <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
+                          <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-60" />
                         )}
                       </div>
                     </th>
-
-                    {/* UF Fixo imediatamente ao lado do ID (left = 84 + 110 = 194) */}
-                    {isUfVisible && (
-                      <th
-                        style={{
-                          backgroundColor: '#002855',
-                          position: 'sticky',
-                          top: 0,
-                          left: 194,
-                          zIndex: 35,
-                          opacity: 1,
-                          fontSize: 'var(--fs-table-header)',
-                        }}
-                        onClick={() => handleSort('UF')}
-                        className="py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center w-[75px] min-w-[75px] max-w-[75px]"
-                      >
-                        <div className="flex items-center justify-center space-x-1.5 text-center">
-                          <span className="truncate text-slate-100">UF</span>
-                          {sortColumn === 'UF' ? (
-                            sortDirection === 'asc' ? (
-                              <ArrowUp className="w-3 h-3 text-emerald-400 shrink-0" />
-                            ) : (
-                              <ArrowDown className="w-3 h-3 text-emerald-400 shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-60" />
-                          )}
-                        </div>
-                      </th>
-                    )}
-
-                    {/* Demais Colunas Base: Leitura (rolam sob as colunas congeladas) */}
-                    {rollingBaseColumns.map((colKey) => {
-                      const isSorted = sortColumn === colKey;
-                      return (
-                        <th
-                          key={colKey}
-                          style={{
-                            backgroundColor: '#002855',
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 30,
-                            opacity: 1,
-                            fontSize: 'var(--fs-table-header)',
-                          }}
-                          onClick={() => handleSort(colKey)}
-                          className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
-                            colKey === 'REG' || colKey === 'REF'
-                              ? 'min-w-[80px]'
-                              : colKey.includes('OSP') || colKey.includes('Produção') || colKey === 'Faturado'
-                              ? 'min-w-[130px]'
-                              : 'min-w-[110px]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-center space-x-1.5 text-center">
-                            <span className="truncate text-slate-100">{colKey}</span>
-                            {isSorted ? (
-                              sortDirection === 'asc' ? (
-                                <ArrowUp className="w-3 h-3 text-emerald-400 shrink-0" />
-                              ) : (
-                                <ArrowDown className="w-3 h-3 text-emerald-400 shrink-0" />
-                              )
-                            ) : (
-                              <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-60" />
-                            )}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </>
-                ) : (
-                  /* Com Congelamento DESATIVADO: todas as colunas na ordem original (REF, REG, UF, Localidade, ID...) */
-                  visibleBaseColumns.map((colKey) => {
-                    const isSorted = sortColumn === colKey;
-                    const isId = colKey === 'ID';
-                    const isUf = colKey === 'UF';
-                    return (
-                      <th
-                        key={colKey}
-                        style={{
-                          backgroundColor: isId ? '#001e40' : '#002855',
-                          position: 'sticky',
-                          top: 0,
-                          zIndex: 30,
-                          opacity: 1,
-                          fontSize: 'var(--fs-table-header)',
-                        }}
-                        onClick={() => handleSort(colKey)}
-                        className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
-                          isUf
-                            ? 'w-[75px] min-w-[75px] max-w-[75px]'
-                            : isId
-                            ? 'w-[110px] min-w-[110px] max-w-[110px]'
-                            : colKey === 'REG' || colKey === 'REF'
-                            ? 'min-w-[80px]'
-                            : colKey.includes('OSP') || colKey.includes('Produção') || colKey === 'Faturado'
-                            ? 'min-w-[130px]'
-                            : 'min-w-[110px]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center space-x-1.5 text-center">
-                          <span
-                            className={`truncate ${
-                              isId ? 'text-cyan-300 font-extrabold' : 'text-slate-100'
-                            }`}
-                          >
-                            {colKey}
-                          </span>
-                          {isSorted ? (
-                            sortDirection === 'asc' ? (
-                              <ArrowUp className="w-3 h-3 text-emerald-400 shrink-0" />
-                            ) : (
-                              <ArrowDown className="w-3 h-3 text-emerald-400 shrink-0" />
-                            )
-                          ) : (
-                            <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0 opacity-60" />
-                          )}
-                        </div>
-                      </th>
-                    );
-                  })
-                )}
+                  );
+                })}
 
                 {/* Colunas Equipe: Edição (todas com cabeçalho centralizado) */}
                 {visibleEquipeColumns.map((colKey) => {
@@ -1421,52 +1401,42 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                           </div>
                         </td>
 
-                        {/* Com Congelamento ATIVO: ID e UF fixos à esquerda (fundo branco sólido) */}
-                        {freezeIdUfColumn ? (
-                          <>
-                            {/* ID Fixo (84px) - fundo branco sólido */}
-                            <td
-                              style={{
-                                position: 'sticky',
-                                left: 84,
-                                zIndex: 16,
-                                backgroundColor: '#ffffff',
-                                opacity: 1,
-                                fontSize: 'var(--fs-table)',
-                              }}
-                              className="py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b border-slate-200 whitespace-nowrap select-text w-[110px] min-w-[110px] max-w-[110px] overflow-hidden text-left bg-white"
-                              title={item.ID}
-                            >
-                              <span className="truncate block font-bold text-left" title={item.ID}>
-                                {item.ID}
-                              </span>
-                            </td>
+                        {/* ID Célula: Sempre na coluna 2 logo após Ações (fixo se congelado, fluxo normal se descongelado) */}
+                        <td
+                          style={{
+                            fontSize: 'var(--fs-table)',
+                            backgroundColor: '#ffffff',
+                            opacity: 1,
+                            ...(freezeIdUfColumn ? { position: 'sticky', left: 84, zIndex: 16 } : {}),
+                          }}
+                          className="py-1.5 px-2.5 font-extrabold text-[#002855] border-r border-b border-slate-200 whitespace-nowrap select-text w-[110px] min-w-[110px] max-w-[110px] overflow-hidden text-left bg-white"
+                          title={item.ID}
+                        >
+                          <span className="truncate block font-bold text-left" title={item.ID}>
+                            {item.ID}
+                          </span>
+                        </td>
 
-                            {/* UF Fixo ao lado do ID (left = 84 + 110 = 194) - fundo branco sólido, border-slate-100 */}
-                            {isUfVisible && (
-                              <td
-                                style={{
-                                  position: 'sticky',
-                                  left: 194,
-                                  zIndex: 15,
-                                  backgroundColor: '#ffffff',
-                                  opacity: 1,
-                                  fontSize: 'var(--fs-table)',
-                                }}
-                                className="py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap cursor-default select-text text-center w-[75px] min-w-[75px] max-w-[75px] bg-white"
-                                title={item.UF}
-                              >
-                                {item.UF || <span className="text-slate-300">—</span>}
-                              </td>
-                            )}
-
-                            {/* Demais Colunas Base: Leitura (rolam sob as colunas congeladas) */}
-                            {rollingBaseColumns.map((colKey) => renderBaseCell(colKey))}
-                          </>
-                        ) : (
-                          /* Com Congelamento DESATIVADO: todas as colunas na ordem original (REF, REG, UF, Localidade, ID...) */
-                          visibleBaseColumns.map((colKey) => renderBaseCell(colKey))
+                        {/* Se congelamento ativo: UF fica fixo ao lado do ID (left = 84 + 110 = 194) */}
+                        {freezeIdUfColumn && isUfVisible && (
+                          <td
+                            style={{
+                              position: 'sticky',
+                              left: 194,
+                              zIndex: 15,
+                              backgroundColor: '#ffffff',
+                              opacity: 1,
+                              fontSize: 'var(--fs-table)',
+                            }}
+                            className="py-1.5 px-2.5 border-r border-b border-slate-100 font-semibold text-slate-800 whitespace-nowrap cursor-default select-text text-center w-[75px] min-w-[75px] max-w-[75px] bg-white"
+                            title={item.UF}
+                          >
+                            {item.UF || <span className="text-slate-300">—</span>}
+                          </td>
                         )}
+
+                        {/* Demais Colunas Base: Leitura */}
+                        {(freezeIdUfColumn ? rollingBaseColumns : visibleBaseColumns).map((colKey) => renderBaseCell(colKey))}
 
                         {/* Colunas Equipe: Edição (todas centralizadas horizontal e verticalmente) */}
                         {visibleEquipeColumns.map((colKey) => renderEquipeCell(colKey))}

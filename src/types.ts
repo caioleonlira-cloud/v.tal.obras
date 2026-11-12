@@ -733,9 +733,31 @@ export const DEFAULT_VIVO_SEGMENTATIONS: Record<SegmentacaoVivoKey, string[]> = 
   'RESPONSÁVEL MEDIÇÃO': [],
 };
 
+export const VIVO_BLANK_LABEL = '(Em branco)';
+
+export function isVivoBlank(val?: string | null): boolean {
+  if (val === undefined || val === null) return true;
+  const s = String(val).trim();
+  return (
+    !s ||
+    s === '-' ||
+    s === '—' ||
+    s === '–' ||
+    s === VIVO_BLANK_LABEL ||
+    s.toUpperCase() === '(EM BRANCO)' ||
+    s.toUpperCase() === 'EM BRANCO'
+  );
+}
+
+export function getVivoDisplayOrBlank(val?: string | null): string {
+  if (isVivoBlank(val)) return VIVO_BLANK_LABEL;
+  return String(val).trim();
+}
+
 export interface RegistrosVivoFilterPayload {
   searchID?: string;
   ref?: string[];
+  ano?: string[];
   reg?: string[];
   regional?: string[];
   uf?: string[];
@@ -771,6 +793,21 @@ export function isValidVivoID(raw: any): boolean {
   return cleanVivoID(raw).length > 0;
 }
 
+export function getShortVivoHash(str: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c64e6d;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36).slice(0, 6);
+}
+
 export function getSafeVivoDocId(id: string, fallbackIdx?: number): string {
   const raw = String(id || '').trim();
   const cleaned = raw
@@ -779,8 +816,16 @@ export function getSafeVivoDocId(id: string, fallbackIdx?: number): string {
     .replace(/[^a-zA-Z0-9_\-\.]/g, '_');
 
   if (!cleaned || cleaned === '.' || cleaned === '..' || cleaned.startsWith('__')) {
-    return `vivo_${fallbackIdx ?? Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    return `vivo_${fallbackIdx ?? Date.now()}_${getShortVivoHash(raw || String(fallbackIdx ?? ''))}`;
   }
+
+  // Se o ID teve caracteres trocados por "_" ou outros caracteres não seguros,
+  // acrescentar ao nome um sufixo curto fixo (hash) derivado do ID original.
+  // IDs já seguros (cleaned === raw) mantêm o nome atual para não alterar documentos existentes.
+  if (cleaned !== raw) {
+    return `${cleaned}_${getShortVivoHash(raw)}`;
+  }
+
   return cleaned;
 }
 
