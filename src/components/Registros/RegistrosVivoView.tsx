@@ -13,6 +13,7 @@ import {
 } from '../../types';
 import { exportarRegistrosVivoParaExcel } from '../../utils/excel';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
+import { parseMesAnoSortKey, normalizeMesInputValue } from '../../utils/monthUtils';
 import { MultiSelectFilter } from './MultiSelectFilter';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { RegistroVivoEditModal } from './RegistroVivoEditModal';
@@ -61,6 +62,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
   const [filterAno, setFilterAno] = useState<string[]>([]);
+  const [filterMesInput, setFilterMesInput] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterStatusDraft, setFilterStatusDraft] = useState<string[]>([]);
@@ -103,17 +105,23 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   // Sync initial filters passed from Dashboard
   useEffect(() => {
     if (initialFilters) {
-      if (initialFilters.searchID !== undefined) setSearchID(initialFilters.searchID);
-      if (initialFilters.ref !== undefined) setFilterREF(initialFilters.ref);
-      if (initialFilters.ano !== undefined) setFilterAno(initialFilters.ano);
-      if (initialFilters.reg !== undefined) setFilterREG(initialFilters.reg);
-      else if (initialFilters.regional !== undefined) setFilterREG(initialFilters.regional);
-      if (initialFilters.uf !== undefined) setFilterUF(initialFilters.uf);
-      if (initialFilters.statusDraft !== undefined) setFilterStatusDraft(initialFilters.statusDraft);
-      if (initialFilters.statusMedFinal !== undefined) setFilterStatusMedFinal(initialFilters.statusMedFinal);
-      if (initialFilters.statusImpl !== undefined) setFilterStatusImpl(initialFilters.statusImpl);
-      if (initialFilters.respPendencia !== undefined) setFilterRespPendencia(initialFilters.respPendencia);
-      if (initialFilters.respMedicao !== undefined) setFilterRespMedicao(initialFilters.respMedicao);
+      setSearchID(initialFilters.searchID !== undefined ? initialFilters.searchID : '');
+      setFilterREF(initialFilters.ref !== undefined ? initialFilters.ref : []);
+      setFilterAno(initialFilters.ano !== undefined ? initialFilters.ano : []);
+      setFilterMesInput(initialFilters.mesInput !== undefined ? initialFilters.mesInput : []);
+      if (initialFilters.reg !== undefined) {
+        setFilterREG(initialFilters.reg);
+      } else if (initialFilters.regional !== undefined) {
+        setFilterREG(initialFilters.regional);
+      } else {
+        setFilterREG([]);
+      }
+      setFilterUF(initialFilters.uf !== undefined ? initialFilters.uf : []);
+      setFilterStatusDraft(initialFilters.statusDraft !== undefined ? initialFilters.statusDraft : []);
+      setFilterStatusMedFinal(initialFilters.statusMedFinal !== undefined ? initialFilters.statusMedFinal : []);
+      setFilterStatusImpl(initialFilters.statusImpl !== undefined ? initialFilters.statusImpl : []);
+      setFilterRespPendencia(initialFilters.respPendencia !== undefined ? initialFilters.respPendencia : []);
+      setFilterRespMedicao(initialFilters.respMedicao !== undefined ? initialFilters.respMedicao : []);
       if (initialFilters.sortBy) {
         setSortColumn(initialFilters.sortBy);
         if (initialFilters.sortDirection) setSortDirection(initialFilters.sortDirection);
@@ -146,6 +154,10 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     if (excludeKey !== 'Ano' && filterAno.length > 0) {
       const val = getVivoDisplayOrBlank(item.Ano);
       if (!filterAno.includes(val)) return false;
+    }
+    if (excludeKey !== 'Mês Input' && filterMesInput.length > 0) {
+      const val = normalizeMesInputValue(item['Mês Input']) || VIVO_BLANK_LABEL;
+      if (!filterMesInput.includes(val)) return false;
     }
     if (excludeKey !== 'REG' && filterREG.length > 0) {
       const val = getVivoDisplayOrBlank(item.REG);
@@ -185,6 +197,8 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     refCounts,
     anoOptions,
     anoCounts,
+    mesInputOptions,
+    mesInputCounts,
     regOptions,
     regCounts,
     ufOptions,
@@ -202,6 +216,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
     const cAno: Record<string, number> = {};
+    const cMesInput: Record<string, number> = {};
     const cReg: Record<string, number> = {};
     const cUf: Record<string, number> = {};
     const cDraft: Record<string, number> = {};
@@ -218,6 +233,9 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
 
       const rAno = getVivoDisplayOrBlank(r.Ano);
       if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
+
+      const rMesInput = normalizeMesInputValue(r['Mês Input']) || VIVO_BLANK_LABEL;
+      if (matchesFilterSubset(r, 'Mês Input')) cMesInput[rMesInput] = (cMesInput[rMesInput] || 0) + 1;
 
       const rReg = getVivoDisplayOrBlank(r.REG);
       if (matchesFilterSubset(r, 'REG')) cReg[rReg] = (cReg[rReg] || 0) + 1;
@@ -256,11 +274,22 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
       return a.localeCompare(b, 'pt-BR');
     };
 
+    const sortMesInputFn = (a: string, b: string) => {
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      const keyA = parseMesAnoSortKey(a);
+      const keyB = parseMesAnoSortKey(b);
+      if (keyA !== keyB) return keyA - keyB;
+      return a.localeCompare(b, 'pt-BR');
+    };
+
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
       anoOptions: Object.keys(cAno).sort(sortAnoFn),
       anoCounts: cAno,
+      mesInputOptions: Object.keys(cMesInput).sort(sortMesInputFn),
+      mesInputCounts: cMesInput,
       regOptions: Object.keys(cReg).sort(sortFn),
       regCounts: cReg,
       ufOptions: Object.keys(cUf).sort(sortFn),
@@ -281,6 +310,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     searchID,
     filterREF,
     filterAno,
+    filterMesInput,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -298,6 +328,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     searchID,
     filterREF,
     filterAno,
+    filterMesInput,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -350,6 +381,14 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
         return sortDirection === 'asc' ? numA - numB : numB - numA;
       }
 
+      if (sortColumn === 'Mês Input') {
+        const keyA = parseMesAnoSortKey(normalizeMesInputValue(a['Mês Input']) || a['Mês Input']);
+        const keyB = parseMesAnoSortKey(normalizeMesInputValue(b['Mês Input']) || b['Mês Input']);
+        if (keyA !== keyB) {
+          return sortDirection === 'asc' ? keyA - keyB : keyB - keyA;
+        }
+      }
+
       const numA = parseFloat(valA.replace(/[^\d.-]/g, ''));
       const numB = parseFloat(valB.replace(/[^\d.-]/g, ''));
       if (!isNaN(numA) && !isNaN(numB) && !valA.includes('/') && !valB.includes('/')) {
@@ -377,6 +416,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     setSearchID('');
     setFilterREF([]);
     setFilterAno([]);
+    setFilterMesInput([]);
     setFilterREG([]);
     setFilterUF([]);
     setFilterStatusDraft([]);
@@ -393,6 +433,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     (searchID ? 1 : 0) +
     filterREF.length +
     filterAno.length +
+    filterMesInput.length +
     filterREG.length +
     filterUF.length +
     filterStatusDraft.length +
@@ -678,7 +719,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
         {/* 2. Painel Retrátil de Busca e Filtros (Linha Única em Telas Desktop) */}
         {isFiltersExpanded && (
           <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5 items-end">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-11 gap-1.5 items-end">
               {/* Campo de Busca por ID ou Descrição */}
               <div className="w-full min-w-0">
                 <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
@@ -728,7 +769,17 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                 placeholder="Todos"
               />
 
-              {/* 2. REG */}
+              {/* 3. MÊS INPUT */}
+              <MultiSelectFilter
+                label="Mês Input"
+                options={mesInputOptions}
+                selected={filterMesInput}
+                onChange={setFilterMesInput}
+                optionCounts={mesInputCounts}
+                placeholder="Todos"
+              />
+
+              {/* 4. REG */}
               <MultiSelectFilter
                 label="REG"
                 options={regOptions}

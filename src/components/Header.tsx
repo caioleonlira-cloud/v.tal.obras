@@ -18,14 +18,12 @@ import {
   Cloud,
   Database,
   CheckCircle2,
-  FileSpreadsheet,
 } from 'lucide-react';
 
 export type NavTabType =
   | 'registros'
   | 'registros_vivo'
   | 'dashboard'
-  | 'fr'
   | 'importacao'
   | 'segmentacoes'
   | 'usuarios';
@@ -44,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenFirebaseConfig,
 }) => {
   const { profile, user, logout, isAdmin } = useAuth();
-  const { registros, registrosVivo, frRegistros, loadingRegistros, loadingRegistrosVivo, loadingFRs, refreshRegistros, refreshRegistrosVivo, refreshFRs, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
+  const { registros, registrosVivo, loadingRegistros, loadingRegistrosVivo, refreshRegistros, refreshRegistrosVivo, isRealtimeConnected, realtimeStatus, lastSyncTimestamp } = useData();
 
   // Presença online em tempo real (Firestore event-based, exclusivo ADM)
   const {
@@ -220,13 +218,12 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => {
               refreshRegistros();
               refreshRegistrosVivo();
-              refreshFRs();
             }}
-            title="Recarregar base de dados (V.TAL, VIVO e FR)"
+            title="Recarregar base de dados (V.TAL e VIVO)"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer border border-white/10"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${loadingRegistros || loadingRegistrosVivo || loadingFRs ? 'animate-spin text-cyan-400' : ''}`}
+              className={`w-3.5 h-3.5 ${loadingRegistros || loadingRegistrosVivo ? 'animate-spin text-cyan-400' : ''}`}
             />
           </button>
 
@@ -340,34 +337,6 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </span>
           </button>
-
-          {/* 3. FR (Faturamento / Medição - Visível APENAS para ADM) */}
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('fr')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                activeTab === 'fr'
-                  ? 'bg-[#1a56db] text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>FR</span>
-              <span
-                className={`px-1.5 py-0.2 text-[10px] font-bold rounded-full ml-1 ${
-                  activeTab === 'fr'
-                    ? 'bg-[#0a1f44] text-cyan-300 border border-cyan-400/30'
-                    : 'bg-white/15 text-slate-300'
-                }`}
-              >
-                {frRegistros.length.toLocaleString('pt-BR')}
-              </span>
-              <span className="text-[9px] bg-amber-500/30 text-amber-300 border border-amber-400/40 px-1 py-0.2 rounded font-bold">
-                ADM
-              </span>
-            </button>
-          )}
 
           {/* 4. Importação (Visível APENAS para ADM) */}
           {isAdmin && (

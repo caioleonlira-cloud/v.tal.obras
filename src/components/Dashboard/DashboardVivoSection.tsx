@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../../context/DataContext';
 import { MultiSelectFilter } from '../Registros/MultiSelectFilter';
 import { parseCurrencyValue, formatBRL } from '../../utils/currency';
+import { parseMesAnoSortKey, normalizeMesInputValue } from '../../utils/monthUtils';
+import { ObrasInputVivoTable } from './ObrasInputVivoTable';
 import {
   RegistroVivo,
   RegistrosVivoFilterPayload,
@@ -9,6 +11,7 @@ import {
   VIVO_BLANK_LABEL,
   isVivoBlank,
   getVivoDisplayOrBlank,
+  sortVivoResponsaveis,
 } from '../../types';
 import {
   Search,
@@ -20,8 +23,6 @@ import {
   Layers,
   Database,
   DollarSign,
-  CheckCircle2,
-  TrendingUp,
   BarChart3,
   AlertTriangle,
 } from 'lucide-react';
@@ -49,6 +50,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
   const [filterAno, setFilterAno] = useState<string[]>([]);
+  const [filterMesInput, setFilterMesInput] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
   const [filterUF, setFilterUF] = useState<string[]>([]);
   const [filterStatusDraft, setFilterStatusDraft] = useState<string[]>([]);
@@ -77,6 +79,10 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     if (excludeKey !== 'Ano' && filterAno.length > 0) {
       const val = getVivoDisplayOrBlank(item.Ano);
       if (!filterAno.includes(val)) return false;
+    }
+    if (excludeKey !== 'Mês Input' && filterMesInput.length > 0) {
+      const val = normalizeMesInputValue(item['Mês Input']) || VIVO_BLANK_LABEL;
+      if (!filterMesInput.includes(val)) return false;
     }
     if (excludeKey !== 'REG' && filterREG.length > 0) {
       const val = getVivoDisplayOrBlank(item.REG);
@@ -116,6 +122,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     refCounts,
     anoOptions,
     anoCounts,
+    mesInputOptions,
+    mesInputCounts,
     regOptions,
     regCounts,
     ufOptions,
@@ -133,6 +141,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
     const cAno: Record<string, number> = {};
+    const cMesInput: Record<string, number> = {};
     const cReg: Record<string, number> = {};
     const cUf: Record<string, number> = {};
     const cDraft: Record<string, number> = {};
@@ -149,6 +158,9 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
 
       const rAno = getVivoDisplayOrBlank(r.Ano);
       if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
+
+      const rMesInput = normalizeMesInputValue(r['Mês Input']) || VIVO_BLANK_LABEL;
+      if (matchesFilterSubset(r, 'Mês Input')) cMesInput[rMesInput] = (cMesInput[rMesInput] || 0) + 1;
 
       const rReg = getVivoDisplayOrBlank(r.REG);
       if (matchesFilterSubset(r, 'REG')) cReg[rReg] = (cReg[rReg] || 0) + 1;
@@ -187,11 +199,22 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
       return a.localeCompare(b, 'pt-BR');
     };
 
+    const sortMesInputFn = (a: string, b: string) => {
+      if (a === VIVO_BLANK_LABEL) return 1;
+      if (b === VIVO_BLANK_LABEL) return -1;
+      const keyA = parseMesAnoSortKey(a);
+      const keyB = parseMesAnoSortKey(b);
+      if (keyA !== keyB) return keyA - keyB;
+      return a.localeCompare(b, 'pt-BR');
+    };
+
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
       anoOptions: Object.keys(cAno).sort(sortAnoFn),
       anoCounts: cAno,
+      mesInputOptions: Object.keys(cMesInput).sort(sortMesInputFn),
+      mesInputCounts: cMesInput,
       regOptions: Object.keys(cReg).sort(sortFn),
       regCounts: cReg,
       ufOptions: Object.keys(cUf).sort(sortFn),
@@ -212,6 +235,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     searchID,
     filterREF,
     filterAno,
+    filterMesInput,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -229,6 +253,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     searchID,
     filterREF,
     filterAno,
+    filterMesInput,
     filterREG,
     filterUF,
     filterStatusDraft,
@@ -246,6 +271,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     (searchID ? 1 : 0) +
     filterREF.length +
     filterAno.length +
+    filterMesInput.length +
     filterREG.length +
     filterUF.length +
     filterStatusDraft.length +
@@ -258,6 +284,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     setSearchID('');
     setFilterREF([]);
     setFilterAno([]);
+    setFilterMesInput([]);
     setFilterREG([]);
     setFilterUF([]);
     setFilterStatusDraft([]);
@@ -268,22 +295,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   };
 
   // Aggregated calculations for VIVO
-  const {
-    totalOrcamento,
-    totalMedido,
-    totalFaturado,
-    totalProducaoBi,
-    pctMedido,
-    regionalStats,
-    regionalGroups,
-  } = useMemo(() => {
-    let orc = 0;
-    let med = 0;
-    let fat = 0;
-    let prod = 0;
-
-    const regCountMap: Record<string, number> = {};
-
+  const { regionalGroups } = useMemo(() => {
     // Grouping: REG -> RESPONSÁVEL PENDENCIA -> Aggregates
     const groupsMap: Record<
       string,
@@ -304,16 +316,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
       const o = parseCurrencyValue(r['OSP ORÇAMENTO']);
       const m = parseCurrencyValue(r['OSP MEDIDO']);
       const f = parseCurrencyValue(r['Faturado']);
-      const p = parseCurrencyValue(r['Produção Bi R$']);
-
-      orc += o;
-      med += m;
-      fat += f;
-      prod += p;
 
       const reg = (r.REG || '').trim() || 'SEM REGIONAL';
-      regCountMap[reg] = (regCountMap[reg] || 0) + 1;
-
       const resp = getVivoDisplayOrBlank(r['RESPONSÁVEL PENDENCIA']);
 
       if (!groupsMap[reg]) {
@@ -363,19 +367,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
         };
       });
 
-    const regStats = Object.entries(regCountMap)
-      .map(([regional, count]) => ({ regional, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const pct = orc > 0 ? ((med / orc) * 100).toFixed(1) : '0.0';
-
     return {
-      totalOrcamento: orc,
-      totalMedido: med,
-      totalFaturado: fat,
-      totalProducaoBi: prod,
-      pctMedido: pct,
-      regionalStats: regStats,
       regionalGroups: sortedRegionalGroups,
     };
   }, [filteredRegistrosVivo]);
@@ -388,6 +380,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     if (searchID.trim()) payload.searchID = searchID.trim();
     if (filterREF.length > 0) payload.ref = [...filterREF];
     if (filterAno.length > 0) payload.ano = [...filterAno];
+    if (filterMesInput.length > 0) payload.mesInput = [...filterMesInput];
     if (filterREG.length > 0) payload.reg = [...filterREG];
     if (filterUF.length > 0) payload.uf = [...filterUF];
     if (filterStatusDraft.length > 0) payload.statusDraft = [...filterStatusDraft];
@@ -405,46 +398,6 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const formatBRLNoCents = (val: number): string => {
     return `R$ ${Math.round(val).toLocaleString('pt-BR')}`;
   };
-
-  // Ordem fixa de Responsáveis para as duas tabelas novas
-  const FIXED_HEAD_RESPONSAVEIS = [
-    'AVALIAR',
-    'MED. DRAFT APROV.',
-    'MED. OK - AG. DRAFT APROV.',
-    'MED. SEM DRAFT APROV.',
-    'CÉLULA SAP',
-    'IMPLANTAÇÃO',
-    'PROJETO',
-    'VIVO',
-    'VIVO - ACEITE DRAFT',
-    'VIVO - ENTREGUE',
-    'ID CANCELADO',
-  ];
-
-  const FIXED_TAIL_RESPONSAVEIS = [
-    'FINANCEIRO',
-    'FINALIZADO',
-  ];
-
-  const getRespCanonicalKey = (name: string): string => {
-    return name
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // remove acentos
-      .replace(/[.\-_/]/g, ' ') // normaliza pontuações e hífens
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toUpperCase();
-  };
-
-  const HEAD_PRIORITY_MAP = new Map<string, number>();
-  FIXED_HEAD_RESPONSAVEIS.forEach((item, idx) => {
-    HEAD_PRIORITY_MAP.set(getRespCanonicalKey(item), idx);
-  });
-
-  const TAIL_PRIORITY_MAP = new Map<string, number>();
-  FIXED_TAIL_RESPONSAVEIS.forEach((item, idx) => {
-    TAIL_PRIORITY_MAP.set(getRespCanonicalKey(item), idx);
-  });
 
   // Matrix Calculations for Table A & Table B
   const {
@@ -510,45 +463,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
       return a.localeCompare(b, 'pt-BR');
     };
 
-    const sortResp = (a: string, b: string) => {
-      // 14. (EM BRANCO) fica sempre por último antes do Total Geral
-      const isBlankA = a === VIVO_BLANK_LABEL || isVivoBlank(a);
-      const isBlankB = b === VIVO_BLANK_LABEL || isVivoBlank(b);
-      if (isBlankA && isBlankB) return 0;
-      if (isBlankA) return 1;
-      if (isBlankB) return -1;
-
-      const keyA = getRespCanonicalKey(a);
-      const keyB = getRespCanonicalKey(b);
-
-      const headIdxA = HEAD_PRIORITY_MAP.has(keyA) ? HEAD_PRIORITY_MAP.get(keyA)! : -1;
-      const headIdxB = HEAD_PRIORITY_MAP.has(keyB) ? HEAD_PRIORITY_MAP.get(keyB)! : -1;
-
-      const tailIdxA = TAIL_PRIORITY_MAP.has(keyA) ? TAIL_PRIORITY_MAP.get(keyA)! : -1;
-      const tailIdxB = TAIL_PRIORITY_MAP.has(keyB) ? TAIL_PRIORITY_MAP.get(keyB)! : -1;
-
-      // Grupo 1 (Head: 0..10), Grupo 2 (Novo: 500), Grupo 3 (Tail: 1000..1001)
-      const rankA = headIdxA !== -1 ? headIdxA : tailIdxA !== -1 ? 1000 + tailIdxA : 500;
-      const rankB = headIdxB !== -1 ? headIdxB : tailIdxB !== -1 ? 1000 + tailIdxB : 500;
-
-      if (rankA !== rankB) {
-        return rankA - rankB;
-      }
-
-      if (headIdxA !== -1) {
-        return headIdxA - headIdxB;
-      }
-
-      if (tailIdxA !== -1) {
-        return tailIdxA - tailIdxB;
-      }
-
-      // Novos responsáveis entre si: ordem alfabética
-      return a.localeCompare(b, 'pt-BR');
-    };
-
     const sortedAnos = Array.from(anosSet).sort(sortAno);
-    const sortedResponsaveis = Array.from(respSet).sort(sortResp);
+    const sortedResponsaveis = Array.from(respSet).sort(sortVivoResponsaveis);
 
     return {
       matrixAnos: sortedAnos,
@@ -632,7 +548,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
           {/* Row 2: Collapsible Filters */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-10 gap-1.5 items-end">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-11 gap-1.5 items-end">
                 {/* Search ID/Desc */}
                 <div className="w-full min-w-0">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
@@ -675,6 +591,15 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                   selected={filterAno}
                   optionCounts={anoCounts}
                   onChange={setFilterAno}
+                  placeholder="Todos"
+                />
+
+                <MultiSelectFilter
+                  label="Mês Input"
+                  options={mesInputOptions}
+                  selected={filterMesInput}
+                  optionCounts={mesInputCounts}
+                  onChange={setFilterMesInput}
                   placeholder="Todos"
                 />
 
@@ -743,117 +668,6 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* 2. KPI TOP ROW: 4 Clean, Balanced Cards (Igual à V.TAL, sem Saldo) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-0.5">
-        {/* Card 1: TOTAL DE OBRAS */}
-        <div
-          onClick={() => handleNavigateVivo({ sortBy: 'ID', sortDirection: 'asc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver todos os registros filtrados na aba Registro - (VIVO OBRAS)"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
-                Total de Obras
-              </span>
-              <span className="text-2xl font-black text-slate-900 mt-0.5 block">
-                {filteredRegistrosVivo.length.toLocaleString('pt-BR')}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0 group-hover:bg-blue-50 transition-colors">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-            {regionalStats.slice(0, 3).map((reg) => (
-              <span key={reg.regional} className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded font-semibold text-slate-700 text-[10px]">
-                {reg.regional}: {reg.count}
-              </span>
-            ))}
-            {regionalStats.length > 3 && (
-              <span className="text-slate-400 text-[10px]">+{regionalStats.length - 3} reg.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: OSP ORÇAMENTO TOTAL (Rodapé: Faturado, sem Saldo) */}
-        <div
-          onClick={() => handleNavigateVivo({ sortBy: 'OSP ORÇAMENTO', sortDirection: 'desc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver registros ordenados por orçamento na aba Registro - (VIVO OBRAS)"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
-                OSP Orçamento Total
-              </span>
-              <span className="text-xl font-black text-slate-900 mt-0.5 block truncate" title={formatBRL(totalOrcamento)}>
-                {formatBRL(totalOrcamento)}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#002855] flex items-center justify-center font-bold shrink-0">
-              <DollarSign className="w-4 h-4 text-[#002855]" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <span>Faturado: <strong className="text-blue-700 font-bold">{formatBRL(totalFaturado)}</strong></span>
-          </div>
-        </div>
-
-        {/* Card 3: OSP MEDIDO TOTAL (Selo com % em relação ao orçamento) */}
-        <div
-          onClick={() => handleNavigateVivo({ sortBy: 'OSP MEDIDO', sortDirection: 'desc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver obras ordenadas por valor medido na aba Registro - (VIVO OBRAS)"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
-                OSP Medido Total
-              </span>
-              <span className="text-xl font-black text-emerald-700 mt-0.5 block truncate" title={formatBRL(totalMedido)}>
-                {formatBRL(totalMedido)}
-              </span>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
-              {pctMedido}%
-            </span>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Base VIVO Medição</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          </div>
-        </div>
-
-        {/* Card 4: PRODUÇÃO BI R$ */}
-        <div
-          onClick={() => handleNavigateVivo({ sortBy: 'Produção Bi R$', sortDirection: 'desc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver registros ordenados por Produção BI R$"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Produção BI R$
-              </span>
-              <span className="text-xl font-black text-slate-900 mt-0.5 block truncate" title={formatBRL(totalProducaoBi)}>
-                {formatBRL(totalProducaoBi)}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0">
-              <TrendingUp className="w-4 h-4 text-[#002855]" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <span>Base VIVO</span>
-          </div>
         </div>
       </div>
 
@@ -1673,6 +1487,12 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
           )}
         </div>
       </div>
+
+      {/* 6. TABELA OBRAS INPUT (VOLUME) - VIVO */}
+      <ObrasInputVivoTable
+        registros={filteredRegistrosVivo}
+        onNavigate={handleNavigateVivo}
+      />
     </div>
   );
 };

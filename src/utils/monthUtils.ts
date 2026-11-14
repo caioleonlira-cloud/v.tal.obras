@@ -124,142 +124,197 @@ export function isValidMesInput(val: string | undefined | null): boolean {
   return false;
 }
 
-function extractDateSafe(val: any): Date | null {
-  if (!val) return null;
-  if (val instanceof Date && !isNaN(val.getTime())) return val;
-  if (typeof val === 'number' && val >= 30000 && val <= 60000) {
-    const d = new Date(Math.round((val - 25569) * 86400 * 1000));
-    return isNaN(d.getTime()) ? null : d;
-  }
-  const str = String(val).trim();
-  const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (match) {
-    const dia = parseInt(match[1], 10);
-    const mes = parseInt(match[2], 10) - 1;
-    let ano = parseInt(match[3], 10);
-    if (ano < 100) ano += 2000;
-    const d = new Date(ano, mes, dia);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  return null;
+const MONTH_ABBR_PT: Record<number, string> = {
+  1: 'jan',
+  2: 'fev',
+  3: 'mar',
+  4: 'abr',
+  5: 'mai',
+  6: 'jun',
+  7: 'jul',
+  8: 'ago',
+  9: 'set',
+  10: 'out',
+  11: 'nov',
+  12: 'dez',
+};
+
+const EXTRA_MONTH_ALIASES: Record<string, number> = {
+  ...MESES_MAP,
+  january: 1,
+  february: 2,
+  feb: 2,
+  march: 3,
+  april: 4,
+  apr: 4,
+  may: 5,
+  june: 6,
+  july: 7,
+  august: 8,
+  aug: 8,
+  september: 9,
+  sep: 9,
+  sept: 9,
+  october: 10,
+  oct: 10,
+  november: 11,
+  december: 12,
+  dec: 12,
+};
+
+function resolveMonthNumber(token: string): number {
+  const clean = token
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!clean) return 0;
+  if (EXTRA_MONTH_ALIASES[clean]) return EXTRA_MONTH_ALIASES[clean];
+  const prefix3 = clean.slice(0, 3);
+  return EXTRA_MONTH_ALIASES[prefix3] || 0;
+}
+
+function normalizeYear(rawYear: number): number {
+  if (isNaN(rawYear)) return 0;
+  if (rawYear >= 0 && rawYear <= 99) return 2000 + rawYear;
+  if (rawYear >= 2000 && rawYear <= 2100) return rawYear;
+  return 0;
 }
 
 /**
- * Normaliza qualquer formato de mês de FR para o formato canônico 'MM/AAAA' (ex: '08/2024').
- * Aceita:
- * - Date objects (do SheetJS com cellDates: true)
- * - Serial number de data do Excel (ex: 45505)
- * - Strings como '08/2024', '8/2024', 'ago/24', 'ago/2024', 'Agosto/2024', 'Agosto', '2024-08'
- * - Fallback inteligente para a coluna 'DATA DA SOLICITAÇÃO' se 'Mês' estiver vazio ou '-'
+ * Normaliza valores de "Mês Input" (ex.: "MAR/2026", "10/2026", "01/03/2026",
+ * "2026-03-01", número serial do Excel) para o padrão mmm/aaaa (ex.: "mar/2026").
+ * Retorna string vazia se o valor for vazio ou inválido (sem mês e ano válidos).
  */
-export function normalizeMesFR(rawMes: any, dataSolicitacao?: any): string {
-  // 1. Se já for um Date object (ex: SheetJS com cellDates: true)
-  if (rawMes instanceof Date && !isNaN(rawMes.getTime())) {
-    const m = String(rawMes.getMonth() + 1).padStart(2, '0');
-    const y = rawMes.getFullYear();
-    return `${m}/${y}`;
+export function normalizeMesInputValue(val: unknown): string {
+  if (val === undefined || val === null) return '';
+
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const year = val.getFullYear();
+    const month = val.getMonth() + 1;
+    if (year >= 2000 && year <= 2100 && MONTH_ABBR_PT[month]) {
+      return `${MONTH_ABBR_PT[month]}/${year}`;
+    }
+    return '';
   }
 
-  // 2. Se for número (serial date do Excel ou número do mês 1..12)
-  if (typeof rawMes === 'number' && !isNaN(rawMes)) {
-    if (rawMes >= 30000 && rawMes <= 60000) {
-      const d = new Date(Math.round((rawMes - 25569) * 86400 * 1000));
-      if (!isNaN(d.getTime())) {
-        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const y = d.getUTCFullYear();
-        return `${m}/${y}`;
+  // Número serial do Excel (ex.: 46082 -> mar/2026)
+  if (typeof val === 'number' && isFinite(val)) {
+    if (val >= 25000 && val <= 75000) {
+      const utcMs = Date.UTC(1899, 11, 30) + Math.floor(val) * 86400000;
+      const d = new Date(utcMs);
+      const year = d.getUTCFullYear();
+      const month = d.getUTCMonth() + 1;
+      if (year >= 2000 && year <= 2100 && MONTH_ABBR_PT[month]) {
+        return `${MONTH_ABBR_PT[month]}/${year}`;
       }
     }
-    if (rawMes >= 1 && rawMes <= 12) {
-      let y = new Date().getFullYear();
-      if (dataSolicitacao) {
-        const pDate = extractDateSafe(dataSolicitacao);
-        if (pDate) y = pDate.getFullYear();
+    return '';
+  }
+
+  const raw = String(val).trim();
+  if (!raw) return '';
+
+  const lower = raw.toLowerCase();
+  if (
+    lower === '-' ||
+    lower === '—' ||
+    lower === '–' ||
+    lower === 'n/a' ||
+    lower === 'n/d' ||
+    lower === 'nd' ||
+    lower === 'null' ||
+    lower === 'undefined' ||
+    lower === '(em branco)' ||
+    lower === 'em branco'
+  ) {
+    return '';
+  }
+
+  // String numérica que representa serial do Excel (ex.: "46082")
+  if (/^\d{5}(?:\.\d+)?$/.test(raw)) {
+    const serial = parseFloat(raw);
+    if (serial >= 25000 && serial <= 75000) {
+      const utcMs = Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000;
+      const d = new Date(utcMs);
+      const year = d.getUTCFullYear();
+      const month = d.getUTCMonth() + 1;
+      if (year >= 2000 && year <= 2100 && MONTH_ABBR_PT[month]) {
+        return `${MONTH_ABBR_PT[month]}/${year}`;
       }
-      return `${String(rawMes).padStart(2, '0')}/${y}`;
     }
+    return '';
   }
 
-  const str = String(rawMes || '').trim();
-  const clean = str.toLowerCase().replace(/[\u0300-\u036f]/g, '');
+  // Formato ISO: YYYY-MM-DD ou YYYY/MM/DD (com ou sem hora)
+  const isoMatch = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[T\s].*)?$/);
+  if (isoMatch) {
+    const year = parseInt(isoMatch[1], 10);
+    const month = parseInt(isoMatch[2], 10);
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12) {
+      return `${MONTH_ABBR_PT[month]}/${year}`;
+    }
+    return '';
+  }
 
-  // Se vazio ou inválido, tenta extrair da data de solicitação
-  if (!clean || clean === '-' || clean === '—' || clean === 'n/a' || clean === 'null' || clean === 'undefined') {
-    if (dataSolicitacao) {
-      const pDate = extractDateSafe(dataSolicitacao);
-      if (pDate) {
-        const m = String(pDate.getMonth() + 1).padStart(2, '0');
-        const y = pDate.getFullYear();
-        return `${m}/${y}`;
+  // Formato BR completo: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY ou DD/MM/YY
+  const brDateMatch = raw.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2}|\d{4})$/);
+  if (brDateMatch) {
+    const day = parseInt(brDateMatch[1], 10);
+    const month = parseInt(brDateMatch[2], 10);
+    const year = normalizeYear(parseInt(brDateMatch[3], 10));
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 0) {
+      return `${MONTH_ABBR_PT[month]}/${year}`;
+    }
+    return '';
+  }
+
+  // Formato data com mês textual: DD/mmm/YYYY ou "01 de mar de 2026"
+  const parts = lower
+    .replace(/\bde\b/g, ' ')
+    .split(/[\/\-\.\s]+/)
+    .filter(Boolean);
+
+  if (parts.length === 3) {
+    const day = parseInt(parts[0], 10);
+    const mNum = resolveMonthNumber(parts[1]);
+    const yRaw = /^\d{2,4}$/.test(parts[2]) ? parseInt(parts[2], 10) : NaN;
+    const year = normalizeYear(yRaw);
+    if (!isNaN(day) && day >= 1 && day <= 31 && mNum > 0 && year > 0) {
+      return `${MONTH_ABBR_PT[mNum]}/${year}`;
+    }
+    return '';
+  }
+
+  if (parts.length === 2) {
+    const [p0, p1] = parts;
+    const m0 = resolveMonthNumber(p0);
+    const m1 = resolveMonthNumber(p1);
+    const isNum0 = /^\d{1,4}$/.test(p0);
+    const isNum1 = /^\d{1,4}$/.test(p1);
+
+    if (m0 > 0 && isNum1) {
+      const year = normalizeYear(parseInt(p1, 10));
+      if (year > 0) return `${MONTH_ABBR_PT[m0]}/${year}`;
+    }
+    if (m1 > 0 && isNum0) {
+      const year = normalizeYear(parseInt(p0, 10));
+      if (year > 0) return `${MONTH_ABBR_PT[m1]}/${year}`;
+    }
+    if (isNum0 && isNum1) {
+      const n0 = parseInt(p0, 10);
+      const n1 = parseInt(p1, 10);
+      if (n0 >= 1 && n0 <= 12 && (p1.length === 4 || p1.length === 2)) {
+        const year = normalizeYear(n1);
+        if (year > 0) return `${MONTH_ABBR_PT[n0]}/${year}`;
+      }
+      if (n1 >= 1 && n1 <= 12 && p0.length === 4) {
+        const year = normalizeYear(n0);
+        if (year > 0) return `${MONTH_ABBR_PT[n1]}/${year}`;
       }
     }
-    return '-';
   }
 
-  // Padrão YYYY-MM ou YYYY/MM (ex: 2024-08 ou 2024/08)
-  const yyyymmMatch = clean.match(/^(\d{4})[\/\-](\d{1,2})/);
-  if (yyyymmMatch) {
-    const y = yyyymmMatch[1];
-    const m = String(parseInt(yyyymmMatch[2], 10)).padStart(2, '0');
-    return `${m}/${y}`;
-  }
-
-  // Padrão completo DD/MM/YYYY (ex: 15/08/2024)
-  const fullDateMatch = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (fullDateMatch) {
-    const m = String(parseInt(fullDateMatch[2], 10)).padStart(2, '0');
-    let y = parseInt(fullDateMatch[3], 10);
-    if (y < 100) y += 2000;
-    return `${m}/${y}`;
-  }
-
-  // Padrão MM/YYYY (ex: 08/2024 ou 8/2024 ou 08-2024)
-  const mmYyyyMatch = clean.match(/^(\d{1,2})[\/\-](\d{2,4})$/);
-  if (mmYyyyMatch) {
-    const m = String(parseInt(mmYyyyMatch[1], 10)).padStart(2, '0');
-    let y = parseInt(mmYyyyMatch[2], 10);
-    if (y < 100) y += 2000;
-    return `${m}/${y}`;
-  }
-
-  // Padrão textual com mês abreviado ou por extenso (ex: "ago/24", "ago/2024", "Agosto/2024", "AGO-24")
-  const parts = clean.split(/[\/\-\s]+/).filter(Boolean);
-  if (parts.length >= 2) {
-    const m0 = MESES_MAP[parts[0]] || MESES_MAP[parts[0].slice(0, 3)];
-    if (m0) {
-      let y = parseInt(parts[1], 10);
-      if (isNaN(y)) y = new Date().getFullYear();
-      else if (y < 100) y += 2000;
-      return `${String(m0).padStart(2, '0')}/${y}`;
-    }
-    const m1 = MESES_MAP[parts[1]] || MESES_MAP[parts[1].slice(0, 3)];
-    if (m1) {
-      let y = parseInt(parts[0], 10);
-      if (isNaN(y)) y = new Date().getFullYear();
-      else if (y < 100) y += 2000;
-      return `${String(m1).padStart(2, '0')}/${y}`;
-    }
-  } else if (parts.length === 1) {
-    const m0 = MESES_MAP[parts[0]] || MESES_MAP[parts[0].slice(0, 3)];
-    if (m0) {
-      let y = new Date().getFullYear();
-      if (dataSolicitacao) {
-        const pDate = extractDateSafe(dataSolicitacao);
-        if (pDate) y = pDate.getFullYear();
-      }
-      return `${String(m0).padStart(2, '0')}/${y}`;
-    }
-  }
-
-  // Se não reconheceu mas tem data de solicitação
-  if (dataSolicitacao) {
-    const pDate = extractDateSafe(dataSolicitacao);
-    if (pDate) {
-      const m = String(pDate.getMonth() + 1).padStart(2, '0');
-      const y = pDate.getFullYear();
-      return `${m}/${y}`;
-    }
-  }
-
-  return str;
+  return '';
 }
+

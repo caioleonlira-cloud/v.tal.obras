@@ -1,6 +1,5 @@
 import {
   Registro,
-  FRRegistro,
   getRegistroCarteira,
   getRegistroTipoDC,
   getRegistroMesInput,
@@ -164,65 +163,6 @@ export function matchesRegistroFilter(
   }
 
   const valLower = value.toLowerCase();
-  return selected.some((sel) => {
-    if (sel === BLANK_FILTER_OPTION) return false;
-    return sel.toLowerCase() === valLower;
-  });
-}
-
-export type FRFilterType = 'UF' | 'REG' | 'MES' | 'OPERACAO';
-
-/**
- * Extrai e normaliza o valor de filtro para um registro de FR.
- */
-export function getFRFilterValue(
-  item: FRRegistro,
-  filterType: FRFilterType
-): string {
-  if (!item) return BLANK_FILTER_OPTION;
-
-  switch (filterType) {
-    case 'UF': {
-      const uf = (item.UF || '').toString().trim().toUpperCase();
-      if (isBlankValue(uf)) return BLANK_FILTER_OPTION;
-      return uf;
-    }
-    case 'REG': {
-      const reg = (item.REG || '').toString().trim().toUpperCase();
-      if (isBlankValue(reg)) return BLANK_FILTER_OPTION;
-      return reg;
-    }
-    case 'MES': {
-      const mes = (item.Mês || '').toString().trim();
-      if (isBlankValue(mes)) return BLANK_FILTER_OPTION;
-      return mes;
-    }
-    case 'OPERACAO': {
-      const op = (item['DC MIGRADA/OPERAÇÃO'] || '').toString().trim();
-      if (isBlankValue(op)) return BLANK_FILTER_OPTION;
-      return op;
-    }
-    default:
-      return BLANK_FILTER_OPTION;
-  }
-}
-
-/**
- * Verifica se um registro de FR atende a um filtro selecionado.
- */
-export function matchesFRFilter(
-  item: FRRegistro,
-  filterType: FRFilterType,
-  selected: string[]
-): boolean {
-  if (!selected || selected.length === 0) return true;
-  const val = getFRFilterValue(item, filterType);
-
-  if (val === BLANK_FILTER_OPTION) {
-    return selected.includes(BLANK_FILTER_OPTION);
-  }
-
-  const valLower = val.toLowerCase();
   return selected.some((sel) => {
     if (sel === BLANK_FILTER_OPTION) return false;
     return sel.toLowerCase() === valLower;

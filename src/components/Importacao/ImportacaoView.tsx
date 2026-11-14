@@ -2,17 +2,15 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { ImportacaoPadrao } from './ImportacaoPadrao';
 import { ImportacaoMassiva } from './ImportacaoMassiva';
-import { ImportacaoFR } from './ImportacaoFR';
 import {
   Database,
   Edit3,
-  FileSpreadsheet,
   ShieldAlert,
 } from 'lucide-react';
 
 export const ImportacaoView: React.FC = () => {
   const { isAdmin } = useAuth();
-  const [activeSubTab, setActiveSubTab] = useState<'padrao' | 'massiva' | 'fr'>('padrao');
+  const [activeSubTab, setActiveSubTab] = useState<'padrao' | 'massiva'>('padrao');
 
   if (!isAdmin) {
     return (
@@ -34,7 +32,7 @@ export const ImportacaoView: React.FC = () => {
     <div className="space-y-6">
       {/* Sub-Tabs Switcher */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex bg-slate-200/80 p-1 rounded-xl w-full max-w-xl shadow-inner border border-slate-300/60">
+        <div className="flex bg-slate-200/80 p-1 rounded-xl w-full max-w-md shadow-inner border border-slate-300/60">
           <button
             onClick={() => setActiveSubTab('padrao')}
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
@@ -58,25 +56,12 @@ export const ImportacaoView: React.FC = () => {
             <Edit3 className="w-3.5 h-3.5 text-cyan-700" />
             <span>2. Acompanhamento (Massiva)</span>
           </button>
-
-          <button
-            onClick={() => setActiveSubTab('fr')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
-              activeSubTab === 'fr'
-                ? 'bg-white text-[#002855] shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-700" />
-            <span>3. Base de FR (Faturamento)</span>
-          </button>
         </div>
       </div>
 
       {/* Render Active Import Component */}
       {activeSubTab === 'padrao' && <ImportacaoPadrao />}
       {activeSubTab === 'massiva' && <ImportacaoMassiva />}
-      {activeSubTab === 'fr' && <ImportacaoFR />}
     </div>
   );
 };

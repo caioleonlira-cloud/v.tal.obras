@@ -5,8 +5,6 @@ import {
   BLOCO_2_KEYS,
   ALL_COLUMNS,
   HistoricoEdicaoItem,
-  FRRegistro,
-  FR_COLUMNS,
   getRegistroRegional,
   SegmentacaoKey,
   COLUNAS_SEGMENTADAS_MASSIVA,
@@ -29,13 +27,10 @@ import {
   isValidVivoID,
   getSafeVivoDocId,
 } from '../types';
-import { parseCurrencyValue, parseFRValor, formatDecimalBR, formatBRL, formatCurrency } from './currency';
-import { normalizeMesFR } from './monthUtils';
+import { parseCurrencyValue, formatDecimalBR, formatBRL, formatCurrency } from './currency';
 
 export {
   parseCurrencyValue,
-  parseFRValor,
-  normalizeMesFR,
   formatDecimalBR,
   formatBRL,
   formatCurrency,
@@ -401,7 +396,6 @@ export const NUMERIC_COLUMNS = new Set([
   'Valor Faturado',
   'Saldo',
   'Tempo',
-  'VALOR FR',
   'R$ Produção BI.',
 ]);
 
@@ -428,11 +422,6 @@ export const TEXT_ONLY_COLUMNS = new Set([
   'Pedido',
   'AGING',
   'Mês Input',
-  'Mês',
-  'FR',
-  'Nº MEDIÇÃO',
-  'Nº PEDIDO',
-  'ITEM DO PEDIDO',
   'UF',
   'REG',
   'TIPO (Carteira)',
@@ -451,9 +440,6 @@ export const TEXT_ONLY_COLUMNS = new Set([
   'Pendência (Projetos)',
   'Responsavel',
   'OBS (Medição)',
-  'CENTRO',
-  'LOCALIDADE DE PRESTAÇÃO',
-  'DC MIGRADA/OPERAÇÃO',
 ]);
 
 export const IDENTIFIER_COLUMNS = new Set([
@@ -461,10 +447,6 @@ export const IDENTIFIER_COLUMNS = new Set([
   'Pedido',
   'Dc Simulação',
   'DR',
-  'FR',
-  'Nº MEDIÇÃO',
-  'Nº PEDIDO',
-  'ITEM DO PEDIDO',
 ]);
 
 /**
@@ -503,7 +485,6 @@ export function recoverIdentifierFromDC(
  * 1) COLUNAS DE DATA:
  * - Registros / Matriz: Data Status
  * - Acompanhamento: Data Previsão Entrega (Medição), Data Previsão Entrega (Projeto), Data Tratativa
- * - FR: DATA DA SOLICITAÇÃO (pode ter hora)
  * Aceita:
  * - dd/mm/aaaa, d/m/aaaa e dd/mm/aa
  * - dd/mm/aaaa HH:mm e dd/mm/aaaa HH:mm:ss
@@ -648,7 +629,7 @@ export function normalizeDateValue(
 
 /**
  * 2) COLUNAS NUMÉRICAS:
- * Orçamento, Valor Parcial R$, Valor Final R$, Valor Faturado, Saldo, Tempo e VALOR FR.
+ * Orçamento, Valor Parcial R$, Valor Final R$, Valor Faturado, Saldo e Tempo.
  * Aceita:
  * - 1309,6 | 1309.6 | 1.309,60 | 1,309.60 | R$ 1.309,60 | -1309,6 | (1.309,60)
  * - Regra: se tiver ponto e vírgula, o ÚLTIMO separador é o decimal.
@@ -1498,51 +1479,6 @@ export function downloadModeloImportacaoMassiva() {
 }
 
 /**
- * 1) MODELO C: Modelo_Importacao_FR.csv
- */
-export function downloadModeloImportacaoFR() {
-  const headers = [...FR_COLUMNS];
-  const sampleRows: Record<string, string>[] = [
-    {
-      'UF': 'PR',
-      'DC-M': 'DC-100201',
-      'REG': 'RSUL',
-      'Mês': 'MAI/2026',
-      'CENTRO': 'C100',
-      'LOCALIDADE DE PRESTAÇÃO': 'CURITIBA',
-      'DATA DA SOLICITAÇÃO': '10/05/2026',
-      'DC MIGRADA/OPERAÇÃO': 'NÃO',
-      'Nº MEDIÇÃO': 'MED-01',
-      'Nº PEDIDO': '4500123456',
-      'ITEM DO PEDIDO': '10',
-      'VALOR FR': '15200,00',
-      'FR': 'FR-99881',
-    },
-    {
-      'UF': 'MG',
-      'DC-M': 'DC-100202',
-      'REG': 'RMG',
-      'Mês': 'JUN/2026',
-      'CENTRO': 'C200',
-      'LOCALIDADE DE PRESTAÇÃO': 'BELO HORIZONTE',
-      'DATA DA SOLICITAÇÃO': '15/06/2026',
-      'DC MIGRADA/OPERAÇÃO': 'NÃO',
-      'Nº MEDIÇÃO': 'MED-02',
-      'Nº PEDIDO': '4500123457',
-      'ITEM DO PEDIDO': '20',
-      'VALOR FR': '85400,00',
-      'FR': 'FR-99882',
-    },
-  ];
-
-  const headerLine = headers.map(escapeCSVCell).join(';');
-  const dataLines = sampleRows.map((r) => headers.map((h) => escapeCSVCell(r[h] || '')).join(';'));
-  const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
-
-  downloadCSVFile(csvContent, 'Modelo_Importacao_FR.csv');
-}
-
-/**
  * 2) EXPORTAÇÃO A: VTAL_OBRAS_Export_AAAA-MM-DD.csv (aba Registros)
  * Colunas na ordem exata: 25 colunas do Bloco 1 + 10 colunas do Bloco 2 (sem DC duplicada)
  */
@@ -1584,44 +1520,6 @@ export function exportarRegistrosParaCSV(registros: Registro[], nomeArquivo = 'V
 }
 
 export const exportarRegistrosParaExcel = exportarRegistrosParaCSV;
-
-/**
- * 2) EXPORTAÇÃO B: Base_FR_Filtrada_AAAA-MM-DD.csv (aba FR)
- */
-export function exportarFRParaCSV(frs: FRRegistro[], nomeArquivo = 'Base_FR_Filtrada') {
-  const exportHeaders = [...FR_COLUMNS];
-  const headerLine = exportHeaders.map(escapeCSVCell).join(';');
-
-  const dataLines = frs.map((item) => {
-    return exportHeaders
-      .map((colName) => {
-        const rawVal = (item as any)[colName];
-        if (rawVal === undefined || rawVal === null || rawVal === '') return '';
-
-        if (IDENTIFIER_COLUMNS.has(colName)) {
-          return escapeCSVCell(String(rawVal).trim());
-        }
-        if (colName === 'DATA DA SOLICITAÇÃO') {
-          return escapeCSVCell(formatDateForCSV(rawVal));
-        }
-        if (colName === 'VALOR FR') {
-          return escapeCSVCell(formatNumberForCSV(rawVal, true));
-        }
-        return escapeCSVCell(String(rawVal).trim());
-      })
-      .join(';');
-  });
-
-  const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
-  const dataAtual = new Date().toISOString().split('T')[0];
-  const finalFilename = nomeArquivo.toLowerCase().endsWith('.csv')
-    ? nomeArquivo
-    : `${nomeArquivo}_${dataAtual}.csv`;
-
-  downloadCSVFile(csvContent, finalFilename);
-}
-
-export const exportarFRParaExcel = exportarFRParaCSV;
 
 /**
  * 2) EXPORTAÇÃO C: VTAL_Relatorio_Auditoria_Edicoes_AAAA-MM-DD.csv (histórico de edições)
@@ -1684,256 +1582,6 @@ export function exportarRelatorioDcsNaoEncontradas(notFoundRows: { dc: string; r
   const csvContent = [headerLine, ...dataLines].join('\r\n') + '\r\n';
   const dataAtual = new Date().toISOString().split('T')[0];
   downloadCSVFile(csvContent, `Relatorio_DCs_Nao_Encontradas_${dataAtual}.csv`);
-}
-
-/**
- * Validação e correspondência de cabeçalhos de FR
- */
-export function matchFRColumn(rawHeader: string): string | null {
-  if (!rawHeader) return null;
-  const rawTrimmed = String(rawHeader).trim();
-  if (!rawTrimmed) return null;
-
-  const directMatch = FR_COLUMNS.find(
-    (col) => col.toLowerCase() === rawTrimmed.toLowerCase()
-  );
-  if (directMatch) return directMatch;
-
-  const clean = rawTrimmed
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[º°ª#?:.\-_/\\()\[\]{}|;,+*!&]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toUpperCase();
-
-  if (clean === 'UF' || clean === 'ESTADO' || clean === 'SIGLA UF') return 'UF';
-  if (
-    clean === 'DC M' ||
-    clean === 'DCM' ||
-    clean === 'DC_M' ||
-    clean === 'DC MEDICAO' ||
-    clean === 'DCMEDICAO'
-  ) return 'DC-M';
-  if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
-  if (
-    clean === 'MES' ||
-    clean === 'MES REF' ||
-    clean === 'MES REFERENCIA' ||
-    clean === 'MES DE REFERENCIA' ||
-    clean === 'MES ANO' ||
-    clean === 'MES/ANO' ||
-    clean === 'MES SOLICITACAO' ||
-    clean === 'MES DA SOLICITACAO' ||
-    clean === 'MES BASE' ||
-    clean === 'COMPETENCIA' ||
-    clean === 'MES COMPETENCIA' ||
-    clean === 'PERIODO' ||
-    (clean.includes('MES') && !clean.includes('INPUT')) ||
-    clean.includes('COMPETENCIA')
-  ) return 'Mês';
-  if (clean === 'CENTRO' || clean === 'CENTRO DE CUSTO' || clean === 'CC') return 'CENTRO';
-  if (
-    clean === 'LOCALIDADE DE PRESTACAO' ||
-    clean === 'LOCALIDADE PRESTACAO' ||
-    clean.includes('PRESTACAO') ||
-    clean === 'LOCALIDADE'
-  ) return 'LOCALIDADE DE PRESTAÇÃO';
-  if (clean.includes('DATA') && (clean.includes('SOLICIT') || clean.includes('SOLICITACAO'))) return 'DATA DA SOLICITAÇÃO';
-  if (clean.includes('MIGRADA') || clean.includes('OPERACAO') || clean.includes('MIGRADA OPERACAO')) return 'DC MIGRADA/OPERAÇÃO';
-  if (
-    (clean.includes('MEDICAO') || clean.includes('MED')) &&
-    (clean.includes('N') || clean.includes('NUM') || clean.includes('NR'))
-  ) return 'Nº MEDIÇÃO';
-  if (
-    (clean.includes('PEDIDO') || clean.includes('PED')) &&
-    (clean.includes('N') || clean.includes('NUM') || clean.includes('NR'))
-  ) return 'Nº PEDIDO';
-  if (clean.includes('ITEM') && clean.includes('PEDIDO')) return 'ITEM DO PEDIDO';
-  if (clean === 'ITEM') return 'ITEM DO PEDIDO';
-  if (
-    clean === 'VALOR FR' ||
-    clean === 'VALOR FR R$' ||
-    clean === 'VLR FR' ||
-    clean === 'VALOR' ||
-    clean === 'VALOR R$' ||
-    clean === 'VLR' ||
-    clean === 'VALOR TOTAL' ||
-    clean === 'VALOR FATURADO' ||
-    clean === 'VALOR DA FR' ||
-    clean === 'VLR DA FR' ||
-    clean === 'VALOR DA MEDICAO' ||
-    clean === 'VALOR LIQUIDO' ||
-    clean === 'VALOR BRUTO' ||
-    clean === 'FATURAMENTO' ||
-    (clean.includes('VALOR') && (clean.includes('FR') || clean.includes('FATUR') || clean.includes('MEDIC') || clean.includes('TOTAL'))) ||
-    clean.includes('VALOR FR')
-  ) return 'VALOR FR';
-  if (clean === 'FR' || clean === 'NUMERO FR' || clean === 'N FR' || clean === 'NR FR') return 'FR';
-
-  return null;
-}
-
-/**
- * Gera a chave composta única para validação de duplicidade na importação de FR:
- * junção de "FR" e "DC MIGRADA/OPERAÇÃO".
- */
-export function buildFRCompositeKey(fr: any, dcMigrada: any): string {
-  const cleanFr = String(fr ?? '').trim().toUpperCase();
-  const cleanOp = String(dcMigrada ?? '').trim().toUpperCase();
-  return `${cleanFr}___${cleanOp}`;
-}
-
-/**
- * Converte a combinação de FR e DC MIGRADA/OPERAÇÃO em um ID seguro para documentos do Firestore,
- * substituindo barras (/ ou \) e caracteres especiais inválidos por sublinhado (_).
- */
-export function getSafeFRDocId(fr: string, dcMigrada?: string): string {
-  const rawFr = String(fr || '').trim();
-  const rawOp = String(dcMigrada || '').trim();
-  const combined = rawOp ? `${rawFr}_${rawOp}` : rawFr;
-  const cleaned = combined
-    .replace(/[\/\\]/g, '_')
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-  return cleaned || `fr_${Date.now()}`;
-}
-
-export interface ParseFRResult {
-  valid: boolean;
-  missingColumns: string[];
-  data: Omit<FRRegistro, 'id'>[];
-  totalRows: number;
-  error?: string;
-}
-
-/**
- * Lê e analisa arquivo CSV de FR
- */
-export async function parseFRFile(file: File): Promise<ParseFRResult> {
-  const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv');
-  if (!isCsv) {
-    return {
-      valid: false,
-      missingColumns: [],
-      data: [],
-      totalRows: 0,
-      error: 'Formato inválido. Envie um arquivo .csv (use o modelo)',
-    };
-  }
-
-  try {
-    const rawText = await readTextFileWithEncodingFallback(file);
-    const cleanText = rawText.replace(/^\uFEFF/, '').trim();
-    if (!cleanText) {
-      throw new Error('O arquivo CSV selecionado está vazio.');
-    }
-
-    const parsed = Papa.parse<string[]>(cleanText, {
-      header: false,
-      skipEmptyLines: 'greedy',
-      delimitersToGuess: [';', ',', '\t', '|'],
-    });
-
-    const rawJson = parsed.data;
-    if (!rawJson || rawJson.length < 2) {
-      throw new Error('O arquivo CSV precisa ter ao menos uma linha de cabeçalho e uma de dados.');
-    }
-
-    const headerRow = rawJson[0] || [];
-    const columnMap = new Map<number, keyof Omit<FRRegistro, 'id' | '_updatedAt' | '_updatedBy'>>();
-    const detectedColSet = new Set<string>();
-
-    headerRow.forEach((col: any, idx: number) => {
-      if (col !== undefined && col !== null && String(col).trim()) {
-        const matched = matchFRColumn(String(col));
-        if (matched) {
-          columnMap.set(idx, matched as any);
-          detectedColSet.add(matched);
-        }
-      }
-    });
-
-    // Valida se as 13 colunas obrigatórias estão presentes
-    const missingColumns = FR_COLUMNS.filter((col) => !detectedColSet.has(col));
-    if (missingColumns.length > 0) {
-      return {
-        valid: false,
-        missingColumns,
-        data: [],
-        totalRows: 0,
-        error: `Colunas obrigatórias ausentes no CSV: ${missingColumns.join(', ')}.`,
-      };
-    }
-
-    // Processa linhas de dados
-    const cleanedRows: Omit<FRRegistro, 'id'>[] = [];
-    for (let i = 1; i < rawJson.length; i++) {
-      const row = rawJson[i];
-      if (!row || !Array.isArray(row)) continue;
-
-      const hasAnyValue = row.some((val) => val !== undefined && val !== null && String(val).trim() !== '');
-      if (!hasAnyValue) continue;
-
-      const rowData: any = {};
-      columnMap.forEach((colKey, colIdx) => {
-        const rawVal = row[colIdx];
-        if (rawVal === undefined || rawVal === null) {
-          rowData[colKey] = colKey === 'VALOR FR' ? 0 : '';
-          return;
-        }
-
-        if (colKey === 'DATA DA SOLICITAÇÃO') {
-          rowData[colKey] = normalizeDateValue(rawVal, 'DATA DA SOLICITAÇÃO', true, i + 1);
-        } else if (colKey === 'VALOR FR') {
-          const num = normalizeNumericValue(rawVal, 'VALOR FR', i + 1, 0);
-          rowData[colKey] = typeof num === 'number' ? num : 0;
-        } else if (colKey === 'Mês') {
-          rowData[colKey] = normalizeMesFR(rawVal, rowData['DATA DA SOLICITAÇÃO']);
-        } else {
-          rowData[colKey] = String(rawVal).trim();
-        }
-      });
-
-      // Proteção contra notação científica nas colunas de identificação de FR
-      const dcmVal = rowData['DC-M'] || '';
-      IDENTIFIER_COLUMNS.forEach((idCol) => {
-        if (rowData[idCol] !== undefined && rowData[idCol] !== '') {
-          rowData[idCol] = recoverIdentifierFromDC(rowData[idCol], dcmVal, idCol, i + 1);
-        }
-      });
-
-      FR_COLUMNS.forEach((col) => {
-        if (rowData[col] === undefined) {
-          rowData[col] = col === 'VALOR FR' ? 0 : '';
-        }
-      });
-
-      if (!rowData['Mês'] || rowData['Mês'] === '-' || rowData['Mês'] === '—') {
-        const mesFromDate = normalizeMesFR('', rowData['DATA DA SOLICITAÇÃO']);
-        if (mesFromDate && mesFromDate !== '-') {
-          rowData['Mês'] = mesFromDate;
-        }
-      }
-
-      cleanedRows.push(rowData as Omit<FRRegistro, 'id'>);
-    }
-
-    return {
-      valid: true,
-      missingColumns: [],
-      data: cleanedRows,
-      totalRows: cleanedRows.length,
-    };
-  } catch (err: any) {
-    return {
-      valid: false,
-      missingColumns: [],
-      data: [],
-      totalRows: 0,
-      error: err.message || 'Erro ao processar o arquivo CSV de FR.',
-    };
-  }
 }
 
 /* =========================================================================

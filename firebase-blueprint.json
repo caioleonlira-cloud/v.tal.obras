@@ -98,27 +98,6 @@
         "tipo": { "type": "string" }
       }
     },
-    "fr_registros": {
-      "title": "Registros de Faturamento (FR's)",
-      "description": "Registros de faturamento gerados para acompanhamento e controle.",
-      "properties": {
-        "UF": { "type": "string" },
-        "DC-M": { "type": "string" },
-        "REG": { "type": "string" },
-        "Mês": { "type": "string" },
-        "CENTRO": { "type": "string" },
-        "LOCALIDADE DE PRESTAÇÃO": { "type": "string" },
-        "DATA DA SOLICITAÇÃO": { "type": "string" },
-        "DC MIGRADA/OPERAÇÃO": { "type": "string" },
-        "Nº MEDIÇÃO": { "type": "string" },
-        "Nº PEDIDO": { "type": "string" },
-        "ITEM DO PEDIDO": { "type": "string" },
-        "VALOR FR": { "type": "number" },
-        "FR": { "type": "string" },
-        "_updatedAt": { "type": "string" },
-        "_updatedBy": { "type": "string" }
-      }
-    },
     "registros_vivo": {
       "title": "Registros de Obras VIVO (IDs)",
       "description": "Armazena as informações de medição e acompanhamento das obras da VIVO.",

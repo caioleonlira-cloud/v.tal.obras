@@ -564,55 +564,10 @@ export interface RegistrosFilterPayload {
   sortDirection?: 'asc' | 'desc';
 }
 
-export interface FRRegistro {
-  id: string;
-  UF: string;
-  'DC-M': string;
-  REG: string;
-  Mês: string;
-  CENTRO: string;
-  'LOCALIDADE DE PRESTAÇÃO': string;
-  'DATA DA SOLICITAÇÃO': string;
-  'DC MIGRADA/OPERAÇÃO': string;
-  'Nº MEDIÇÃO': string;
-  'Nº PEDIDO': string;
-  'ITEM DO PEDIDO': string;
-  'VALOR FR': string | number;
-  FR: string;
-  _updatedAt?: string;
-  _updatedBy?: string;
-}
-
-export const FR_COLUMNS: (keyof Omit<FRRegistro, 'id' | '_updatedAt' | '_updatedBy'>)[] = [
-  'UF',
-  'DC-M',
-  'REG',
-  'Mês',
-  'CENTRO',
-  'LOCALIDADE DE PRESTAÇÃO',
-  'DATA DA SOLICITAÇÃO',
-  'DC MIGRADA/OPERAÇÃO',
-  'Nº MEDIÇÃO',
-  'Nº PEDIDO',
-  'ITEM DO PEDIDO',
-  'VALOR FR',
-  'FR',
-];
-
-export interface ImportInfoFR {
-  fileName: string;
-  importedAt: string;
-  importedBy: string;
-  totalLinhas: number;
-  totalImportado?: number;
-  totalIgnorado?: number;
-}
-
 export type NavTabType =
   | 'dashboard'
   | 'registros'
   | 'registros_vivo'
-  | 'fr'
   | 'importacao'
   | 'segmentacoes'
   | 'usuarios';
@@ -754,10 +709,77 @@ export function getVivoDisplayOrBlank(val?: string | null): string {
   return String(val).trim();
 }
 
+export const VIVO_HEAD_RESPONSAVEIS = [
+  'AVALIAR',
+  'MED. DRAFT APROV.',
+  'MED. OK - AG. DRAFT APROV.',
+  'MED. SEM DRAFT APROV.',
+  'CÉLULA SAP',
+  'IMPLANTAÇÃO',
+  'PROJETO',
+  'VIVO',
+  'VIVO - ACEITE DRAFT',
+  'VIVO - ENTREGUE',
+  'ID CANCELADO',
+] as const;
+
+export const VIVO_TAIL_RESPONSAVEIS = [
+  'FINANCEIRO',
+  'FINALIZADO',
+] as const;
+
+function getVivoRespCanonicalKey(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.\-_/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+const VIVO_HEAD_PRIORITY_MAP = new Map<string, number>(
+  VIVO_HEAD_RESPONSAVEIS.map((item, idx) => [getVivoRespCanonicalKey(item), idx])
+);
+
+const VIVO_TAIL_PRIORITY_MAP = new Map<string, number>(
+  VIVO_TAIL_RESPONSAVEIS.map((item, idx) => [getVivoRespCanonicalKey(item), idx])
+);
+
+export function sortVivoResponsaveis(a: string, b: string): number {
+  const isBlankA = a === VIVO_BLANK_LABEL || isVivoBlank(a);
+  const isBlankB = b === VIVO_BLANK_LABEL || isVivoBlank(b);
+  if (isBlankA && isBlankB) return 0;
+  if (isBlankA) return 1;
+  if (isBlankB) return -1;
+
+  const keyA = getVivoRespCanonicalKey(a);
+  const keyB = getVivoRespCanonicalKey(b);
+
+  const headIdxA = VIVO_HEAD_PRIORITY_MAP.get(keyA) ?? -1;
+  const headIdxB = VIVO_HEAD_PRIORITY_MAP.get(keyB) ?? -1;
+
+  const tailIdxA = VIVO_TAIL_PRIORITY_MAP.get(keyA) ?? -1;
+  const tailIdxB = VIVO_TAIL_PRIORITY_MAP.get(keyB) ?? -1;
+
+  const rankA = headIdxA !== -1 ? headIdxA : tailIdxA !== -1 ? 1000 + tailIdxA : 500;
+  const rankB = headIdxB !== -1 ? headIdxB : tailIdxB !== -1 ? 1000 + tailIdxB : 500;
+
+  if (rankA !== rankB) {
+    return rankA - rankB;
+  }
+
+  if (headIdxA !== -1) return headIdxA - headIdxB;
+  if (tailIdxA !== -1) return tailIdxA - tailIdxB;
+
+  return a.localeCompare(b, 'pt-BR');
+}
+
 export interface RegistrosVivoFilterPayload {
   searchID?: string;
   ref?: string[];
   ano?: string[];
+  mesInput?: string[];
   reg?: string[];
   regional?: string[];
   uf?: string[];

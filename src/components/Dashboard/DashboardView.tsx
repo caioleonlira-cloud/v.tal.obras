@@ -11,8 +11,8 @@ import {
   BLANK_FILTER_OPTION,
   isBlankValue,
 } from '../../utils/filterUtils';
-import { FRsGeradasTable } from './FRsGeradasTable';
 import { ObrasInputVolumeTable } from './ObrasInputVolumeTable';
+import { VolumetriaStatusAgingTable } from './VolumetriaStatusAgingTable';
 import {
   getRegistroCarteira,
   getRegistroPlanEstruturante,
@@ -25,12 +25,9 @@ import {
 } from '../../types';
 import {
   LayoutDashboard,
-  Layers,
-  CheckCircle2,
   Clock,
   AlertTriangle,
   TrendingUp,
-  DollarSign,
   UserCheck,
   Search,
   X,
@@ -47,7 +44,6 @@ import {
   FolderTree,
   Tag,
   Layers3,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { DashboardVivoSection } from './DashboardVivoSection';
 import { RegistrosVivoFilterPayload } from '../../types';
@@ -642,7 +638,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToRegistros,
   onNavigateToRegistrosVivo,
 }) => {
-  const { registros, frRegistros, lastImportInfo, loadingRegistros } = useData();
+  const { registros, lastImportInfo, loadingRegistros } = useData();
   const [selectedClient, setSelectedClient] = useState<'VTAL' | 'VIVO'>('VTAL');
 
   const initialSavedFilters = useMemo(() => loadSavedDashboardFilters(), []);
@@ -1160,42 +1156,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     totalOrcamento,
     totalParcial,
     totalFinal,
-    totalMedido,
     totalFaturado,
     totalSaldo,
-    pctMedido,
-    concluidasCount,
-    emExecucaoCount,
-    aIniciarCount,
-    pendentesCount,
-    regionalStats,
-    responsavelStats,
-    regionalRespStats,
     regionalGroups,
     telemontGroup,
-    ufStats,
-    carteiraStats,
-    tipoDCStats,
-    planEstruturanteStats,
-    mesInputStats,
-    macroStatusStats,
-    rawStatusStats,
   } = useMemo(() => {
     let orc = 0;
     let parc = 0;
     let fin = 0;
     let fatTotal = 0;
     let sldTotal = 0;
-
-    let concl = 0;
-    let exec = 0;
-    let aInic = 0;
-    let pend = 0;
-
-    const regMap: Record<
-      string,
-      { count: number; orcamento: number; parcial: number; final: number; medido: number; concluidas: number }
-    > = {};
 
     const respMap: Record<
       string,
@@ -1310,31 +1280,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         stInf === 'OK' ||
         stInf === 'APROVADO';
 
-      const isExec =
-        stInf.includes('EXECU') ||
-        stInf.includes('ANDAMENTO') ||
-        stInf.includes('ANÁLISE') ||
-        stInf.includes('ANALISE') ||
-        stInf.includes('CAMPO') ||
-        stInf.includes('INICIAD');
-
-      const isAIniciar =
-        stInf.includes('INICIAR') ||
-        stInf.includes('AGENDAD') ||
-        stInf.includes('BACKLOG') ||
-        stInf.includes('PROGRAMAD') ||
-        stInf.includes('AGUARDANDO');
-
-      if (isConcl) {
-        concl++;
-      } else if (isExec) {
-        exec++;
-      } else if (isAIniciar) {
-        aInic++;
-      } else {
-        pend++;
-      }
-
       // Raw Status counter for detailed breakdown
       if (!rawStatusMap[stInf]) {
         rawStatusMap[stInf] = { count: 0, orcamento: 0, medido: 0 };
@@ -1345,15 +1290,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       // Regional Grouping
       const reg = (getRegistroRegional(r) || r.REG || 'RSUL').trim().toUpperCase();
-      if (!regMap[reg]) {
-        regMap[reg] = { count: 0, orcamento: 0, parcial: 0, final: 0, medido: 0, concluidas: 0 };
-      }
-      regMap[reg].count++;
-      regMap[reg].orcamento += o;
-      regMap[reg].parcial += p;
-      regMap[reg].final += f;
-      regMap[reg].medido += m;
-      if (isConcl) regMap[reg].concluidas++;
 
       // Responsável Grouping (Normalized: Implantação, Projeto, etc.)
       let respRaw = (r.Responsavel || '').trim();
@@ -1419,14 +1355,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       uMap[uf].medido += m;
     });
 
-    const totMed = parc + fin;
-    const pMed = orc > 0 ? ((totMed / orc) * 100).toFixed(1) : '0.0';
-
-    // Regional Stats ordered (Prioritize standard RCO, RMG, RSUL then others)
-    const regionalStats = Object.entries(regMap)
-      .map(([key, data]) => ({ regional: key, ...data }))
-      .sort((a, b) => b.count - a.count);
-
     // Responsável Stats
     const responsavelStats = Object.entries(respMap)
       .map(([key, data]) => ({
@@ -1457,54 +1385,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       return b.count - a.count;
     });
 
-    // Macro status items
-    const totalCount = filteredRegistros.length || 1;
-    const macroStatusStats = [
-      {
-        id: 'concluido',
-        label: 'Concluído / Entregue',
-        count: concl,
-        pct: ((concl / totalCount) * 100).toFixed(1),
-        color: '#10B981', // emerald-500
-        bgClass: 'bg-emerald-500',
-        textClass: 'text-emerald-700',
-        badgeBg: 'bg-emerald-50 border-emerald-200',
-      },
-      {
-        id: 'execucao',
-        label: 'Em Execução / Andamento',
-        count: exec,
-        pct: ((exec / totalCount) * 100).toFixed(1),
-        color: '#2563EB', // blue-600
-        bgClass: 'bg-blue-600',
-        textClass: 'text-blue-700',
-        badgeBg: 'bg-blue-50 border-blue-200',
-      },
-      {
-        id: 'a_iniciar',
-        label: 'A Iniciar / Aguardando',
-        count: aInic,
-        pct: ((aInic / totalCount) * 100).toFixed(1),
-        color: '#F59E0B', // amber-500
-        bgClass: 'bg-amber-500',
-        textClass: 'text-amber-700',
-        badgeBg: 'bg-amber-50 border-amber-200',
-      },
-      {
-        id: 'pendencia',
-        label: 'Pendência / Paralisado',
-        count: pend,
-        pct: ((pend / totalCount) * 100).toFixed(1),
-        color: '#EF4444', // red-500
-        bgClass: 'bg-red-500',
-        textClass: 'text-red-700',
-        badgeBg: 'bg-red-50 border-red-200',
-      },
-    ];
-
     const rawStatusStats = Object.entries(rawStatusMap)
       .map(([key, data]) => ({ status: key, ...data }))
       .sort((a, b) => b.count - a.count);
+
+    // Keep unused stats referenced safely or omit from return
+    void responsavelStats;
+    void ufStats;
+    void carteiraStats;
+    void tipoDCStats;
+    void planEstruturanteStats;
+    void mesInputStats;
+    void rawStatusStats;
 
     // Sorted Regional x Responsavel for Ponto 1 table
     const regionalRespStats = Object.values(regRespComboMap).sort((a, b) => {
@@ -1627,26 +1519,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       totalOrcamento: orc,
       totalParcial: parc,
       totalFinal: fin,
-      totalMedido: totMed,
       totalFaturado: fatTotal,
       totalSaldo: sldTotal,
-      pctMedido: pMed,
-      concluidasCount: concl,
-      emExecucaoCount: exec,
-      aIniciarCount: aInic,
-      pendentesCount: pend,
-      regionalStats,
-      responsavelStats,
-      regionalRespStats,
       regionalGroups,
       telemontGroup,
-      ufStats,
-      carteiraStats,
-      tipoDCStats,
-      planEstruturanteStats,
-      mesInputStats,
-      macroStatusStats,
-      rawStatusStats,
     };
   }, [filteredRegistros]);
 
@@ -1908,136 +1784,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 2. KPI TOP ROW: 4 Clean, Balanced Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 px-0.5">
-        {/* Card 1: Total de DCs */}
-        <div
-          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver todos os registros filtrados na aba Registros"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
-                Total de DCs
-              </span>
-              <span className="text-2xl font-black text-slate-900 mt-0.5 block">
-                {totalDcs.toLocaleString('pt-BR')}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 text-[#002855] flex items-center justify-center font-bold shrink-0 group-hover:bg-blue-50 transition-colors">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-            {regionalStats.slice(0, 3).map((reg) => (
-              <span key={reg.regional} className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded font-semibold text-slate-700 text-[10px]">
-                {reg.regional}: {reg.count}
-              </span>
-            ))}
-            {regionalStats.length > 3 && (
-              <span className="text-slate-400 text-[10px]">+{regionalStats.length - 3} reg.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: Orçamento Total */}
-        <div
-          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'Orçamento', sortDirection: 'desc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-blue-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver registros ordenados por orçamento na aba Registros"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700 transition-colors">
-                Orçamento Total
-              </span>
-              <span className="text-xl font-black text-slate-900 mt-0.5 block truncate" title={formatBRL(totalOrcamento)}>
-                {formatBRL(totalOrcamento)}
-              </span>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#002855] flex items-center justify-center font-bold shrink-0">
-              <DollarSign className="w-4 h-4 text-[#002855]" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
-            <span>Faturado: <strong className="text-blue-700 font-bold">{formatBRL(totalFaturado)}</strong></span>
-            <span>Saldo: <strong className="text-indigo-700 font-bold">{formatBRL(totalSaldo)}</strong></span>
-          </div>
-        </div>
-
-        {/* Card 3: Valor Medido Total */}
-        <div
-          onClick={() =>
-            handleNavigateWithDashboardFilters({
-              onlyWithMedido: true,
-              sortBy: 'Valor Final R$',
-              sortDirection: 'desc',
-            })
-          }
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-emerald-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver todos os registros com medição na aba Registros"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
-                Valor Medido Total
-              </span>
-              <span className="text-xl font-black text-emerald-700 mt-0.5 block truncate" title={formatBRL(totalMedido)}>
-                {formatBRL(totalMedido)}
-              </span>
-            </div>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
-              {pctMedido}%
-            </span>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Parcial: <strong className="text-slate-700 font-semibold">{formatBRL(totalParcial)}</strong></span>
-            <span>Final: <strong className="text-emerald-700 font-bold">{formatBRL(totalFinal)}</strong></span>
-          </div>
-        </div>
-
-        {/* Card 4: % de DCs Concluídas */}
-        <div
-          onClick={() => handleNavigateWithDashboardFilters({ sortBy: 'DC', sortDirection: 'asc' })}
-          className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all group"
-          title="Clique para ver obras filtradas na aba Registros"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Conclusão de Obras
-              </span>
-              <div className="flex items-baseline space-x-2 mt-0.5">
-                <span className="text-2xl font-black text-slate-900">
-                  {totalDcs > 0 ? ((concluidasCount / totalDcs) * 100).toFixed(1) : '0.0'}%
-                </span>
-                <span className="text-[11px] text-slate-400 font-medium">concluídas</span>
-              </div>
-            </div>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1">
-            <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                style={{ width: `${totalDcs > 0 ? Math.min(100, (concluidasCount / totalDcs) * 100) : 0}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span>{concluidasCount.toLocaleString('pt-BR')} de {totalDcs.toLocaleString('pt-BR')} DCs</span>
-              <span className="text-slate-400">{emExecucaoCount} em execução</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 3. CENTRAL HERO BLOCK: Medição x Orçamento por Regional e Responsável (Ponto 1 & Ajustes Visuais/Interatividade) */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="px-3.5 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
@@ -2279,8 +2025,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         onNavigate={(filters) => handleNavigateWithDashboardFilters(filters)}
       />
 
-      {/* 5. QUADRO FR's GERADAS (Fixo, não afetado pelos filtros) */}
-      <FRsGeradasTable frRegistros={frRegistros} />
+      {/* 5. TABELA VOLUMETRIA DE DC's POR STATUS E AGING - V.TAL */}
+      <VolumetriaStatusAgingTable
+        registros={filteredRegistros}
+        onNavigate={(filters) => handleNavigateWithDashboardFilters(filters)}
+      />
         </>
       )}
     </div>
