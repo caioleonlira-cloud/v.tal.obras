@@ -574,6 +574,7 @@ export type NavTabType =
 
 export interface RegistroVivoBloco1 {
   'REF': string;
+  'Tipo': string;
   'REG': string;
   'UF': string;
   'Localidade': string;
@@ -616,6 +617,7 @@ export interface RegistroVivo extends RegistroVivoBloco1, RegistroVivoBloco2 {
 
 export const VIVO_BLOCO_1_KEYS: (keyof RegistroVivoBloco1)[] = [
   'REF',
+  'Tipo',
   'REG',
   'UF',
   'Localidade',
@@ -778,6 +780,7 @@ export function sortVivoResponsaveis(a: string, b: string): number {
 export interface RegistrosVivoFilterPayload {
   searchID?: string;
   ref?: string[];
+  tipo?: string[];
   ano?: string[];
   mesInput?: string[];
   reg?: string[];

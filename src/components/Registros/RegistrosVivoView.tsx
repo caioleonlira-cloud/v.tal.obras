@@ -61,6 +61,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
 
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
+  const [filterTipo, setFilterTipo] = useState<string[]>([]);
   const [filterAno, setFilterAno] = useState<string[]>([]);
   const [filterMesInput, setFilterMesInput] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
@@ -107,6 +108,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     if (initialFilters) {
       setSearchID(initialFilters.searchID !== undefined ? initialFilters.searchID : '');
       setFilterREF(initialFilters.ref !== undefined ? initialFilters.ref : []);
+      setFilterTipo(initialFilters.tipo !== undefined ? initialFilters.tipo : []);
       setFilterAno(initialFilters.ano !== undefined ? initialFilters.ano : []);
       setFilterMesInput(initialFilters.mesInput !== undefined ? initialFilters.mesInput : []);
       if (initialFilters.reg !== undefined) {
@@ -150,6 +152,10 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     if (excludeKey !== 'REF' && filterREF.length > 0) {
       const val = getVivoDisplayOrBlank(item.REF);
       if (!filterREF.includes(val)) return false;
+    }
+    if (excludeKey !== 'Tipo' && filterTipo.length > 0) {
+      const val = getVivoDisplayOrBlank(item.Tipo);
+      if (!filterTipo.includes(val)) return false;
     }
     if (excludeKey !== 'Ano' && filterAno.length > 0) {
       const val = getVivoDisplayOrBlank(item.Ano);
@@ -195,6 +201,8 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const {
     refOptions,
     refCounts,
+    tipoOptions,
+    tipoCounts,
     anoOptions,
     anoCounts,
     mesInputOptions,
@@ -215,6 +223,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     respMedicaoCounts,
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
+    const cTipo: Record<string, number> = {};
     const cAno: Record<string, number> = {};
     const cMesInput: Record<string, number> = {};
     const cReg: Record<string, number> = {};
@@ -230,6 +239,9 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
 
       const rRef = getVivoDisplayOrBlank(r.REF);
       if (matchesFilterSubset(r, 'REF')) cRef[rRef] = (cRef[rRef] || 0) + 1;
+
+      const rTipo = getVivoDisplayOrBlank(r.Tipo);
+      if (matchesFilterSubset(r, 'Tipo')) cTipo[rTipo] = (cTipo[rTipo] || 0) + 1;
 
       const rAno = getVivoDisplayOrBlank(r.Ano);
       if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
@@ -286,6 +298,8 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
+      tipoOptions: Object.keys(cTipo).sort(sortFn),
+      tipoCounts: cTipo,
       anoOptions: Object.keys(cAno).sort(sortAnoFn),
       anoCounts: cAno,
       mesInputOptions: Object.keys(cMesInput).sort(sortMesInputFn),
@@ -309,6 +323,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterTipo,
     filterAno,
     filterMesInput,
     filterREG,
@@ -327,6 +342,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterTipo,
     filterAno,
     filterMesInput,
     filterREG,
@@ -415,6 +431,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const clearAllFilters = () => {
     setSearchID('');
     setFilterREF([]);
+    setFilterTipo([]);
     setFilterAno([]);
     setFilterMesInput([]);
     setFilterREG([]);
@@ -432,6 +449,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
   const activeFiltersCount =
     (searchID ? 1 : 0) +
     filterREF.length +
+    filterTipo.length +
     filterAno.length +
     filterMesInput.length +
     filterREG.length +
@@ -719,7 +737,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
         {/* 2. Painel Retrátil de Busca e Filtros (Linha Única em Telas Desktop) */}
         {isFiltersExpanded && (
           <div className="bg-white p-2 sm:p-2.5 rounded-xl shadow-xs border border-slate-200/90 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-11 gap-1.5 items-end">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-1.5 items-end">
               {/* Campo de Busca por ID ou Descrição */}
               <div className="w-full min-w-0">
                 <label className="block text-[10px] font-bold text-slate-700 tracking-tight mb-0.5 truncate leading-tight">
@@ -757,6 +775,16 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                 onChange={setFilterREF}
                 optionCounts={refCounts}
                 placeholder="Todas"
+              />
+
+              {/* 2. TIPO */}
+              <MultiSelectFilter
+                label="Tipo"
+                options={tipoOptions}
+                selected={filterTipo}
+                onChange={setFilterTipo}
+                optionCounts={tipoCounts}
+                placeholder="Todos"
               />
 
               {/* 2. ANO */}
@@ -1150,7 +1178,7 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                       className={`py-1.5 px-2.5 hover:bg-[#002046] transition-colors border-r border-b border-[#001c3d] whitespace-nowrap cursor-pointer text-center ${
                         colKey === 'UF'
                           ? 'w-[75px] min-w-[75px] max-w-[75px]'
-                          : colKey === 'REG' || colKey === 'REF'
+                          : colKey === 'REG' || colKey === 'REF' || colKey === 'Tipo'
                           ? 'min-w-[80px]'
                           : colKey.includes('OSP') || colKey.includes('Produção') || colKey === 'Faturado'
                           ? 'min-w-[130px]'
@@ -1326,9 +1354,10 @@ export const RegistrosVivoView: React.FC<RegistrosVivoViewProps> = ({
                         );
                       }
 
-                      // Campos centralizados da base (REF, Ano, Mês Input, Data Status, Data Medição, Faixa Status, Faixa Medição)
+                      // Campos centralizados da base (REF, Tipo, Ano, Mês Input, Data Status, Data Medição, Faixa Status, Faixa Medição)
                       const isCenteredText =
                         colKey === 'REF' ||
+                        colKey === 'Tipo' ||
                         colKey === 'Ano' ||
                         colKey === 'Mês Input' ||
                         colKey === 'Data Status' ||

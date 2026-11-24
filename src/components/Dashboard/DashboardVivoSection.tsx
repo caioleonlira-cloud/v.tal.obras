@@ -49,6 +49,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
 
   // Multi-select filters
   const [filterREF, setFilterREF] = useState<string[]>([]);
+  const [filterTipo, setFilterTipo] = useState<string[]>([]);
   const [filterAno, setFilterAno] = useState<string[]>([]);
   const [filterMesInput, setFilterMesInput] = useState<string[]>([]);
   const [filterREG, setFilterREG] = useState<string[]>([]);
@@ -75,6 +76,10 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     if (excludeKey !== 'REF' && filterREF.length > 0) {
       const val = getVivoDisplayOrBlank(item.REF);
       if (!filterREF.includes(val)) return false;
+    }
+    if (excludeKey !== 'Tipo' && filterTipo.length > 0) {
+      const val = getVivoDisplayOrBlank(item.Tipo);
+      if (!filterTipo.includes(val)) return false;
     }
     if (excludeKey !== 'Ano' && filterAno.length > 0) {
       const val = getVivoDisplayOrBlank(item.Ano);
@@ -120,6 +125,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const {
     refOptions,
     refCounts,
+    tipoOptions,
+    tipoCounts,
     anoOptions,
     anoCounts,
     mesInputOptions,
@@ -140,6 +147,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     respMedicaoCounts,
   } = useMemo(() => {
     const cRef: Record<string, number> = {};
+    const cTipo: Record<string, number> = {};
     const cAno: Record<string, number> = {};
     const cMesInput: Record<string, number> = {};
     const cReg: Record<string, number> = {};
@@ -155,6 +163,9 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
 
       const rRef = getVivoDisplayOrBlank(r.REF);
       if (matchesFilterSubset(r, 'REF')) cRef[rRef] = (cRef[rRef] || 0) + 1;
+
+      const rTipo = getVivoDisplayOrBlank(r.Tipo);
+      if (matchesFilterSubset(r, 'Tipo')) cTipo[rTipo] = (cTipo[rTipo] || 0) + 1;
 
       const rAno = getVivoDisplayOrBlank(r.Ano);
       if (matchesFilterSubset(r, 'Ano')) cAno[rAno] = (cAno[rAno] || 0) + 1;
@@ -211,6 +222,8 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     return {
       refOptions: Object.keys(cRef).sort(sortFn),
       refCounts: cRef,
+      tipoOptions: Object.keys(cTipo).sort(sortFn),
+      tipoCounts: cTipo,
       anoOptions: Object.keys(cAno).sort(sortAnoFn),
       anoCounts: cAno,
       mesInputOptions: Object.keys(cMesInput).sort(sortMesInputFn),
@@ -234,6 +247,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterTipo,
     filterAno,
     filterMesInput,
     filterREG,
@@ -252,6 +266,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     registrosVivo,
     searchID,
     filterREF,
+    filterTipo,
     filterAno,
     filterMesInput,
     filterREG,
@@ -270,6 +285,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const activeFiltersCount =
     (searchID ? 1 : 0) +
     filterREF.length +
+    filterTipo.length +
     filterAno.length +
     filterMesInput.length +
     filterREG.length +
@@ -283,6 +299,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
   const handleClearFilters = () => {
     setSearchID('');
     setFilterREF([]);
+    setFilterTipo([]);
     setFilterAno([]);
     setFilterMesInput([]);
     setFilterREG([]);
@@ -379,6 +396,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
     const payload: RegistrosVivoFilterPayload = {};
     if (searchID.trim()) payload.searchID = searchID.trim();
     if (filterREF.length > 0) payload.ref = [...filterREF];
+    if (filterTipo.length > 0) payload.tipo = [...filterTipo];
     if (filterAno.length > 0) payload.ano = [...filterAno];
     if (filterMesInput.length > 0) payload.mesInput = [...filterMesInput];
     if (filterREG.length > 0) payload.reg = [...filterREG];
@@ -548,7 +566,7 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
           {/* Row 2: Collapsible Filters */}
           {isFiltersOpen && (
             <div className="pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-11 gap-1.5 items-end">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-1.5 items-end">
                 {/* Search ID/Desc */}
                 <div className="w-full min-w-0">
                   <label className="block text-[10px] font-bold text-slate-600 mb-0.5 truncate">
@@ -583,6 +601,15 @@ export const DashboardVivoSection: React.FC<DashboardVivoSectionProps> = ({
                   optionCounts={refCounts}
                   onChange={setFilterREF}
                   placeholder="Todas"
+                />
+
+                <MultiSelectFilter
+                  label="Tipo"
+                  options={tipoOptions}
+                  selected={filterTipo}
+                  optionCounts={tipoCounts}
+                  onChange={setFilterTipo}
+                  placeholder="Todos"
                 />
 
                 <MultiSelectFilter

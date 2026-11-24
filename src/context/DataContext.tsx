@@ -199,7 +199,12 @@ const LOCAL_STORAGE_SEG_VIVO_KEY = 'vtal_local_segmentacoes_vivo_backup_v1';
 const LOCAL_STORAGE_META_VIVO_KEY = 'vtal_local_import_metadata_vivo';
 
 export function normalizeRegistroVivoData(data: any, docId: string): RegistroVivo {
-  return { _id: docId, ...data } as RegistroVivo;
+  const norm = { _id: docId, ...data } as any;
+  norm['Tipo'] =
+    norm['Tipo'] !== undefined && norm['Tipo'] !== null
+      ? String(norm['Tipo']).trim()
+      : '';
+  return norm as RegistroVivo;
 }
 
 function clearLegacyLocalRegistrosVivo() {
@@ -2584,7 +2589,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkMatriz = verificarColunasLeituraMatrizVivo(Array.from(colsInFile));
     if (!checkMatriz.todasPresentes) {
       throw new Error(
-        `Não é possível atualizar a Base Matriz VIVO: todas as 21 colunas de Leitura devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+        `Não é possível atualizar a Base Matriz VIVO: todas as 22 colunas de Leitura devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
           '\n• '
         )}`
       );
@@ -2634,6 +2639,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const bloco1: RegistroVivoBloco1 = {
         'REF': extractVivoField(linha, 'REF'),
+        'Tipo': extractVivoField(linha, 'Tipo'),
         'REG': extractVivoField(linha, 'REG') || 'RCO',
         'UF': extractVivoField(linha, 'UF').toUpperCase(),
         'Localidade': extractVivoField(linha, 'Localidade'),
@@ -2908,6 +2914,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(
         `Importação bloqueada: Foram encontradas ${divergencias.length} divergências com a aba Segmentação da VIVO. Corrija os valores na planilha para prosseguir:\n\n${detalhes}`
       );
+    }
+
+    // Validação tudo-ou-nada caso colunas de Leitura da Base Matriz VIVO apareçam na massiva
+    const colsInMassivaFile = new Set<string>();
+    planilhaLinhas.forEach((linha) => {
+      Object.keys(linha).forEach((k) => {
+        if (k === '_rowNumber') return;
+        const matched = matchCanonicalVivoColumn(k);
+        if (matched && matched !== 'ID') {
+          colsInMassivaFile.add(matched);
+        }
+      });
+    });
+
+    const matrizColsInMassiva = Array.from(colsInMassivaFile).filter((col) =>
+      (VIVO_BLOCO_1_KEYS as string[]).includes(col)
+    );
+    if (matrizColsInMassiva.length > 0) {
+      const checkMatriz = verificarColunasLeituraMatrizVivo(['ID', ...Array.from(colsInMassivaFile)]);
+      if (!checkMatriz.todasPresentes) {
+        throw new Error(
+          `Não é possível atualizar os registros da matriz VIVO: todas as 22 colunas de Leitura devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou com nome divergente:\n• ${checkMatriz.ausentes.join(
+            '\n• '
+          )}`
+        );
+      }
     }
 
     const idMap = new Map<string, RegistroVivo>();

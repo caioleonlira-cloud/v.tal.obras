@@ -175,7 +175,7 @@ export const ImportacaoPadrao: React.FC = () => {
         const checkMatriz = verificarColunasLeituraMatrizVivo(cols);
         if (!checkMatriz.todasPresentes) {
           throw new Error(
-            `Não é possível atualizar os registros da matriz VIVO: todas as 21 colunas de Leitura da aba "Registro - (VIVO OBRAS)" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou divergentes:\n• ${checkMatriz.ausentes.join(
+            `Não é possível atualizar os registros da matriz VIVO: todas as 22 colunas de Leitura da aba "Registro - (VIVO OBRAS)" devem ser identificadas na planilha com os nomes corretos. A atualização é tudo ou nada. Colunas ausentes ou divergentes:\n• ${checkMatriz.ausentes.join(
               '\n• '
             )}`
           );
@@ -306,7 +306,7 @@ export const ImportacaoPadrao: React.FC = () => {
           <button
             onClick={downloadModeloImportacaoPadraoVivo}
             className="px-3.5 py-2.5 bg-[#002855] hover:bg-[#001e40] text-white rounded-xl text-xs font-bold border border-[#002855] shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
-            title="Baixar modelo oficial VIVO com as 21 colunas esperadas"
+            title="Baixar modelo oficial VIVO com as 22 colunas esperadas"
           >
             <Download className="w-4 h-4 text-cyan-300" />
             <span>Modelo Padrão — VIVO</span>
@@ -323,7 +323,7 @@ export const ImportacaoPadrao: React.FC = () => {
               Detecção Inteligente de Cliente
             </span>
             <span className="text-slate-600 mt-0.5 block leading-relaxed">
-              Planilhas com coluna <strong>DC</strong> serão sincronizadas na base <strong>V.TAL OBRAS</strong> (26 colunas). Planilhas com coluna <strong>ID</strong> serão sincronizadas na base <strong>VIVO OBRAS</strong> (21 colunas). Baixe os modelos oficiais acima para conferir os cabeçalhos.
+              Planilhas com coluna <strong>DC</strong> serão sincronizadas na base <strong>V.TAL OBRAS</strong> (26 colunas). Planilhas com coluna <strong>ID</strong> serão sincronizadas na base <strong>VIVO OBRAS</strong> (22 colunas). Baixe os modelos oficiais acima para conferir os cabeçalhos.
             </span>
           </div>
         </div>
@@ -783,6 +783,7 @@ export const ImportacaoPadrao: React.FC = () => {
               <thead className="bg-slate-100 text-slate-700 sticky top-0">
                 <tr>
                   <th className="py-2 px-3 font-bold">{detectedClient === 'VIVO' ? 'ID' : 'DC'}</th>
+                  {detectedClient === 'VIVO' && <th className="py-2 px-3 font-bold">Tipo</th>}
                   <th className="py-2 px-3 font-bold">UF</th>
                   <th className="py-2 px-3 font-bold">Localidade</th>
                   <th className="py-2 px-3 font-bold">Tipo de Projeto</th>
@@ -805,6 +806,7 @@ export const ImportacaoPadrao: React.FC = () => {
                     return (
                       <tr key={`nova_${idVal || i}_${i}`} className="hover:bg-emerald-50/40">
                         <td className="py-2 px-3 font-bold text-emerald-800 font-mono">{idVal}</td>
+                        {detectedClient === 'VIVO' && <td className="py-2 px-3">{r.Tipo || '—'}</td>}
                         <td className="py-2 px-3">{r.UF}</td>
                         <td className="py-2 px-3">{r.Localidade}</td>
                         <td className="py-2 px-3">{r['Tipo de Projeto']}</td>
@@ -825,6 +827,7 @@ export const ImportacaoPadrao: React.FC = () => {
                     return (
                       <tr key={`atual_${idVal || i}_${i}`} className="hover:bg-blue-50/40">
                         <td className="py-2 px-3 font-bold text-blue-800 font-mono">{idVal}</td>
+                        {detectedClient === 'VIVO' && <td className="py-2 px-3">{novo.Tipo || '—'}</td>}
                         <td className="py-2 px-3">{novo.UF}</td>
                         <td className="py-2 px-3">{novo.Localidade}</td>
                         <td className="py-2 px-3">{novo['Tipo de Projeto']}</td>
@@ -844,6 +847,7 @@ export const ImportacaoPadrao: React.FC = () => {
                     return (
                       <tr key={`rem_${idVal || i}_${i}`} className="hover:bg-red-50/40">
                         <td className="py-2 px-3 font-bold text-red-800 font-mono">{idVal}</td>
+                        {detectedClient === 'VIVO' && <td className="py-2 px-3">{r.Tipo || '—'}</td>}
                         <td className="py-2 px-3">{r.UF}</td>
                         <td className="py-2 px-3">{r.Localidade}</td>
                         <td className="py-2 px-3">{r['Tipo de Projeto']}</td>

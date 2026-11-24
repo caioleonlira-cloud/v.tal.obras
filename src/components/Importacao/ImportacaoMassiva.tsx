@@ -215,7 +215,7 @@ export const ImportacaoMassiva: React.FC = () => {
         if (matrizColsInFile.length > 0) {
           const checkMatriz = verificarColunasLeituraMatrizVivo(cols);
           if (!checkMatriz.todasPresentes) {
-            const errMatriz = `Não é possível atualizar os registros da matriz VIVO: todas as 21 colunas de Leitura devem ser identificadas na planilha. Colunas ausentes:\n• ${checkMatriz.ausentes.join(
+            const errMatriz = `Não é possível atualizar os registros da matriz VIVO: todas as 22 colunas de Leitura devem ser identificadas na planilha. Colunas ausentes:\n• ${checkMatriz.ausentes.join(
               '\n• '
             )}`;
             setMatrizMissingColumns(checkMatriz.ausentes);

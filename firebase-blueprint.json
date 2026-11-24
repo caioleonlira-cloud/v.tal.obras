@@ -104,6 +104,7 @@
       "properties": {
         "ID": { "type": "string", "description": "Identificador único da obra VIVO" },
         "REF": { "type": "string" },
+        "Tipo": { "type": "string" },
         "REG": { "type": "string" },
         "UF": { "type": "string" },
         "Localidade": { "type": "string" },

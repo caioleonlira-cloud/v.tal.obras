@@ -1643,6 +1643,7 @@ export function matchCanonicalVivoColumn(rawHeader: string): string | null {
 
   // 2. Base: Leitura
   if (clean === 'REF' || clean === 'REFERENCIA' || clean === 'REF.' || clean.startsWith('REF ')) return 'REF';
+  if (clean === 'TIPO') return 'Tipo';
   if (clean === 'REG' || clean === 'REGIONAL' || clean === 'REGIAO') return 'REG';
   if (clean === 'UF' || clean === 'ESTADO' || clean === 'SIGLA UF') return 'UF';
   if (clean === 'LOCALIDADE' || clean === 'CIDADE' || clean === 'MUNICIPIO') return 'Localidade';
@@ -1819,7 +1820,7 @@ export async function detectFileClient(file: File): Promise<'VTAL' | 'VIVO' | 'U
 }
 
 /**
- * Verifica as 21 colunas de Leitura para atualização da Base Matriz VIVO
+ * Verifica as 22 colunas de Leitura para atualização da Base Matriz VIVO
  */
 export function verificarColunasLeituraMatrizVivo(detectedColumns: string[]): {
   todasPresentes: boolean;
@@ -2154,13 +2155,14 @@ export function analisarPreImportacaoVivo(planilhaLinhas: Record<string, any>[])
 }
 
 /**
- * Baixar Modelo Padrão - VIVO (21 colunas do Bloco 1)
+ * Baixar Modelo Padrão - VIVO (22 colunas do Bloco 1)
  */
 export function downloadModeloImportacaoPadraoVivo() {
   const headers = [...VIVO_BLOCO_1_KEYS];
   const sampleRows: Record<string, string>[] = [
     {
       'REF': 'REF-2026-001',
+      'Tipo': 'EXPANSÃO',
       'REG': 'RCO',
       'UF': 'GO',
       'Localidade': 'GOIÂNIA',
@@ -2184,6 +2186,7 @@ export function downloadModeloImportacaoPadraoVivo() {
     },
     {
       'REF': 'REF-2026-002',
+      'Tipo': 'AMPLIAÇÃO',
       'REG': 'RSUL',
       'UF': 'PR',
       'Localidade': 'CURITIBA',
@@ -2254,7 +2257,7 @@ export function downloadModeloImportacaoMassivaVivo() {
 }
 
 /**
- * Exportar Registros VIVO para CSV/Excel (30 colunas)
+ * Exportar Registros VIVO para CSV/Excel (31 colunas)
  */
 export function exportarRegistrosVivoParaCSV(
   registros: RegistroVivo[],
